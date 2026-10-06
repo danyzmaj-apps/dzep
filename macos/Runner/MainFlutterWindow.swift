@@ -3,56 +3,58 @@ import Cocoa
 import FlutterMacOS
 import ServiceManagement
 
-/// The one on-screen window. It's created in code as a non-activating panel:
-/// since macOS 14 a background app can't take focus from the frontmost one
-/// (`activate` is a request the system may refuse), and `.nonactivatingPanel`
-/// is only honoured when a window is *created* with it — so the nib window
-/// can't be converted. A non-activating panel becomes key without activating
-/// Džep, which is how Spotlight-style launchers take the keyboard.
-final class DzepPanel: NSPanel {
-  override var canBecomeKey: Bool { true }
-  override var canBecomeMain: Bool { true }
-}
-
-/// The nib's window (MainMenu.xib). It is never shown: it builds the Flutter
-/// view, moves it into a [DzepPanel], and drives that panel's two shapes from
-/// Dart over the `dzep/native` channel:
+/// The app's only window, from MainMenu.xib. It takes two shapes, driven
+/// from Dart over the `dzep/native` channel:
 /// - **popup**: borderless, floating above everything (full-screen apps
 ///   included), on the screen under the mouse, no traffic lights.
 /// - **main**: a normal titled window with a transparent, content-filled
 ///   title bar (Flutter draws the whole surface).
-class MainFlutterWindow: NSWindow, NSWindowDelegate {
+///
+/// It's a non-activating panel (`nonactivatingPanel` in the xib's style mask):
+/// since macOS 14 a background app can't take focus from the frontmost one
+/// (`activate` is a request the system may refuse), and AppKit only honours
+/// `.nonactivatingPanel` when a window is *created* with it. Such a panel
+/// becomes key without activating Džep, which is how Spotlight-style
+/// launchers take the keyboard.
+class MainFlutterWindow: NSPanel, NSWindowDelegate {
   private var channel: FlutterMethodChannel!
   private var hotKeyRef: EventHotKeyRef?
   private var hotKeyHandler: EventHandlerRef?
   private var statusItem: NSStatusItem?
   private var mainFrame: NSRect?
-  private let panel = DzepPanel(
-    contentRect: NSRect(x: 0, y: 0, width: 680, height: 120),
-    styleMask: [.borderless, .fullSizeContentView, .nonactivatingPanel],
-    backing: .buffered,
-    defer: false)
+
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { true }
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     flutterViewController.backgroundColor = .clear
+    self.contentViewController = flutterViewController
     RegisterGeneratedPlugins(registry: flutterViewController)
-    panel.contentViewController = flutterViewController
 
     channel = FlutterMethodChannel(
       name: "dzep/native", binaryMessenger: flutterViewController.engine.binaryMessenger)
     channel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result: result)
     }
-    panel.delegate = self
-    panel.isReleasedWhenClosed = false
-    panel.isOpaque = false
-    panel.backgroundColor = .clear
-    panel.hidesOnDeactivate = false
-    panel.becomesKeyOnlyIfNeeded = false
+    delegate = self
+    isReleasedWhenClosed = false
+    isOpaque = false
+    backgroundColor = .clear
+    hidesOnDeactivate = false
+    becomesKeyOnlyIfNeeded = false
     setupStatusItem()
     super.awakeFromNib()
-    orderOut(nil)
+    // The xib keeps this window hidden at launch (no empty window flashing
+    // up), but FlutterViewController only starts its engine when its view
+    // appears: show it once, invisibly, and take it down on the next turn.
+    // Dart then shows the shape it needs.
+    alphaValue = 0
+    orderFrontRegardless()
+    DispatchQueue.main.async { [weak self] in
+      self?.orderOut(nil)
+      self?.alphaValue = 1
+    }
   }
 
   // MARK: - Dart → native
@@ -71,7 +73,7 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       result(nil)
     case "hide":
       // The panel never activated Džep, so the previous app still has focus.
-      panel.orderOut(nil)
+      orderOut(nil)
       result(nil)
     case "setHotKey":
       result(setHotKey(keyCode: args["keyCode"] as? Int ?? -1, modifiers: args["modifiers"] as? Int ?? 0))
@@ -91,7 +93,7 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
         result(FlutterError(code: "launch_at_login", message: error.localizedDescription, details: nil))
       }
     case "startDrag":
-      if let event = panel.currentEvent { panel.performDrag(with: event) }
+      if let event = currentEvent { performDrag(with: event) }
       result(nil)
     case "setTodoCount":
       // "💡 3" in the menu bar: open todos at a glance.
@@ -107,47 +109,47 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
   }
 
   private func showPopup(width: Double, height: Double) {
-    if panel.styleMask.contains(.titled) { mainFrame = panel.frame }
-    panel.styleMask = [.borderless, .fullSizeContentView, .nonactivatingPanel]
-    panel.level = .floating
-    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-    panel.hasShadow = true
-    panel.isMovable = false
+    if styleMask.contains(.titled) { mainFrame = frame }
+    styleMask = [.borderless, .fullSizeContentView, .nonactivatingPanel]
+    level = .floating
+    collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+    hasShadow = true
+    isMovable = false
     let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
     let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     let top = visible.maxY - visible.height * 0.18
-    panel.setFrame(NSRect(x: visible.midX - width / 2, y: top - height, width: width, height: height), display: true)
-    panel.orderFrontRegardless()
-    panel.makeKey()
+    setFrame(NSRect(x: visible.midX - width / 2, y: top - height, width: width, height: height), display: true)
+    orderFrontRegardless()
+    makeKey()
   }
 
   private func resizePopup(height: Double) {
-    guard !panel.styleMask.contains(.titled) else { return }
-    var f = panel.frame
+    guard !styleMask.contains(.titled) else { return }
+    var f = frame
     f.origin.y = f.maxY - height
     f.size.height = height
-    panel.setFrame(f, display: true)
-    panel.invalidateShadow()
+    setFrame(f, display: true)
+    invalidateShadow()
   }
 
   private func showMain() {
-    panel.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel]
-    panel.titleVisibility = .hidden
-    panel.titlebarAppearsTransparent = true
-    panel.level = .normal
-    panel.collectionBehavior = [.managed]
-    panel.isMovable = true
-    panel.isMovableByWindowBackground = false
-    panel.minSize = NSSize(width: 820, height: 480)
+    styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .nonactivatingPanel]
+    titleVisibility = .hidden
+    titlebarAppearsTransparent = true
+    level = .normal
+    collectionBehavior = [.managed]
+    isMovable = true
+    isMovableByWindowBackground = false
+    minSize = NSSize(width: 820, height: 480)
     if let f = mainFrame {
-      panel.setFrame(f, display: true)
+      setFrame(f, display: true)
     } else {
       let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
       let w = min(1160, visible.width - 80), h = min(740, visible.height - 80)
-      panel.setFrame(NSRect(x: visible.midX - w / 2, y: visible.midY - h / 2, width: w, height: h), display: true)
+      setFrame(NSRect(x: visible.midX - w / 2, y: visible.midY - h / 2, width: w, height: h), display: true)
     }
-    panel.orderFrontRegardless()
-    panel.makeKey()
+    orderFrontRegardless()
+    makeKey()
   }
 
   // MARK: - Panel events → Dart
@@ -158,14 +160,14 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
     // Closing the main window hides it; the app keeps living in the menu bar.
-    mainFrame = panel.frame
+    mainFrame = frame
     channel.invokeMethod("closed", arguments: nil)
-    panel.orderOut(nil)
+    orderOut(nil)
     return false
   }
 
   func windowDidEndLiveResize(_ notification: Notification) {
-    if panel.styleMask.contains(.titled) { mainFrame = panel.frame }
+    if styleMask.contains(.titled) { mainFrame = frame }
   }
 
   // MARK: - Menu bar icon

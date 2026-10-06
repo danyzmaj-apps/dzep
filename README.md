@@ -40,7 +40,7 @@ supabase functions deploy device --no-verify-jwt
 
 ## Mac notes
 
-- The window is a **non-activating `NSPanel` created in code**: since macOS 14 a background app can't take focus from the frontmost one, and `.nonactivatingPanel` only works when set at creation, so the nib window just hosts the Flutter view's move into it.
+- The window is a **non-activating `NSPanel`**, declared so in `MainMenu.xib` (`nonactivatingPanel="YES"`): since macOS 14 a background app can't take focus from the frontmost one, and AppKit only honours `.nonactivatingPanel` when a window is created with it. It's hidden at launch; `awakeFromNib` shows it once at alpha 0 so Flutter starts its engine, then Dart picks the shape.
 - The popup stays mounted while hidden and reads 1/2/3/Esc through a global key handler, so a fast ⇧⌘Space-then-2 never lands before Flutter's first frame.
 - Not sandboxed (global hotkey, `~/.config` file, loopback server).
 
