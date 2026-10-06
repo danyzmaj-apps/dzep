@@ -54,18 +54,20 @@ class DzepApp extends StatelessWidget {
       child: Toaster(
         child: ListenableBuilder(
           listenable: app,
-          // The popup stays mounted when hidden so it can reset and take keys
-          // the moment the hotkey fires, before the next frame.
+          // The capture panel stays mounted when hidden so it can reset and
+          // take keys the moment the hotkey fires, before the next frame. It
+          // is the whole (transparent) popup window, or an overlay on top of
+          // the main window.
           // StackFit.expand: a hidden Offstage takes no size, which would
           // shrink the Stack (and the main window inside it) to nothing.
           builder: (context, _) => Stack(
             fit: StackFit.expand,
             children: [
-              Offstage(
-                offstage: app.mode != Mode.popup,
-                child: Popup(app: app),
-              ),
               if (app.mode == Mode.main) Positioned.fill(child: MainWindow(app: app)),
+              Offstage(
+                offstage: !app.captureVisible,
+                child: Popup(app: app, inMainWindow: app.mode == Mode.main),
+              ),
             ],
           ),
         ),

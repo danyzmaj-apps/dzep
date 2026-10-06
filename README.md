@@ -41,7 +41,10 @@ supabase functions deploy device --no-verify-jwt
 ## Mac notes
 
 - The window is a **non-activating `NSPanel`**, declared so in `MainMenu.xib` (`nonactivatingPanel="YES"`): since macOS 14 a background app can't take focus from the frontmost one, and AppKit only honours `.nonactivatingPanel` when a window is created with it. It's hidden at launch; `awakeFromNib` shows it once at alpha 0 so Flutter starts its engine, then Dart picks the shape.
-- The popup stays mounted while hidden and reads 1/2/3/Esc through a global key handler, so a fast ⇧⌘Space-then-2 never lands before Flutter's first frame.
+- **Window resizes are the enemy.** After any resize Flutter blocks the main thread until it has drawn a frame at the new size (up to 1 s), and Impeller crashes when resizes come back to back. So: the popup window is a fixed transparent 720×660 and Flutter animates the panel inside it; with the main window open the hotkey opens the same panel as an overlay inside it (no shape change); the remaining popup ↔ main switches are spaced ≥ 300 ms natively (latest request wins).
+- Flutter's engine reads "is the app visible" from NSApplication's occlusion state, which stays hidden for a non-activating panel ordered in at alpha 0; frames then stop. The window sends `AppLifecycleState.resumed` on `flutter/lifecycle` whenever it presents itself.
+- Hiding the window on purpose doesn't report a "blur" to Dart (a late blur would close a popup the next hotkey just opened).
+- The capture panel stays mounted while hidden and reads 1/2/3/Esc through a global key handler, so a fast ⇧⌘Space-then-2 never lands before Flutter's first frame.
 - Not sandboxed (global hotkey, `~/.config` file, loopback server).
 
 ## Terminal API (Mac)

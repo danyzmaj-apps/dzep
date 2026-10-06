@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:dzep/controller.dart';
 import 'package:dzep/idea.dart';
-import 'package:dzep/native.dart';
 import 'package:dzep/store.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
@@ -20,8 +19,11 @@ final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
 /// The ⇧⌘Space panel: title field focused, ↵ saves to Inbox and gets out of
 /// the way. Tab adds a description; the list shows recent or similar ideas.
 class Popup extends StatefulWidget {
-  const Popup({required this.app, super.key});
+  const Popup({required this.app, required this.inMainWindow, super.key});
   final AppController app;
+
+  /// Shown as an overlay over the main window rather than as the popup.
+  final bool inMainWindow;
 
   @override
   State<Popup> createState() => _PopupState();
@@ -32,7 +34,6 @@ class _PopupState extends State<Popup> {
   final _notes = TextEditingController();
   late final FocusNode _titleFocus = FocusNode(onKeyEvent: _onTitleKey);
   late final FocusNode _notesFocus = FocusNode(onKeyEvent: _onNotesKey);
-  final GlobalKey _panelKey = GlobalKey();
   bool _withNotes = false;
 
   /// Every open starts by choosing: 1 idea, 2 todo, 3 open the app.
@@ -42,7 +43,6 @@ class _PopupState extends State<Popup> {
   Kind _kind = Kind.idea;
   int _sel = -1;
   List<Idea> _shown = const [];
-  double _height = 0;
   int _session = -1;
 
   AppController get app => widget.app;
@@ -81,16 +81,6 @@ class _PopupState extends State<Popup> {
     if (mounted) setState(() {});
   }
 
-  void _reportHeight() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final h = _panelKey.currentContext?.size?.height;
-      if (h != null && h != _height) {
-        _height = h;
-        unawaited(Native.resizePopup(h));
-      }
-    });
-  }
-
   // ---------------------------------------------------------------- keys
 
   bool get _cmd => HardwareKeyboard.instance.isMetaPressed;
@@ -102,7 +92,7 @@ class _PopupState extends State<Popup> {
   /// Sees every key, whatever has focus: the chooser has no field to focus,
   /// and the window can take keys a frame before Flutter has rebuilt it.
   bool _onAnyKey(KeyEvent e) {
-    if (app.mode != Mode.popup || e is KeyUpEvent) return false;
+    if (!app.captureVisible || e is KeyUpEvent) return false;
     final k = e.logicalKey;
     if (_choosing) {
       if (k == LogicalKeyboardKey.digit1 || k == LogicalKeyboardKey.numpad1) {
@@ -110,7 +100,8 @@ class _PopupState extends State<Popup> {
       } else if (k == LogicalKeyboardKey.digit2 || k == LogicalKeyboardKey.numpad2) {
         _pick(Kind.todo);
       } else if (k == LogicalKeyboardKey.digit3 || k == LogicalKeyboardKey.numpad3) {
-        unawaited(app.openMain());
+        // Already in the main window: just close the overlay.
+        unawaited(widget.inMainWindow ? app.closePopup() : app.openMain());
       } else if (k == LogicalKeyboardKey.escape) {
         unawaited(app.closePopup());
       } else {
@@ -260,24 +251,75 @@ class _PopupState extends State<Popup> {
 
   @override
   Widget build(BuildContext context) {
-    _reportHeight();
     final s = store;
-    return Align(
-      alignment: Alignment.topCenter,
-      child: SingleChildScrollView(
-        physics: const NeverScrollableScrollPhysics(),
-        child: Container(
-          key: _panelKey,
-          decoration: BoxDecoration(
-            color: const Color(0xF517181D),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: C.line2),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [if (s == null) _locked() else if (_choosing) _chooser(s) else ..._capture(s), _bar(s)],
+    final stage = s == null ? 'locked' : (_choosing ? 'choose' : _kind.name);
+    // The window is a fixed, transparent 720×660 (no resizes, see
+    // MainFlutterWindow.swift); the panel sits at its top and animates its
+    // height between stages. A click on the empty area closes the popup,
+    // like a click anywhere else.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => unawaited(app.closePopup()),
+      child: ColoredBox(
+        // Over the main window: dim what's behind, like a sheet.
+        color: widget.inMainWindow ? const Color(0x8C000000) : Colors.transparent,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(20, widget.inMainWindow ? 64 : 4, 20, 40),
+            child: GestureDetector(
+              onTap: () {}, // clicks on the panel stay on the panel
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 680),
+                decoration: BoxDecoration(
+                  color: const Color(0xF517181D),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: C.line2),
+                  boxShadow: const [BoxShadow(color: Color(0x8C000000), blurRadius: 36, offset: Offset(0, 14))],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        // Stack the outgoing and incoming stages at the top, so
+                        // the size animation is the only thing that moves.
+                        layoutBuilder: (current, previous) =>
+                            Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween(begin: const Offset(0, .04), end: Offset.zero).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey(stage),
+                          child: s == null
+                              ? _locked()
+                              : _choosing
+                              ? _chooser(s)
+                              : Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: _capture(s),
+                                ),
+                        ),
+                      ),
+                      _bar(s),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),

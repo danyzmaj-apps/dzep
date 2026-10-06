@@ -11,9 +11,7 @@ class Native {
     _channel.setMethodCallHandler((call) async => onEvent(call.method));
   }
 
-  static Future<void> showPopup(double width, double height) =>
-      _channel.invokeMethod('showPopup', {'width': width, 'height': height});
-  static Future<void> resizePopup(double height) => _channel.invokeMethod('resizePopup', {'height': height});
+  static Future<void> showPopup() => _channel.invokeMethod('showPopup');
   static Future<void> showMain() => _channel.invokeMethod('showMain');
   static Future<void> hide() => _channel.invokeMethod('hide');
   static Future<void> quit() => _channel.invokeMethod('quit');

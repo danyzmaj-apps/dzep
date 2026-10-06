@@ -16,9 +16,19 @@ class AppController extends Session {
 
   Mode get mode => _mode;
   Mode _mode = Mode.hidden;
-  Mode _beforePopup = Mode.hidden;
 
-  /// Bumped on every popup open so it resets (focus, selection).
+  /// The capture panel shown over the main window (the hotkey while the main
+  /// window is open). Turning the main window into the popup and back is a
+  /// real window resize each way, and Flutter's renderer (Impeller) crashes
+  /// when those come quickly (hotkey spam), so the main window keeps its
+  /// shape and the same panel opens inside it.
+  bool get captureInMain => _captureInMain;
+  bool _captureInMain = false;
+
+  /// Whether the capture panel is on screen, in the popup or in the main window.
+  bool get captureVisible => _mode == Mode.popup || (_mode == Mode.main && _captureInMain);
+
+  /// Bumped on every capture open so it resets (focus, selection).
   int popupSession = 0;
 
   bool settingsOpen = false;
@@ -66,7 +76,7 @@ class AppController extends Session {
   void _onNative(String event) {
     switch (event) {
       case 'hotKey' || 'togglePopup':
-        unawaited(_mode == Mode.popup ? closePopup() : openPopup());
+        unawaited(captureVisible ? closePopup() : openPopup());
       case 'openMain':
         unawaited(openMain());
       case 'openSettings':
@@ -77,22 +87,29 @@ class AppController extends Session {
         if (_mode == Mode.popup) unawaited(hide());
       case 'closed':
         _mode = Mode.hidden;
+        _captureInMain = false;
         notifyListeners();
     }
   }
 
   Future<void> openPopup() async {
-    if (_mode != Mode.popup) _beforePopup = _mode;
-    _mode = Mode.popup;
     popupSession++;
+    if (_mode == Mode.main) {
+      _captureInMain = true;
+      notifyListeners();
+      await Native.showMain(); // already that shape: brings it forward, no resize
+      return;
+    }
+    _mode = Mode.popup;
     notifyListeners();
-    await Native.showPopup(680, 120);
+    await Native.showPopup();
   }
 
-  /// Esc / save: back to wherever the user was.
+  /// Esc / save / hotkey again: the popup hides, the in-window panel closes.
   Future<void> closePopup() async {
-    if (_beforePopup == Mode.main) {
-      await openMain();
+    if (_mode == Mode.main) {
+      _captureInMain = false;
+      notifyListeners();
     } else {
       await hide();
     }
@@ -100,13 +117,16 @@ class AppController extends Session {
 
   Future<void> openMain({String? select}) async {
     if (select != null) pendingSelect = select;
+    _captureInMain = false;
+    final wasMain = _mode == Mode.main;
     _mode = Mode.main;
     notifyListeners();
-    await Native.showMain();
+    if (!wasMain) await Native.showMain();
   }
 
   Future<void> hide() async {
     _mode = Mode.hidden;
+    _captureInMain = false;
     notifyListeners();
     await Native.hide();
   }
