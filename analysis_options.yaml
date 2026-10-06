@@ -7,6 +7,7 @@ analyzer:
   exclude:
     - build/**
     - macos/**
+    - ios/**
 
 linter:
   rules:

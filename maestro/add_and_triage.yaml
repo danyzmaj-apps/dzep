@@ -1,0 +1,22 @@
+# Signed-in iPhone app: add an idea with the + button, then move it to
+# Building from its detail page. Needs a signed-in session on the simulator.
+# Run: maestro test -e TS=$(date +%H%M%S) maestro/add_and_triage.yaml
+appId: com.danyzmaj.ideja
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Inbox"
+    timeout: 15000
+- tapOn: "New idea"
+- inputText: "Maestro idea ${TS}"
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Maestro idea ${TS}.*"
+    timeout: 5000
+- tapOn: "Maestro idea ${TS}.*"
+- tapOn: "Building"
+- tapOn: "Back"
+- tapOn: "Building"
+- assertVisible: "Maestro idea ${TS}.*"
+- tapOn: "Inbox"
+- assertNotVisible: "Maestro idea ${TS}.*"

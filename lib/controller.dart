@@ -1,29 +1,17 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:ideja/native.dart';
-import 'package:ideja/store.dart';
+import 'package:ideja/session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// What the one window is showing.
 enum Mode { hidden, popup, main }
 
-/// Auth, the signed-in user's [IdeaStore], the window mode and the hotkey.
-class AppController extends ChangeNotifier {
-  AppController(this.client, this._prefs, this.device);
+/// The Mac app: [Session] plus the window mode and the hotkey.
+class AppController extends Session {
+  AppController(super.client, this._prefs, super.device);
 
-  static const _redirect = 'ideja://login-callback';
-
-  final SupabaseClient client;
   final SharedPreferences _prefs;
-  final String device;
-
-  User? get user => _user;
-  User? _user;
-  IdeaStore? get store => _store;
-  IdeaStore? _store;
-  StreamSubscription<AuthState>? _auth;
 
   Mode get mode => _mode;
   Mode _mode = Mode.hidden;
@@ -41,66 +29,19 @@ class AppController extends ChangeNotifier {
   late HotKey _hotKey = _loadHotKey();
   bool hotKeyRegistered = false;
 
-  String? authError;
-
   Future<void> start() async {
     Native.listen(_onNative);
     hotKeyRegistered = await Native.setHotKey(_hotKey);
-    _auth = client.auth.onAuthStateChange.listen((s) => unawaited(_setUser(s.session?.user)));
-    await _setUser(client.auth.currentUser);
+    await startAuth();
     // Signed out: there's nothing to do but sign in, so say so.
-    if (_user == null) await openMain();
+    if (user == null) await openMain();
   }
 
-  // ---------------------------------------------------------------- auth
-
-  Future<void> _setUser(User? user) async {
-    if (user?.id == _user?.id) {
-      _user = user ?? _user;
-      return;
-    }
-    final wasSignedOut = _user == null;
-    await _store?.close();
-    _store = null;
-    _user = user;
-    if (user != null) {
-      _store = await IdeaStore.open(client, user.id, device);
-      if (wasSignedOut && _mode == Mode.main) settingsOpen = false;
-    }
-    notifyListeners();
-  }
-
-  Future<void> signIn() async {
-    authError = null;
-    notifyListeners();
-    try {
-      await client.auth.signInWithOAuth(
-        OAuthProvider.github,
-        redirectTo: _redirect,
-        authScreenLaunchMode: LaunchMode.externalApplication,
-      );
-    } on Object catch (e) {
-      authError = 'Could not start GitHub sign-in: $e';
-      notifyListeners();
-    }
-  }
-
+  @override
   Future<void> signOut() async {
     settingsOpen = false;
-    try {
-      await client.auth.signOut();
-    } on Object {
-      // Offline: the local session is gone all the same.
-    }
-    await _setUser(null);
+    await super.signOut();
   }
-
-  String get userName {
-    final meta = _user?.userMetadata ?? const {};
-    return (meta['user_name'] ?? meta['preferred_username'] ?? meta['name'] ?? _user?.email ?? 'you') as String;
-  }
-
-  String? get avatarUrl => _user?.userMetadata?['avatar_url'] as String?;
 
   // ---------------------------------------------------------------- window
 
@@ -182,12 +123,5 @@ class AppController extends ChangeNotifier {
     }
     notifyListeners();
     return ok;
-  }
-
-  @override
-  void dispose() {
-    unawaited(_auth?.cancel());
-    unawaited(_store?.close());
-    super.dispose();
   }
 }

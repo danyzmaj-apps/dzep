@@ -1,0 +1,24 @@
+# The widget's tap target: ideja://add opens the add sheet, keyboard up.
+appId: com.danyzmaj.ideja
+---
+- tapOn:
+    text: "Cancel"
+    optional: true
+- launchApp
+- extendedWaitUntil:
+    visible: "Inbox"
+    timeout: 15000
+- openLink: "ideja://add"
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "Save"
+    timeout: 5000
+- tapOn: "Drop an idea.*"
+- inputText: "From the widget ${TS}"
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "From the widget ${TS}.*"
+    timeout: 5000
+- assertNotVisible: "Save"

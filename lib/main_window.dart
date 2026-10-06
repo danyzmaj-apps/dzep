@@ -6,6 +6,7 @@ import 'package:ideja/controller.dart';
 import 'package:ideja/idea.dart';
 import 'package:ideja/native.dart';
 import 'package:ideja/popup.dart';
+import 'package:ideja/session.dart';
 import 'package:ideja/store.dart';
 import 'package:ideja/ui.dart';
 
@@ -38,7 +39,7 @@ class MainWindow extends StatelessWidget {
       color: C.win,
       child: Stack(
         children: [
-          if (store == null) SignInPage(app: app) else Library(app: app, store: store),
+          if (store == null) SignInPage(session: app) else Library(app: app, store: store),
           const Positioned(top: 0, left: 80, right: 0, child: _TitleDrag()),
           if (store != null && app.settingsOpen) SettingsSheet(app: app),
         ],
@@ -50,8 +51,8 @@ class MainWindow extends StatelessWidget {
 // ==================================================================== sign in
 
 class SignInPage extends StatelessWidget {
-  const SignInPage({required this.app, super.key});
-  final AppController app;
+  const SignInPage({required this.session, super.key});
+  final Session session;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -78,14 +79,18 @@ class SignInPage extends StatelessWidget {
           const SizedBox(height: 18),
           const Text('Ideja', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
-          const Text('Sign in to sync your ideas across all your Macs.', style: TextStyle(color: C.dim)),
+          const Text(
+            'Sign in to sync your ideas across your Mac and iPhone.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: C.dim),
+          ),
           const SizedBox(height: 26),
-          GithubButton(onPressed: () => unawaited(app.signIn())),
+          GithubButton(onPressed: () => unawaited(session.signIn())),
           const SizedBox(height: 16),
           Text(
-            app.authError ?? 'Required. Opens your browser once; you stay signed in after that.',
+            session.authError ?? 'Required. Opens your browser once; you stay signed in after that.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: app.authError == null ? C.dim2 : const Color(0xFFFCA5A5)),
+            style: TextStyle(fontSize: 11, color: session.authError == null ? C.dim2 : const Color(0xFFFCA5A5)),
           ),
         ],
       ),
