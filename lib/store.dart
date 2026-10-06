@@ -1,0 +1,242 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:ideja/idea.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
+
+enum SyncState { synced, syncing, offline }
+
+/// The signed-in user's ideas: a JSON file on this Mac that every edit lands
+/// in first (so capture never waits on the network), pushed to Supabase in
+/// the background and kept current from the other Macs by realtime + pulls.
+class IdeaStore extends ChangeNotifier {
+  IdeaStore._(this._client, this.userId, this._file, this.device);
+
+  static Future<IdeaStore> open(SupabaseClient client, String userId, String device) async {
+    final dir = await getApplicationSupportDirectory();
+    final store = IdeaStore._(client, userId, File('${dir.path}/ideas-$userId.json'), device);
+    await store._load();
+    store._start();
+    return store;
+  }
+
+  final SupabaseClient _client;
+  final String userId;
+  final String device;
+  final File _file;
+
+  final Map<String, Idea> _ideas = {};
+  DateTime? _cursor;
+  RealtimeChannel? _channel;
+  Timer? _pushTimer;
+  Timer? _saveTimer;
+  Timer? _pullTimer;
+  bool _pushing = false;
+  bool _closed = false;
+
+  SyncState get syncState => _syncState;
+  SyncState _syncState = SyncState.syncing;
+
+  /// Live ideas, newest first.
+  List<Idea> get ideas =>
+      _ideas.values.where((i) => !i.deleted).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// Every project name in use, sorted.
+  List<String> get projects => ({
+    for (final i in ideas)
+      if (i.project.isNotEmpty) i.project,
+  }.toList()..sort());
+
+  Idea? byId(String id) {
+    final i = _ideas[id];
+    return i == null || i.deleted ? null : i;
+  }
+
+  // ---------------------------------------------------------------- edits
+
+  Idea add({required String title, String notes = '', String project = ''}) {
+    final now = DateTime.now().toUtc();
+    final idea = Idea(
+      id: const Uuid().v4(),
+      title: title.trim(),
+      notes: notes.trim(),
+      project: project.trim(),
+      device: device,
+      createdAt: now,
+      updatedAt: now,
+    );
+    _ideas[idea.id] = idea;
+    _changed(idea);
+    return idea;
+  }
+
+  void update(Idea idea, {String? title, String? notes, String? project, Status? status}) {
+    if (title != null) idea.title = title;
+    if (notes != null) idea.notes = notes;
+    if (project != null) idea.project = project.trim();
+    if (status != null) idea.status = status;
+    _changed(idea);
+  }
+
+  void delete(Idea idea) {
+    idea.deletedAt = DateTime.now().toUtc();
+    _changed(idea);
+  }
+
+  void restore(Idea idea) {
+    idea.deletedAt = null;
+    _changed(idea);
+  }
+
+  void _changed(Idea idea) {
+    idea
+      ..dirty = true
+      ..rev += 1;
+    notifyListeners();
+    _scheduleSave();
+    _pushTimer?.cancel();
+    _pushTimer = Timer(const Duration(milliseconds: 600), _push);
+  }
+
+  // ---------------------------------------------------------------- disk
+
+  Future<void> _load() async {
+    if (!_file.existsSync()) return;
+    try {
+      final json = jsonDecode(await _file.readAsString()) as Map<String, dynamic>;
+      final cursor = json['cursor'] as String?;
+      _cursor = cursor == null ? null : DateTime.parse(cursor);
+      for (final raw in json['ideas'] as List<dynamic>) {
+        final idea = Idea.fromLocal(raw as Map<String, dynamic>);
+        _ideas[idea.id] = idea;
+      }
+    } on Object catch (e) {
+      // A damaged cache is only a cache: the server has everything synced.
+      debugPrint('Ideja: local cache unreadable ($e), starting from the server');
+      _cursor = null;
+      _ideas.clear();
+    }
+  }
+
+  void _scheduleSave() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 250), () => unawaited(_save()));
+  }
+
+  Future<void> _save() async {
+    final json = jsonEncode({
+      'cursor': _cursor?.toUtc().toIso8601String(),
+      'ideas': [for (final i in _ideas.values) i.toLocal()],
+    });
+    await _file.parent.create(recursive: true);
+    final tmp = File('${_file.path}.tmp');
+    await tmp.writeAsString(json, flush: true);
+    await tmp.rename(_file.path);
+  }
+
+  // ---------------------------------------------------------------- sync
+
+  void _start() {
+    _channel = _client
+        .channel('ideas-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'ideas',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
+          callback: (payload) {
+            if (payload.newRecord.isNotEmpty) _merge([payload.newRecord]);
+          },
+        )
+        .subscribe((status, _) {
+          // (Re)connected: catch up on anything missed while away.
+          if (status == RealtimeSubscribeStatus.subscribed) unawaited(syncNow());
+        });
+    _pullTimer = Timer.periodic(const Duration(minutes: 2), (_) => unawaited(syncNow()));
+    unawaited(syncNow());
+  }
+
+  Future<void> syncNow() async {
+    await _push();
+    await _pull();
+  }
+
+  Future<void> _pull() async {
+    try {
+      final rows = await _client
+          .from('ideas')
+          .select()
+          .gt('updated_at', (_cursor ?? DateTime.utc(2000)).toIso8601String())
+          .order('updated_at');
+      _merge(rows);
+      if (!_ideas.values.any((i) => i.dirty)) _setSync(SyncState.synced);
+    } on Object catch (e) {
+      debugPrint('Ideja: pull failed: $e');
+      _setSync(SyncState.offline);
+    }
+  }
+
+  void _merge(List<Map<String, dynamic>> rows) {
+    if (_closed || rows.isEmpty) return;
+    for (final row in rows) {
+      final incoming = Idea.fromServer(row);
+      final local = _ideas[incoming.id];
+      // Unpushed local edits win; the push that follows overwrites the server.
+      if (local == null || !local.dirty) _ideas[incoming.id] = incoming;
+      if (_cursor == null || incoming.updatedAt.isAfter(_cursor!)) _cursor = incoming.updatedAt;
+    }
+    notifyListeners();
+    _scheduleSave();
+  }
+
+  Future<void> _push() async {
+    if (_pushing || _closed) return;
+    final dirty = _ideas.values.where((i) => i.dirty).toList();
+    if (dirty.isEmpty) return;
+    _pushing = true;
+    _setSync(SyncState.syncing);
+    final revs = {for (final i in dirty) i.id: i.rev};
+    try {
+      final rows = await _client.from('ideas').upsert([for (final i in dirty) i.toServer()]).select();
+      for (final row in rows) {
+        final local = _ideas[row['id']];
+        if (local == null) continue;
+        local.updatedAt = DateTime.parse(row['updated_at'] as String);
+        // Edited again while this push was in flight: stays dirty for the next.
+        if (local.rev == revs[local.id]) local.dirty = false;
+      }
+      _scheduleSave();
+      _setSync(_ideas.values.any((i) => i.dirty) ? SyncState.syncing : SyncState.synced);
+    } on Object catch (e) {
+      debugPrint('Ideja: push failed: $e');
+      _setSync(SyncState.offline);
+      // Retry later; the edits are safe on disk.
+      _pushTimer?.cancel();
+      _pushTimer = Timer(const Duration(seconds: 20), _push);
+    } finally {
+      _pushing = false;
+    }
+    if (_ideas.values.any((i) => i.dirty) && _syncState != SyncState.offline) unawaited(_push());
+  }
+
+  void _setSync(SyncState s) {
+    if (s == _syncState) return;
+    _syncState = s;
+    notifyListeners();
+  }
+
+  /// Stops syncing and flushes the cache (sign-out, quit).
+  Future<void> close() async {
+    _closed = true;
+    _pushTimer?.cancel();
+    _pullTimer?.cancel();
+    _saveTimer?.cancel();
+    await _save();
+    final channel = _channel;
+    if (channel != null) await _client.removeChannel(channel);
+  }
+}

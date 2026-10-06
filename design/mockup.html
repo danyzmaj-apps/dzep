@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ideja — mockup</title>
+<style>
+  :root{
+    --win:#17181d; --side:#121317; --panel2:#1e2027; --line:#262933; --line2:#30343f;
+    --text:#e8e9ee; --dim:#8a8f9c; --dim2:#5c616e; --accent:#7c9cff; --sel:#262b3d; --ok:#4ade80; --warn:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font:13px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,sans-serif;color:var(--text);overflow:hidden;
+    background:radial-gradient(1400px 800px at 25% 0%,#2f3a5e 0,#161925 50%,#0b0c0f 100%)}
+  kbd{font:11px ui-monospace,Menlo,monospace;background:#262833;border:1px solid #363a47;border-bottom-width:2px;border-radius:5px;padding:0 5px;color:#cfd3dd}
+  button,input,textarea,select{font:inherit;color:inherit}
+  button{cursor:pointer}
+  ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:#2c2f3a;border-radius:8px}
+  mark{background:rgba(124,156,255,.18);color:#c7d2ff;border-radius:3px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block}.dot.pending{background:var(--warn)}.dot.off{background:#6b7280}
+  .sdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+  .chip{font-size:11px;padding:1px 7px;border-radius:999px;background:#22302a;color:#86efac;border:1px solid #2c4636;white-space:nowrap}
+  .av{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#7c9cff,#c084fc);display:grid;place-items:center;font-size:11px;font-weight:700;color:#111;flex:none}
+  .iconbtn{background:none;border:0;color:var(--dim);padding:4px 6px;border-radius:6px}.iconbtn:hover{background:#22252e;color:var(--text)}
+
+  .menubar{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;background:rgba(10,11,15,.55);backdrop-filter:blur(20px)}
+  .menubar .r{display:flex;gap:16px;align-items:center}
+  .mbicon{padding:1px 6px;border-radius:5px;cursor:pointer}.mbicon:hover,.mbicon.on{background:rgba(255,255,255,.15)}
+  .desktop{height:calc(100% - 26px);display:flex;align-items:center;justify-content:center;padding-bottom:50px}
+  .window{background:var(--win);border:1px solid var(--line2);border-radius:12px;box-shadow:0 40px 100px rgba(0,0,0,.6);overflow:hidden;display:none}
+  .window.on{display:flex}
+  .lights{display:flex;gap:8px;padding:14px 14px 0}
+  .lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+
+  /* ===== main window ===== */
+  #v-main{width:min(1160px,calc(100vw - 60px));height:min(740px,calc(100vh - 120px))}
+  .side{width:210px;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column}
+  .side .scroll{flex:1;overflow:auto;padding:10px 8px}
+  .navh{font-size:11px;color:var(--dim2);font-weight:600;padding:14px 10px 4px}
+  .nav{display:flex;align-items:center;gap:9px;padding:5px 10px;border-radius:6px;color:#c9ccd5;cursor:default}
+  .nav:hover{background:#1b1d24}.nav.on{background:var(--sel);color:#fff}
+  .nav .ic{width:16px;text-align:center;opacity:.85}
+  .nav .n{margin-left:auto;color:var(--dim2);font-size:11px}
+  .me{border-top:1px solid var(--line);padding:10px 12px;display:flex;align-items:center;gap:9px}
+  .me .who{flex:1;line-height:1.25}.me .who small{color:var(--dim);display:flex;align-items:center;gap:5px}
+
+  .mid{width:370px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+  .midhead{padding:16px 16px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line)}
+  .midhead h1{margin:0;font-size:16px;display:flex;align-items:baseline;gap:8px}.midhead h1 small{color:var(--dim);font-weight:400;font-size:12px}
+  .search{display:flex;align-items:center;gap:8px;background:#1d1f26;border:1px solid var(--line2);border-radius:8px;padding:6px 10px}
+  .search input{flex:1;background:none;border:0;outline:0}
+  .newrow{display:flex;align-items:center;gap:8px;padding:9px 16px;border-bottom:1px solid var(--line);color:var(--dim)}
+  .newrow input{flex:1;background:none;border:0;outline:0}
+  .newrow input::placeholder{color:var(--dim2)}
+  .rows{flex:1;overflow:auto}
+  .grp{font-size:11px;font-weight:600;color:var(--dim2);padding:12px 16px 4px;position:sticky;top:0;background:var(--win)}
+  .row{padding:9px 16px 9px 14px;border-left:2px solid transparent;cursor:default;display:flex;gap:10px}
+  .row:hover{background:#1b1d24}.row.on{background:var(--sel);border-left-color:var(--accent)}
+  .row .sdot{margin-top:6px}
+  .row .c{flex:1;min-width:0}
+  .row .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+  .row .s{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+  .row .m{margin-top:4px}
+  .row .w{color:var(--dim2);font-size:11px;white-space:nowrap}
+  .row.st-shipped .t,.row.st-dropped .t{color:var(--dim)}.row.st-dropped .t{text-decoration:line-through}
+  @keyframes flash{from{background:#24314a}}.row.fresh{animation:flash 1.6s ease-out}
+  .emptyl{padding:30px 16px;color:var(--dim);text-align:center}
+
+  .detail{flex:1;display:flex;flex-direction:column;min-width:0}
+  .dbar{display:flex;align-items:center;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);color:var(--dim)}
+  .dbar .sp{flex:1}
+  .dbody{flex:1;overflow:auto;padding:26px 34px}
+  .dtitle{width:100%;background:none;border:0;outline:0;font-size:22px;font-weight:650;letter-spacing:-.01em;padding:0;margin-bottom:14px}
+  .props{display:grid;grid-template-columns:80px 1fr;gap:10px 12px;align-items:center;margin-bottom:22px;font-size:12px}
+  .props .k{color:var(--dim)}
+  .seg{display:inline-flex;background:#1d1f26;border:1px solid var(--line2);border-radius:8px;padding:2px;gap:2px;flex-wrap:wrap}
+  .seg button{background:none;border:0;padding:3px 10px;border-radius:6px;color:var(--dim);display:flex;align-items:center;gap:6px}
+  .seg button.on{background:#2a2e3b;color:var(--text)}
+  .seg button kbd{font-size:10px;padding:0 4px;opacity:.6}
+  .sel2{background:#1d1f26;border:1px solid var(--line2);border-radius:7px;padding:3px 8px;outline:0}
+  .dnotes{width:100%;min-height:260px;background:none;border:0;outline:0;resize:none;font-size:14px;line-height:1.65;color:#d7dae2}
+  .dnotes::placeholder{color:var(--dim2)}
+  .dfoot{padding:8px 34px;border-top:1px solid var(--line);color:var(--dim2);font-size:11px;display:flex;gap:16px}
+  .dempty{flex:1;display:grid;place-items:center;color:var(--dim);text-align:center}
+  .dempty .big{font-size:40px;opacity:.5;margin-bottom:8px}
+  .dempty table{margin:14px auto 0;font-size:12px;text-align:left}.dempty td{padding:3px 8px}
+
+  /* ===== popup ===== */
+  .scrim{position:fixed;inset:0;display:none;align-items:flex-start;justify-content:center;padding-top:18vh;background:rgba(0,0,0,.18);z-index:50}
+  .scrim.on{display:flex}
+  .panel{width:680px;background:rgba(23,24,29,.94);backdrop-filter:blur(30px);border:1px solid var(--line2);border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;animation:pop .12s ease-out}
+  @keyframes pop{from{opacity:0;transform:scale(.97) translateY(-6px)}}
+  .composer{display:flex;gap:12px;padding:16px 18px 10px;align-items:flex-start}
+  .bulb{font-size:18px;line-height:26px;opacity:.85}
+  .fields{flex:1;min-width:0}
+  #ptitle{width:100%;background:none;border:0;outline:0;font-size:18px;line-height:26px;padding:0}
+  #ptitle::placeholder,#pdesc::placeholder{color:var(--dim2)}
+  #pdesc{display:none;width:100%;margin-top:8px;background:none;border:0;border-left:2px solid var(--line2);outline:0;padding:2px 0 2px 10px;resize:none;font-size:14px;line-height:1.55;color:#c9ccd5;min-height:44px;max-height:200px}
+  #pdesc:focus{border-left-color:var(--accent)}
+  .panel.withdesc #pdesc{display:block}
+  .pmeta{display:flex;gap:8px;padding:0 18px 12px 48px;align-items:center;min-height:10px;color:var(--dim2);font-size:12px}
+  .plist{max-height:280px;overflow:auto;border-top:1px solid var(--line)}
+  .psec{padding:8px 18px 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+  .pitem{display:flex;gap:10px;padding:7px 18px;align-items:center}
+  .pitem .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pitem .w{color:var(--dim);font-size:11px}
+  .pitem.sel{background:var(--sel)}
+  .pempty{padding:14px 18px;color:var(--dim)}
+  .pbar{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-top:1px solid var(--line);background:var(--panel2);color:var(--dim);font-size:12px}
+  .pbar .keys span{margin-left:12px}
+  .locked{padding:26px 24px;text-align:center;color:var(--dim)}
+  .locked b{color:var(--text);display:block;font-size:15px;margin-bottom:4px}
+
+  /* ===== sign in ===== */
+  #v-signin{width:420px;flex-direction:column}
+  .signin{padding:24px 46px 36px;text-align:center}
+  .logo{width:72px;height:72px;border-radius:18px;margin:0 auto 18px;background:linear-gradient(145deg,#2a3150,#141722);border:1px solid #3a4160;display:grid;place-items:center;font-size:36px}
+  .signin h2{margin:0 0 6px;font-size:20px}.signin p{color:var(--dim);margin:0 0 26px}
+  .gh{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:#f0f1f4;color:#111;border:0;border-radius:9px;padding:11px;font-weight:600;font-size:14px}
+  .gh:hover{background:#fff}
+  .gh.sm{width:auto;display:inline-flex;margin-top:14px;padding:8px 16px;font-size:13px}
+  .fine{margin-top:16px;color:var(--dim2);font-size:11px}
+
+  /* ===== settings ===== */
+  #v-settings{width:520px;flex-direction:column}
+  .stitle{text-align:center;font-weight:600;margin-top:-14px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+  .sbody{padding:4px 24px 24px}
+  .sgroup{margin-top:18px}.sgroup h4{margin:0 0 8px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+  .card{background:#1b1d23;border:1px solid var(--line);border-radius:10px}
+  .srow{display:flex;align-items:center;gap:12px;padding:11px 14px;border-top:1px solid var(--line)}.srow:first-child{border-top:0}
+  .srow .lbl{flex:1}.srow .lbl small{display:block;color:var(--dim);font-size:11px}
+  .tog{width:34px;height:20px;border-radius:999px;background:#3a3d48;position:relative;cursor:pointer;flex:none;transition:background .15s}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+  .tog.on{background:#3b82f6}.tog.on::after{left:16px}
+  .rec{min-width:120px;background:#24262e;border:1px solid var(--line2);border-radius:7px;padding:4px 10px}
+  .rec.rec-on{border-color:var(--accent);color:var(--accent)}
+  .btn{background:#262833;border:1px solid var(--line2);border-radius:7px;padding:4px 12px}.btn:hover{background:#2e313d}
+  .btn.danger{color:#fca5a5}
+
+  .review{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:4px;background:rgba(12,13,17,.85);border:1px solid var(--line2);border-radius:999px;padding:4px;z-index:60}
+  .review button{background:none;border:0;padding:6px 14px;border-radius:999px;color:var(--dim)}
+  .review button.on{background:#2a2e3b;color:var(--text)}
+  .review .lab{color:var(--dim2);padding:6px 6px 6px 12px;font-size:11px;align-self:center}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:#1f2a22;border:1px solid #2c4636;color:#bbf7d0;padding:8px 14px;border-radius:10px;opacity:0;transition:opacity .2s;z-index:70;display:flex;gap:12px;pointer-events:none}
+  .toast.on{opacity:1;pointer-events:auto}
+  .toast button{background:none;border:0;color:#fff;font-weight:600;text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="menubar"><b> Ideja</b><div class="r"><span class="mbicon" id="mbicon" title="Click or ⇧⌘Space">💡</span><span>Tue 6 Oct&nbsp; 14:32</span></div></div>
+
+<div class="desktop">
+  <!-- MAIN -->
+  <section class="window" id="v-main">
+    <div class="side">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="scroll" id="sidebar"></div>
+      <div class="me">
+        <div class="av">D</div>
+        <div class="who">danyzmaj<small><span class="dot" id="dot"></span><span id="syncText">Synced</span></small></div>
+        <button class="iconbtn" title="Settings ⌘," data-go="settings">⚙︎</button>
+      </div>
+    </div>
+    <div class="mid">
+      <div class="midhead">
+        <h1 id="viewTitle"></h1>
+        <div class="search"><span style="color:var(--dim)">⌕</span><input id="q" placeholder="Search"><kbd>/</kbd></div>
+      </div>
+      <div class="newrow"><span>＋</span><input id="newin" placeholder="New idea…  ↵  (⌘N)"></div>
+      <div class="rows" id="rows"></div>
+    </div>
+    <div class="detail" id="detail"></div>
+  </section>
+
+  <!-- SIGN IN -->
+  <section class="window" id="v-signin">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="signin">
+      <div class="logo">💡</div>
+      <h2>Ideja</h2>
+      <p>Sign in to sync your ideas across all your Macs.</p>
+      <button class="gh" data-signin><svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Continue with GitHub</button>
+      <div class="fine">Required. Opens your browser once; you stay signed in after that.</div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="window" id="v-settings">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="stitle">Settings</div>
+    <div class="sbody">
+      <div class="sgroup"><h4>Account</h4><div class="card">
+        <div class="srow"><div class="av">D</div><div class="lbl">danyzmaj<small id="acctInfo">Signed in with GitHub</small></div><button class="btn danger" id="signout">Sign out</button></div>
+      </div></div>
+      <div class="sgroup"><h4>General</h4><div class="card">
+        <div class="srow"><div class="lbl">Quick capture shortcut<small>Click, then press the new combo</small></div><button class="rec" id="rec">⇧⌘Space</button></div>
+        <div class="srow"><div class="lbl">Launch at login</div><div class="tog on"></div></div>
+      </div></div>
+      <div style="text-align:right;margin-top:18px"><button class="btn" data-go="main">Done</button></div>
+    </div>
+  </section>
+</div>
+
+<!-- POPUP -->
+<div class="scrim" id="scrim">
+  <div class="panel" id="panel">
+    <div id="pbody">
+      <div class="composer"><div class="bulb">💡</div>
+        <div class="fields">
+          <input id="ptitle" placeholder="Drop an idea…  @project" autocomplete="off">
+          <textarea id="pdesc" placeholder="Description (optional)"></textarea>
+        </div>
+      </div>
+      <div class="pmeta" id="pmeta"></div>
+      <div class="plist" id="plist"></div>
+    </div>
+    <div class="locked" id="plocked" style="display:none">
+      <b>Sign in to start dropping ideas</b>Ideas are stored in your account, so every Mac you sign in on sees the same list.
+      <br><button class="gh sm" data-signin>Continue with GitHub</button>
+    </div>
+    <div class="pbar">
+      <div style="display:flex;align-items:center;gap:6px"><span class="dot" id="pdot"></span><span id="psync">Synced</span></div>
+      <div class="keys" id="pkeys"></div>
+    </div>
+  </div>
+</div>
+
+<div class="review">
+  <span class="lab">MOCKUP</span>
+  <button data-go="main" class="on">Main window</button>
+  <button data-go="popup">Popup <kbd id="hkLabel">⇧⌘Space</kbd> / <kbd>⌥Space</kbd></button>
+  <button data-go="settings">Settings</button>
+  <button id="signoutDemo">Signed out</button>
+  <button id="remote" title="Simulates realtime sync from another signed-in machine">＋ idea from Mac mini</button>
+</div>
+<div class="toast" id="toast"><span id="toastText"></span><button id="toastUndo" style="display:none">Undo</button></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const STATUSES=[['inbox','Inbox','#8b93a7','📥'],['building','Building','#fbbf24','🔨'],['shipped','Shipped','#4ade80','🚀'],['dropped','Dropped','#5b606c','🗑']];
+const ST=Object.fromEntries(STATUSES.map(s=>[s[0],{name:s[1],color:s[2],ic:s[3]}]));
+const PROJECTS=['danyzmaj-server','danyzmaj-site','holdup','hopjar','krug','mychat','pixelzoo','platno','ritam','shipyard','vedro'];
+const H=3600e3,D=24*H,now=Date.now();
+let seq=100;
+const mk=(title,notes,project,status,ago,device='MacBook Pro')=>({id:++seq,title,notes,project,status,at:now-ago,upd:now-ago,device});
+let ideas=[
+  mk('Garmin watchface showing next calendar block','Pull from danyzmaj-server, cache on the phone side.\nComplication: minutes until next meeting.','danyzmaj-server','inbox',40*60e3),
+  mk('Metronome that adapts to how sloppy you play','Listen via mic, detect drift, nudge tempo instead of hard clicking.','ritam','inbox',5*H,'Mac mini'),
+  mk('git log → weekly changelog tweet','Tiny CLI. Group by conventional commit type, summarise, copy to clipboard.','','inbox',9*H),
+  mk('Pets visiting each other across users','Async visits: your pet shows up in a friend’s zoo for an hour, leaves a gift.','pixelzoo','building',1.1*D,'Mac mini'),
+  mk('Shared vedro bucket list with friends','Swipe to vote, top 3 bubble up every Sunday.','vedro','inbox',1.4*D),
+  mk('Preview environments per PR','Spin up on label, tear down on merge. Post URL as PR comment.','shipyard','inbox',2.5*D),
+  mk('Infinite canvas with code cells','Like tldraw but cells run JS. Export to a single html.','platno','building',5*D),
+  mk('“Are you sure?” delay for impulse buys','Browser extension, 24h cooldown list.','holdup','shipped',9*D),
+  mk('Hammerspoon spoon for per-app keyboard layouts','macOS already does this (Input Sources → switch automatically).','','dropped',12*D),
+  mk('Ideja itself','Hotkey popup + main window. You are looking at it.','','building',0.2*H),
+];
+let signedIn=true,view={kind:'status',id:'inbox'},selId=null,query='',current='main',freshId=null;
+let hotkey={meta:true,shift:true,alt:false,ctrl:false,code:'Space'};
+
+/* helpers */
+function ago(t){const s=(Date.now()-t)/1e3;if(s<60)return'now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d'}
+function fmt(t){return new Date(t).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+function group(t){const a=new Date(t),b=new Date();a.setHours(0,0,0,0);b.setHours(0,0,0,0);const d=(b-a)/D;return d<1?'Today':d<2?'Yesterday':d<7?'This week':'Earlier'}
+function hl(text,q){let h=esc(text);for(const w of q.split(/\s+/).filter(w=>w.length>1))h=h.replace(new RegExp('('+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','ig'),'<mark>$1</mark>');return h}
+function matches(i,q){const w=q.toLowerCase().split(/\s+/).filter(Boolean);const hay=(i.title+' '+i.notes+' @'+i.project).toLowerCase();return w.every(x=>hay.includes(x))}
+function inView(i,v=view){if(v.kind==='project')return i.project===v.id;if(v.id==='all')return true;return i.status===v.id}
+function visible(){return ideas.filter(i=>inView(i)&&matches(i,query)).sort((a,b)=>b.at-a.at)}
+let tt;function toast(t,undo){$('toastText').textContent=t;const u=$('toastUndo');u.style.display=undo?'':'none';u.onclick=()=>{undo();$('toast').classList.remove('on')};$('toast').classList.add('on');clearTimeout(tt);tt=setTimeout(()=>$('toast').classList.remove('on'),undo?4000:1600)}
+function sync(){for(const d of['dot','pdot'])$(d).classList.add('pending');$('syncText').textContent=$('psync').textContent='Syncing…';
+  setTimeout(()=>{for(const d of['dot','pdot'])$(d).classList.remove('pending');$('syncText').textContent=$('psync').textContent='Synced'},700)}
+function touch(i){i.upd=Date.now();sync()}
+
+/* sidebar */
+function renderSidebar(){
+  const cnt=v=>ideas.filter(i=>inView(i,v)).length;
+  const nav=(v,ic,name)=>`<div class="nav${view.kind===v.kind&&view.id===v.id?' on':''}" data-k="${v.kind}" data-id="${esc(v.id)}"><span class="ic">${ic}</span>${esc(name)}<span class="n">${cnt(v)||''}</span></div>`;
+  let h=nav({kind:'status',id:'inbox'},'📥','Inbox')+nav({kind:'status',id:'all'},'☰','All ideas');
+  h+='<div class="navh">STATUS</div>'+STATUSES.slice(1).map(s=>nav({kind:'status',id:s[0]},`<span class="sdot" style="background:${s[2]}"></span>`,s[1])).join('');
+  const projs=[...new Set(ideas.map(i=>i.project).filter(Boolean))].sort();
+  h+='<div class="navh">PROJECTS</div>'+projs.map(p=>nav({kind:'project',id:p},'▢',p)).join('');
+  $('sidebar').innerHTML=h;
+}
+$('sidebar').onclick=e=>{const n=e.target.closest('.nav');if(!n)return;view={kind:n.dataset.k,id:n.dataset.id};selId=visible()[0]?.id??null;renderAll()};
+
+/* list */
+function viewName(){if(view.kind==='project')return'@'+view.id;return view.id==='all'?'All ideas':ST[view.id].name}
+function renderList(){
+  const v=visible();
+  $('viewTitle').innerHTML=`${esc(viewName())} <small>${v.length} idea${v.length===1?'':'s'}</small>`;
+  if(!v.length){$('rows').innerHTML=`<div class="emptyl">${query?'No matches.':view.id==='inbox'?'Inbox zero 🎉<br><small>New ideas from ⇧⌘Space land here.</small>':'Nothing here yet.'}</div>`;return}
+  let h='',g=null;
+  for(const i of v){
+    const gg=group(i.at);if(gg!==g){h+=`<div class="grp">${gg}</div>`;g=gg}
+    h+=`<div class="row st-${i.status}${i.id===selId?' on':''}${i.id===freshId?' fresh':''}" data-id="${i.id}">
+      <span class="sdot" style="background:${ST[i.status].color}" title="${ST[i.status].name}"></span>
+      <div class="c"><div class="t">${hl(i.title||'Untitled',query)}</div>
+      ${i.notes?`<div class="s">${hl(i.notes.split('\n')[0],query)}</div>`:''}
+      ${i.project?`<div class="m"><span class="chip">@${esc(i.project)}</span></div>`:''}</div>
+      <span class="w">${ago(i.at)}</span></div>`;
+  }
+  $('rows').innerHTML=h;freshId=null;
+  $('rows').querySelector('.row.on')?.scrollIntoView({block:'nearest'});
+}
+$('rows').onclick=e=>{const r=e.target.closest('.row');if(r){selId=+r.dataset.id;renderList();renderDetail()}};
+
+/* detail */
+function renderDetail(){
+  const i=ideas.find(x=>x.id===selId),d=$('detail');
+  if(!i){d.innerHTML=`<div class="dempty"><div><div class="big">💡</div>Select an idea<table>
+    <tr><td><kbd>⇧⌘Space</kbd></td><td>quick capture from anywhere</td></tr><tr><td><kbd>⌘N</kbd></td><td>new idea here</td></tr>
+    <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>move</td></tr><tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>set status</td></tr></table></div></div>`;return}
+  d.innerHTML=`<div class="dbar"><span>${esc(viewName())}</span><span>›</span><span style="color:var(--text)">${esc(i.title.slice(0,40)||'Untitled')}</span><span class="sp"></span>
+      <button class="iconbtn" id="dcopy" title="Copy as Markdown">⧉</button><button class="iconbtn" id="ddel" title="Delete (⌫)">🗑</button></div>
+    <div class="dbody">
+      <input class="dtitle" id="dtitle" placeholder="Untitled idea">
+      <div class="props">
+        <span class="k">Status</span><div class="seg" id="dseg">${STATUSES.map((s,k)=>`<button data-s="${s[0]}" class="${i.status===s[0]?'on':''}"><span class="sdot" style="background:${s[2]}"></span>${s[1]}<kbd>${k+1}</kbd></button>`).join('')}</div>
+        <span class="k">Project</span><div><select class="sel2" id="dproj"><option value="">— none —</option>${PROJECTS.map(p=>`<option${p===i.project?' selected':''}>${p}</option>`).join('')}</select></div>
+      </div>
+      <textarea class="dnotes" id="dnotes" placeholder="Description: context, links, how it could work…"></textarea>
+    </div>
+    <div class="dfoot"><span>Added ${fmt(i.at)} on ${esc(i.device)}</span><span>Edited ${ago(i.upd)} ago</span></div>`;
+  $('dtitle').value=i.title;$('dnotes').value=i.notes;
+  $('dtitle').oninput=e=>{i.title=e.target.value;touch(i);renderList()};
+  $('dtitle').onkeydown=e=>{if(e.key==='Enter'||e.key==='ArrowDown'){e.preventDefault();$('dnotes').focus()}};
+  $('dnotes').oninput=e=>{i.notes=e.target.value;touch(i);renderList()};
+  $('dproj').onchange=e=>{i.project=e.target.value;touch(i);renderAll()};
+  $('dseg').onclick=e=>{const b=e.target.closest('button');if(b)setStatus(i,b.dataset.s)};
+  $('ddel').onclick=()=>del(i);
+  $('dcopy').onclick=()=>{navigator.clipboard?.writeText(`# ${i.title}\n\n${i.notes}`);toast('Copied as Markdown')};
+}
+function setStatus(i,s){i.status=s;touch(i);toast(`${ST[s].ic} ${ST[s].name}`);renderAll()}
+function del(i){const idx=ideas.indexOf(i),v=visible(),pos=v.indexOf(i);ideas.splice(idx,1);selId=(v[pos+1]||v[pos-1])?.id??null;renderAll();sync();
+  toast('Idea deleted',()=>{ideas.splice(idx,0,i);selId=i.id;renderAll()})}
+function renderAll(){renderSidebar();renderList();renderDetail()}
+
+/* add */
+function parseProject(t){const m=t.match(/(^|\s)@([\w-]+)/);return{project:m?m[2]:'',text:t.replace(/(^|\s)@[\w-]+/g,'$1').replace(/\s+/g,' ').trim()}}
+function addIdea(rawTitle,notes=''){
+  const{project,text}=parseProject(rawTitle);notes=notes.trim();if(!text&&!notes)return null;
+  const i={id:++seq,title:text||notes.split('\n')[0],notes:text?notes:notes.split('\n').slice(1).join('\n').trim(),
+    project:project||(view.kind==='project'?view.id:''),status:'inbox',at:Date.now(),upd:Date.now(),device:'MacBook Pro'};
+  ideas.unshift(i);sync();return i;
+}
+$('newin').onkeydown=e=>{
+  if(e.key==='Enter'){const i=addIdea(e.target.value);if(i){e.target.value='';if(view.kind==='status'&&view.id!=='all'&&view.id!=='inbox')view={kind:'status',id:'inbox'};selId=i.id;renderAll();$('dnotes').focus()}}
+  if(e.key==='Escape')e.target.blur();
+};
+$('q').oninput=e=>{query=e.target.value;const v=visible();if(!v.some(i=>i.id===selId))selId=v[0]?.id??null;renderList();renderDetail()};
+$('q').onkeydown=e=>{if(e.key==='Escape'){e.target.value='';query='';renderAll();e.target.blur()}if(e.key==='Enter'||e.key==='ArrowDown'){e.preventDefault();e.target.blur()}};
+
+/* popup */
+let psel=-1,pvis=[];
+const popOn=()=>$('scrim').classList.contains('on');
+const KEYS_TITLE='<span><kbd>↵</kbd> save</span><span><kbd>⌘↵</kbd> save &amp; stay</span><span><kbd>⇥</kbd> description</span><span><kbd>↓</kbd> browse</span><span><kbd>esc</kbd> hide</span>';
+const KEYS_DESC='<span><kbd>↵</kbd> newline</span><span><kbd>⌘↵</kbd> save</span><span><kbd>⇧⇥</kbd> back to title</span><span><kbd>esc</kbd> hide</span>';
+function popOpen(){
+  $('scrim').classList.add('on');$('mbicon').classList.add('on');
+  $('pbody').style.display=signedIn?'':'none';$('plocked').style.display=signedIn?'none':'';
+  $('pdot').className='dot'+(signedIn?'':' off');$('psync').textContent=signedIn?'Synced':'Signed out';
+  $('pkeys').innerHTML=signedIn?KEYS_TITLE:'<span><kbd>esc</kbd> hide</span>';
+  if(signedIn){psel=-1;renderPopup();setTimeout(()=>$('ptitle').focus())}
+}
+function popClose(){$('scrim').classList.remove('on');$('mbicon').classList.remove('on')}
+function renderPopup(){
+  const raw=$('ptitle').value,{project,text}=parseProject(raw);
+  let m=project?`<span class="chip">@${esc(project)}</span>`:'';
+  const ac=raw.match(/@([\w-]*)$/);
+  if(ac){const s=PROJECTS.filter(x=>x.startsWith(ac[1])).slice(0,4);if(s.length)m+=` tab → ${s.map(esc).join(' · ')}`}
+  else if(!$('panel').classList.contains('withdesc')&&text)m+=' <kbd>⇥</kbd> add description';
+  $('pmeta').innerHTML=m;
+  const w=text.toLowerCase().split(/\s+/).filter(x=>x.length>2);
+  pvis=(w.length?ideas.filter(i=>w.some(x=>(i.title+' '+i.notes).toLowerCase().includes(x))):ideas.slice().sort((a,b)=>b.at-a.at)).slice(0,7);
+  $('plist').innerHTML=`<div class="psec">${w.length?pvis.length+' similar':'Recent'}</div>`+(pvis.length?pvis.map((i,k)=>
+    `<div class="pitem${k===psel?' sel':''}" data-k="${k}"><span class="sdot" style="background:${ST[i.status].color}"></span><span class="t">${hl(i.title,w.join(' '))}</span>${i.project?`<span class="chip">@${esc(i.project)}</span>`:''}<span class="w">${ago(i.at)}</span></div>`).join('')
+    :'<div class="pempty">Nothing similar. Press ↵ to save it.</div>');
+  $('plist').querySelector('.sel')?.scrollIntoView({block:'nearest'});
+}
+function popSave(stay){
+  const i=addIdea($('ptitle').value,$('pdesc').value);if(!i)return;
+  $('ptitle').value='';$('pdesc').value='';$('panel').classList.remove('withdesc');
+  renderAll();renderPopup();toast('Saved to Inbox ✓');
+  if(stay)$('ptitle').focus();else popClose();
+}
+function openInApp(i){popClose();show('main');query='';$('q').value='';if(i){view={kind:'status',id:'all'};selId=i.id}renderAll()}
+$('ptitle').oninput=()=>{psel=-1;renderPopup()};
+$('ptitle').onkeydown=e=>{
+  const t=e.target;
+  if(e.key==='Tab'&&!e.shiftKey){e.preventDefault();
+    const m=t.value.match(/@([\w-]*)$/);const s=m&&PROJECTS.find(x=>x.startsWith(m[1]));
+    if(s){t.value=t.value.slice(0,t.value.length-m[1].length)+s+' ';renderPopup()}
+    else{$('panel').classList.add('withdesc');$('pdesc').focus();renderPopup()}return}
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='o'){e.preventDefault();openInApp(pvis[psel]);return}
+  if(e.key==='Enter'&&psel<0){e.preventDefault();popSave(e.metaKey||e.ctrlKey);return}
+  if(e.key==='ArrowDown'&&pvis.length){e.preventDefault();psel=Math.min(psel+1,pvis.length-1);renderPopup();return}
+  if(e.key==='ArrowUp'&&psel>=0){e.preventDefault();psel--;renderPopup();return}
+  if(e.key==='Enter'&&psel>=0){e.preventDefault();openInApp(pvis[psel]);return}
+  if(e.key==='Escape'){e.preventDefault();if(psel>=0){psel=-1;renderPopup()}else popClose()}
+};
+$('pdesc').oninput=()=>{const t=$('pdesc');t.style.height='auto';t.style.height=t.scrollHeight+'px'};
+$('pdesc').onkeydown=e=>{
+  if(e.key==='Tab'&&e.shiftKey){e.preventDefault();$('ptitle').focus();if(!$('pdesc').value.trim())$('panel').classList.remove('withdesc');renderPopup();return}
+  if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();popSave(false);return}
+  if(e.key==='Escape'){e.preventDefault();popClose()}
+};
+$('pdesc').onfocus=()=>{$('pkeys').innerHTML=KEYS_DESC};
+$('pdesc').onblur=()=>{if(signedIn)$('pkeys').innerHTML=KEYS_TITLE};
+$('plist').onclick=e=>{const it=e.target.closest('.pitem');if(it)openInApp(pvis[+it.dataset.k])};
+$('scrim').onclick=e=>{if(e.target===$('scrim'))popClose()};
+$('mbicon').onclick=()=>popOn()?popClose():popOpen();
+
+/* views + auth */
+function show(v){
+  if(v==='popup')return popOpen();
+  if(!signedIn&&v!=='signin')v='signin';
+  current=v;popClose();
+  document.querySelectorAll('.window').forEach(w=>w.classList.toggle('on',w.id==='v-'+v));
+  document.querySelectorAll('.review [data-go]').forEach(b=>b.classList.toggle('on',b.dataset.go===v));
+  $('signoutDemo').classList.toggle('on',v==='signin');
+  if(v==='main')renderAll();
+  if(v==='settings')$('acctInfo').textContent=`Signed in with GitHub · ${ideas.length} ideas synced`;
+}
+function signOut(){signedIn=false;show('signin');toast('Signed out')}
+document.addEventListener('click',e=>{
+  const g=e.target.closest('[data-go]');if(g)return show(g.dataset.go);
+  if(e.target.closest('[data-signin]')){signedIn=true;show('main');toast(`Signed in as @danyzmaj · ${ideas.length} ideas synced`)}
+});
+$('signout').onclick=signOut;
+$('signoutDemo').onclick=()=>signedIn?signOut():show('signin');
+const REMOTE=['Status bar widget for Supabase usage','Dotfiles diff viewer between my two Macs','Kitty theme that follows macOS accent color'];
+$('remote').onclick=()=>{
+  if(!signedIn)return toast('Sign in first');
+  const i={id:++seq,title:REMOTE.shift()||'Another idea from the Mac mini',notes:'',project:'',status:'inbox',at:Date.now(),upd:Date.now(),device:'Mac mini'};
+  ideas.unshift(i);freshId=i.id;if(current==='main')renderAll();if(popOn())renderPopup();toast('New idea from Mac mini')};
+document.querySelectorAll('.tog').forEach(t=>t.onclick=()=>t.classList.toggle('on'));
+let recording=false;
+$('rec').onclick=()=>{recording=true;$('rec').textContent='Press keys…';$('rec').classList.add('rec-on')};
+
+/* keys */
+const isHotkey=e=>(e.code===hotkey.code&&e.metaKey===hotkey.meta&&e.shiftKey===hotkey.shift&&e.altKey===hotkey.alt&&e.ctrlKey===hotkey.ctrl)||(e.altKey&&e.code==='Space'&&!e.metaKey);
+document.addEventListener('keydown',e=>{
+  if(recording){
+    if(['Meta','Shift','Alt','Control'].includes(e.key))return;
+    e.preventDefault();recording=false;
+    const label=(e.ctrlKey?'⌃':'')+(e.altKey?'⌥':'')+(e.shiftKey?'⇧':'')+(e.metaKey?'⌘':'')+(e.code==='Space'?'Space':e.key.toUpperCase());
+    hotkey={meta:e.metaKey,shift:e.shiftKey,alt:e.altKey,ctrl:e.ctrlKey,code:e.code};
+    $('rec').textContent=$('hkLabel').textContent=label;$('rec').classList.remove('rec-on');return}
+  if(isHotkey(e)){e.preventDefault();popOn()?popClose():popOpen();return}
+  if(popOn()||current!=='main')return;
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='n'){e.preventDefault();$('newin').focus();return}
+  if((e.metaKey||e.ctrlKey)&&e.key===','){e.preventDefault();show('settings');return}
+  if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){if(e.key==='Escape')document.activeElement.blur();return}
+  const v=visible(),pos=v.findIndex(i=>i.id===selId),cur=v[pos];
+  if(e.key==='/'){e.preventDefault();$('q').focus()}
+  else if(e.key==='j'||e.key==='ArrowDown'){e.preventDefault();if(v.length){selId=v[Math.min(pos+1,v.length-1)].id;renderList();renderDetail()}}
+  else if(e.key==='k'||e.key==='ArrowUp'){e.preventDefault();if(v.length){selId=v[Math.max(pos-1,0)].id;renderList();renderDetail()}}
+  else if(cur&&/^[1-4]$/.test(e.key))setStatus(cur,STATUSES[+e.key-1][0]);
+  else if(cur&&(e.key==='Backspace'||e.key==='Delete')){e.preventDefault();del(cur)}
+  else if(cur&&e.key==='Enter'){e.preventDefault();$('dtitle').focus()}
+});
+
+selId=visible()[0]?.id??null;
+show('main');
+setInterval(()=>{if(current==='main')renderList()},60000);
+</script>
+</body>
+</html>
