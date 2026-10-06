@@ -14,6 +14,8 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Džep</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -34,10 +36,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.danyzmaj.ideja</string>
+			<string>com.danyzmaj.dzep</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>ideja</string>
+				<string>dzep</string>
 			</array>
 		</dict>
 	</array>

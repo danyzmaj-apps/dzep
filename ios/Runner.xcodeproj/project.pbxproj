@@ -10,16 +10,18 @@
 		0D8A2CC3F8EBCB30E3060484 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F6AAE2D3AE02F294270C2A9D /* SwiftUI.framework */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		183FC9797C99AE135BEB7429 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 770E96D4F039B2FC6387DC94 /* WidgetKit.framework */; };
+		2911FC697F720799C277815A /* DzepShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F282ABC65C3976B71350A6FA /* DzepShared.swift */; };
 		2A4EF77519D735760060E234 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 271103C8B51654A058C807AB /* Pods_Runner.framework */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
-		4C9DA3284460AAB68B74BF5F /* IdejaWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DA086895D1496E904500F046 /* IdejaWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		4C9DA3284460AAB68B74BF5F /* DzepWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DA086895D1496E904500F046 /* DzepWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
-		97514C1BAA21D2DA5D20CDE3 /* IdejaWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E38265C13E6F0BF70250A40 /* IdejaWidget.swift */; };
+		97514C1BAA21D2DA5D20CDE3 /* DzepWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E38265C13E6F0BF70250A40 /* DzepWidget.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		A22F99F5DB1A0C87B20A98C0 /* DzepShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F282ABC65C3976B71350A6FA /* DzepShared.swift */; };
 		CD6FCE96FA3B4AF969E38283 /* AddIdeaIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73FC57645BB2B64188AE6591 /* AddIdeaIntent.swift */; };
 		D4D28887640318B87505ACB3 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
 		F52923C8703C13E38558B605 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E6DCE7634C573C852A2FA7F /* Pods_RunnerTests.framework */; };
@@ -38,7 +40,7 @@
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 77C5320EB1F31192F8445E90;
-			remoteInfo = IdejaWidget;
+			remoteInfo = DzepWidget;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -59,7 +61,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				4C9DA3284460AAB68B74BF5F /* IdejaWidget.appex in Embed Foundation Extensions */,
+				4C9DA3284460AAB68B74BF5F /* DzepWidget.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -71,13 +73,14 @@
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
 		271103C8B51654A058C807AB /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		2B85076E99CD9481182D8DB7 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
+		2E1CFE68F9BBE39C089CA7F8 /* Runner.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		2E6DCE7634C573C852A2FA7F /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		40206ADEC13E3989BEE81514 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		47DE70D6EBC39F343AEFC816 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
-		5E38265C13E6F0BF70250A40 /* IdejaWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IdejaWidget.swift; sourceTree = "<group>"; };
+		5E38265C13E6F0BF70250A40 /* DzepWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DzepWidget.swift; sourceTree = "<group>"; };
 		6B8990F53146E8DBFC4E1462 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		73FC57645BB2B64188AE6591 /* AddIdeaIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AddIdeaIntent.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -95,8 +98,10 @@
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B04F24C543C64395BA257B95 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		B07F5FDC52D9D055C579F441 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		D649B0C14B0E29605AC57344 /* DzepWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = DzepWidget.entitlements; sourceTree = "<group>"; };
 		D7F963ECF0CF4A09CDBB1DD3 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
-		DA086895D1496E904500F046 /* IdejaWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = IdejaWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		DA086895D1496E904500F046 /* DzepWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DzepWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F282ABC65C3976B71350A6FA /* DzepShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DzepShared.swift; sourceTree = "<group>"; };
 		F6AAE2D3AE02F294270C2A9D /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -138,14 +143,15 @@
 			path = RunnerTests;
 			sourceTree = "<group>";
 		};
-		5A001806F2B94C0CE1E3E384 /* IdejaWidget */ = {
+		5A001806F2B94C0CE1E3E384 /* DzepWidget */ = {
 			isa = PBXGroup;
 			children = (
-				5E38265C13E6F0BF70250A40 /* IdejaWidget.swift */,
+				5E38265C13E6F0BF70250A40 /* DzepWidget.swift */,
 				84F37C0AC7B09835A57B155E /* Info.plist */,
+				D649B0C14B0E29605AC57344 /* DzepWidget.entitlements */,
 			);
-			name = IdejaWidget;
-			path = IdejaWidget;
+			name = DzepWidget;
+			path = DzepWidget;
 			sourceTree = "<group>";
 		};
 		67F06F5AD4825B909C575A20 /* Pods */ = {
@@ -201,8 +207,9 @@
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				942A21629388B061F3A6AFD8 /* Frameworks */,
-				5A001806F2B94C0CE1E3E384 /* IdejaWidget */,
+				5A001806F2B94C0CE1E3E384 /* DzepWidget */,
 				67F06F5AD4825B909C575A20 /* Pods */,
+				A874B4B61E4E84133B640F91 /* Shared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -211,7 +218,7 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
-				DA086895D1496E904500F046 /* IdejaWidget.appex */,
+				DA086895D1496E904500F046 /* DzepWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -229,8 +236,18 @@
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				73FC57645BB2B64188AE6591 /* AddIdeaIntent.swift */,
+				2E1CFE68F9BBE39C089CA7F8 /* Runner.entitlements */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		A874B4B61E4E84133B640F91 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				F282ABC65C3976B71350A6FA /* DzepShared.swift */,
+			);
+			name = Shared;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -255,9 +272,9 @@
 			productReference = 331C8081294A63A400263BE5 /* RunnerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		77C5320EB1F31192F8445E90 /* IdejaWidget */ = {
+		77C5320EB1F31192F8445E90 /* DzepWidget */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A09BEAEF0AA12A37FD6B0650 /* Build configuration list for PBXNativeTarget "IdejaWidget" */;
+			buildConfigurationList = A09BEAEF0AA12A37FD6B0650 /* Build configuration list for PBXNativeTarget "DzepWidget" */;
 			buildPhases = (
 				7DD8CCEF1F968B5F4DC79A81 /* Sources */,
 				B7930D3A7F5064A68B6B1551 /* Frameworks */,
@@ -267,9 +284,9 @@
 			);
 			dependencies = (
 			);
-			name = IdejaWidget;
-			productName = IdejaWidget;
-			productReference = DA086895D1496E904500F046 /* IdejaWidget.appex */;
+			name = DzepWidget;
+			productName = DzepWidget;
+			productReference = DA086895D1496E904500F046 /* DzepWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		97C146ED1CF9000F007C117D /* Runner */ = {
@@ -331,7 +348,7 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
-				77C5320EB1F31192F8445E90 /* IdejaWidget */,
+				77C5320EB1F31192F8445E90 /* DzepWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -472,7 +489,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				97514C1BAA21D2DA5D20CDE3 /* IdejaWidget.swift in Sources */,
+				97514C1BAA21D2DA5D20CDE3 /* DzepWidget.swift in Sources */,
+				2911FC697F720799C277815A /* DzepShared.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -484,6 +502,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				CD6FCE96FA3B4AF969E38283 /* AddIdeaIntent.swift in Sources */,
+				A22F99F5DB1A0C87B20A98C0 /* DzepShared.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -497,8 +516,8 @@
 		};
 		CFE5A4FD96980A08B649AAC8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			name = IdejaWidget;
-			target = 77C5320EB1F31192F8445E90 /* IdejaWidget */;
+			name = DzepWidget;
+			target = 77C5320EB1F31192F8445E90 /* DzepWidget */;
 			targetProxy = 6FA4C0BE5C9465047DEF6478 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -582,6 +601,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = 5SSZ6TYMF5;
 				ENABLE_BITCODE = NO;
@@ -591,7 +611,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -608,7 +628,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -626,7 +646,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
@@ -642,7 +662,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja.RunnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
@@ -655,12 +675,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = DzepWidget/DzepWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = 5SSZ6TYMF5;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = IdejaWidget/Info.plist;
+				INFOPLIST_FILE = DzepWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -668,7 +689,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja.IdejaWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep.DzepWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -797,6 +818,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = 5SSZ6TYMF5;
 				ENABLE_BITCODE = NO;
@@ -806,7 +828,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -821,6 +843,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = 5SSZ6TYMF5;
 				ENABLE_BITCODE = NO;
@@ -830,7 +853,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -844,12 +867,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = DzepWidget/DzepWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = 5SSZ6TYMF5;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = IdejaWidget/Info.plist;
+				INFOPLIST_FILE = DzepWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -857,7 +881,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja.IdejaWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep.DzepWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -872,12 +896,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AppIcon;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = DzepWidget/DzepWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = 5SSZ6TYMF5;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = IdejaWidget/Info.plist;
+				INFOPLIST_FILE = DzepWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -885,7 +910,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.ideja.IdejaWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danyzmaj.dzep.DzepWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -928,7 +953,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A09BEAEF0AA12A37FD6B0650 /* Build configuration list for PBXNativeTarget "IdejaWidget" */ = {
+		A09BEAEF0AA12A37FD6B0650 /* Build configuration list for PBXNativeTarget "DzepWidget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				C57E2FC01E82E862C0BF48E2 /* Release */,

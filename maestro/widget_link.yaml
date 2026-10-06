@@ -1,19 +1,33 @@
-# The widget's tap target: ideja://add opens the add sheet, keyboard up.
-appId: com.danyzmaj.ideja
+# The widgets' tap targets: dzep://add opens the add sheet as an idea,
+# dzep://add?kind=todo as a todo; each save lands in its tab.
+appId: com.danyzmaj.dzep
 ---
 - tapOn:
     text: "Cancel"
     optional: true
 - launchApp
 - extendedWaitUntil:
-    visible: "Inbox"
+    visible: "Todos.*"
     timeout: 15000
-- openLink: "ideja://add"
+- openLink: "dzep://add?kind=todo"
 - tapOn:
     text: "Open"
     optional: true
 - extendedWaitUntil:
-    visible: "Save"
+    visible: "Add a todo.*"
+    timeout: 5000
+- tapOn: "Add a todo.*"
+- inputText: "From the todo widget ${TS}"
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "From the todo widget ${TS}.*"
+    timeout: 5000
+- openLink: "dzep://add"
+- tapOn:
+    text: "Open"
+    optional: true
+- extendedWaitUntil:
+    visible: "Drop an idea.*"
     timeout: 5000
 - tapOn: "Drop an idea.*"
 - inputText: "From the widget ${TS}"

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dzep/idea.dart';
 import 'package:flutter/foundation.dart';
-import 'package:ideja/idea.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -41,11 +41,20 @@ class IdeaStore extends ChangeNotifier {
   SyncState get syncState => _syncState;
   SyncState _syncState = SyncState.syncing;
 
-  /// Live ideas, newest first.
-  List<Idea> get ideas =>
-      _ideas.values.where((i) => !i.deleted).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  List<Idea> get _live => _ideas.values.where((i) => !i.deleted).toList();
 
-  /// Every project name in use, sorted.
+  /// Live ideas (not todos), newest first.
+  List<Idea> get ideas => _live.where((i) => !i.isTodo).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// Open todos, newest first.
+  List<Idea> get openTodos =>
+      _live.where((i) => i.isTodo && !i.done).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// Done todos, most recently finished first.
+  List<Idea> get doneTodos =>
+      _live.where((i) => i.isTodo && i.done).toList()..sort((a, b) => b.doneAt!.compareTo(a.doneAt!));
+
+  /// Every project name in use by ideas, sorted.
   List<String> get projects => ({
     for (final i in ideas)
       if (i.project.isNotEmpty) i.project,
@@ -58,13 +67,14 @@ class IdeaStore extends ChangeNotifier {
 
   // ---------------------------------------------------------------- edits
 
-  Idea add({required String title, String notes = '', String project = ''}) {
+  Idea add({required String title, Kind kind = Kind.idea, String notes = '', String project = ''}) {
     final now = DateTime.now().toUtc();
     final idea = Idea(
       id: const Uuid().v4(),
+      kind: kind,
       title: title.trim(),
       notes: notes.trim(),
-      project: project.trim(),
+      project: kind == Kind.todo ? '' : project.trim(),
       device: device,
       createdAt: now,
       updatedAt: now,
@@ -74,11 +84,12 @@ class IdeaStore extends ChangeNotifier {
     return idea;
   }
 
-  void update(Idea idea, {String? title, String? notes, String? project, Status? status}) {
+  void update(Idea idea, {String? title, String? notes, String? project, Status? status, bool? done}) {
     if (title != null) idea.title = title;
     if (notes != null) idea.notes = notes;
     if (project != null) idea.project = project.trim();
     if (status != null) idea.status = status;
+    if (done != null) idea.doneAt = done ? (idea.doneAt ?? DateTime.now().toUtc()) : null;
     _changed(idea);
   }
 
@@ -116,7 +127,7 @@ class IdeaStore extends ChangeNotifier {
       }
     } on Object catch (e) {
       // A damaged cache is only a cache: the server has everything synced.
-      debugPrint('Ideja: local cache unreadable ($e), starting from the server');
+      debugPrint('Džep: local cache unreadable ($e), starting from the server');
       _cursor = null;
       _ideas.clear();
     }
@@ -175,7 +186,7 @@ class IdeaStore extends ChangeNotifier {
       _merge(rows);
       if (!_ideas.values.any((i) => i.dirty)) _setSync(SyncState.synced);
     } on Object catch (e) {
-      debugPrint('Ideja: pull failed: $e');
+      debugPrint('Džep: pull failed: $e');
       _setSync(SyncState.offline);
     }
   }
@@ -186,7 +197,13 @@ class IdeaStore extends ChangeNotifier {
       final incoming = Idea.fromServer(row);
       final local = _ideas[incoming.id];
       // Unpushed local edits win; the push that follows overwrites the server.
-      if (local == null || !local.dirty) _ideas[incoming.id] = incoming;
+      // Known ideas update in place: open screens hold these objects, and an
+      // edit made on a replaced one would never be pushed.
+      if (local == null) {
+        _ideas[incoming.id] = incoming;
+      } else if (!local.dirty) {
+        local.absorb(incoming);
+      }
       if (_cursor == null || incoming.updatedAt.isAfter(_cursor!)) _cursor = incoming.updatedAt;
     }
     notifyListeners();
@@ -212,7 +229,7 @@ class IdeaStore extends ChangeNotifier {
       _scheduleSave();
       _setSync(_ideas.values.any((i) => i.dirty) ? SyncState.syncing : SyncState.synced);
     } on Object catch (e) {
-      debugPrint('Ideja: push failed: $e');
+      debugPrint('Džep: push failed: $e');
       _setSync(SyncState.offline);
       // Retry later; the edits are safe on disk.
       _pushTimer?.cancel();

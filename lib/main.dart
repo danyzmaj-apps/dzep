@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dzep/controller.dart';
+import 'package:dzep/local_api.dart';
+import 'package:dzep/main_window.dart';
+import 'package:dzep/mobile.dart';
+import 'package:dzep/native.dart';
+import 'package:dzep/popup.dart';
+import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
-import 'package:ideja/controller.dart';
-import 'package:ideja/local_api.dart';
-import 'package:ideja/main_window.dart';
-import 'package:ideja/mobile.dart';
-import 'package:ideja/native.dart';
-import 'package:ideja/popup.dart';
-import 'package:ideja/ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -33,19 +33,19 @@ Future<void> main() async {
   try {
     await api.start();
   } on Object catch (e) {
-    debugPrint('Ideja: terminal API unavailable: $e');
+    debugPrint('Džep: terminal API unavailable: $e');
   }
-  runApp(IdejaApp(app: app));
+  runApp(DzepApp(app: app));
   await app.start();
 }
 
-class IdejaApp extends StatelessWidget {
-  const IdejaApp({required this.app, super.key});
+class DzepApp extends StatelessWidget {
+  const DzepApp({required this.app, super.key});
   final AppController app;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Ideja',
+    title: 'Džep',
     debugShowCheckedModeBanner: false,
     theme: appTheme(),
     color: Colors.transparent,
@@ -54,11 +54,17 @@ class IdejaApp extends StatelessWidget {
       child: Toaster(
         child: ListenableBuilder(
           listenable: app,
-          builder: (context, _) => switch (app.mode) {
-            Mode.popup => Popup(app: app),
-            Mode.main => MainWindow(app: app),
-            Mode.hidden => const SizedBox.shrink(),
-          },
+          // The popup stays mounted when hidden so it can reset and take keys
+          // the moment the hotkey fires, before the next frame.
+          builder: (context, _) => Stack(
+            children: [
+              Offstage(
+                offstage: app.mode != Mode.popup,
+                child: Popup(app: app),
+              ),
+              if (app.mode == Mode.main) Positioned.fill(child: MainWindow(app: app)),
+            ],
+          ),
         ),
       ),
     ),

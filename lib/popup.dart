@@ -1,12 +1,12 @@
 import 'dart:async';
 
+import 'package:dzep/controller.dart';
+import 'package:dzep/idea.dart';
+import 'package:dzep/native.dart';
+import 'package:dzep/store.dart';
+import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:ideja/controller.dart';
-import 'package:ideja/idea.dart';
-import 'package:ideja/native.dart';
-import 'package:ideja/store.dart';
-import 'package:ideja/ui.dart';
 
 /// `@name` tokens in the title: the first one is the project.
 final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
@@ -34,6 +34,12 @@ class _PopupState extends State<Popup> {
   late final FocusNode _notesFocus = FocusNode(onKeyEvent: _onNotesKey);
   final GlobalKey _panelKey = GlobalKey();
   bool _withNotes = false;
+
+  /// Every open starts by choosing: 1 idea, 2 todo, 3 open the app.
+  bool _choosing = true;
+
+  /// What ↵ saves, picked in the chooser.
+  Kind _kind = Kind.idea;
   int _sel = -1;
   List<Idea> _shown = const [];
   double _height = 0;
@@ -47,15 +53,32 @@ class _PopupState extends State<Popup> {
     super.initState();
     _title.addListener(() => setState(() => _sel = -1));
     _notesFocus.addListener(() => setState(() {}));
+    app.addListener(_onApp);
+    HardwareKeyboard.instance.addHandler(_onAnyKey);
+    _onApp();
   }
 
   @override
   void dispose() {
+    app.removeListener(_onApp);
+    HardwareKeyboard.instance.removeHandler(_onAnyKey);
     _title.dispose();
     _notes.dispose();
     _titleFocus.dispose();
     _notesFocus.dispose();
     super.dispose();
+  }
+
+  /// A new open resets to the chooser right away (not on the next frame), so
+  /// a quick ⇧⌘Space-then-1 never lands on a stale screen.
+  void _onApp() {
+    if (_session == app.popupSession) return;
+    _session = app.popupSession;
+    _sel = -1;
+    _choosing = true;
+    _titleFocus.unfocus();
+    _notesFocus.unfocus();
+    if (mounted) setState(() {});
   }
 
   void _reportHeight() {
@@ -73,6 +96,56 @@ class _PopupState extends State<Popup> {
   bool get _cmd => HardwareKeyboard.instance.isMetaPressed;
   bool get _shift => HardwareKeyboard.instance.isShiftPressed;
 
+  /// Characters typed between picking and the title field taking focus.
+  bool _awaitingTitle = false;
+
+  /// Sees every key, whatever has focus: the chooser has no field to focus,
+  /// and the window can take keys a frame before Flutter has rebuilt it.
+  bool _onAnyKey(KeyEvent e) {
+    if (app.mode != Mode.popup || e is KeyUpEvent) return false;
+    final k = e.logicalKey;
+    if (_choosing) {
+      if (k == LogicalKeyboardKey.digit1 || k == LogicalKeyboardKey.numpad1) {
+        _pick(Kind.idea);
+      } else if (k == LogicalKeyboardKey.digit2 || k == LogicalKeyboardKey.numpad2) {
+        _pick(Kind.todo);
+      } else if (k == LogicalKeyboardKey.digit3 || k == LogicalKeyboardKey.numpad3) {
+        unawaited(app.openMain());
+      } else if (k == LogicalKeyboardKey.escape) {
+        unawaited(app.closePopup());
+      } else {
+        return false;
+      }
+      return true;
+    }
+    final ch = e.character;
+    if (_awaitingTitle && !_titleFocus.hasFocus && ch != null && ch.runes.every((r) => r >= 0x20)) {
+      _title.text += ch;
+      return true;
+    }
+    return false;
+  }
+
+  void _pick(Kind kind) {
+    setState(() {
+      if (kind != _kind) {
+        // A half-typed idea isn't a todo draft.
+        _title.clear();
+        _notes.clear();
+        _withNotes = false;
+      }
+      _kind = kind;
+      _choosing = false;
+      _sel = -1;
+    });
+    _awaitingTitle = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _titleFocus.requestFocus();
+      _title.selection = TextSelection.collapsed(offset: _title.text.length);
+      _awaitingTitle = false;
+    });
+  }
+
   KeyEventResult _onTitleKey(FocusNode _, KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
     final k = e.logicalKey;
@@ -80,6 +153,11 @@ class _PopupState extends State<Popup> {
       if (_completeProject()) return KeyEventResult.handled;
       setState(() => _withNotes = true);
       _notesFocus.requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.keyD && _cmd) {
+      final picked = _sel >= 0 ? _shown[_sel] : null;
+      if (picked != null && picked.isTodo) _toggleTodo(picked);
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.keyO && _cmd) {
@@ -147,10 +225,17 @@ class _PopupState extends State<Popup> {
     return true;
   }
 
+  void _toggleTodo(Idea todo) {
+    store?.update(todo, done: !todo.done);
+    setState(() {});
+    Toaster.of(context).show(todo.done ? 'Done ✓' : 'Reopened', undo: () => store?.update(todo, done: !todo.done));
+  }
+
   void _save({required bool stay}) {
     final s = store;
     if (s == null) return;
-    final parsed = parseTitle(_title.text);
+    final todo = _kind == Kind.todo;
+    final parsed = todo ? (title: _title.text.trim(), project: '') : parseTitle(_title.text);
     var title = parsed.title;
     var notes = _notes.text.trim();
     if (title.isEmpty && notes.isEmpty) return;
@@ -159,11 +244,11 @@ class _PopupState extends State<Popup> {
       title = lines.first.trim();
       notes = lines.skip(1).join('\n').trim();
     }
-    s.add(title: title, notes: notes, project: parsed.project);
+    s.add(title: title, kind: _kind, notes: notes, project: parsed.project);
     _title.clear();
     _notes.clear();
     setState(() => _withNotes = false);
-    Toaster.of(context).show('Saved to Inbox ✓');
+    Toaster.of(context).show(todo ? 'Todo added ✓' : 'Saved to Inbox ✓');
     if (stay) {
       _titleFocus.requestFocus();
     } else {
@@ -175,12 +260,6 @@ class _PopupState extends State<Popup> {
 
   @override
   Widget build(BuildContext context) {
-    if (_session != app.popupSession) {
-      _session = app.popupSession;
-      _sel = -1;
-      // The draft survives Esc; focus always lands back in the title.
-      WidgetsBinding.instance.addPostFrameCallback((_) => _titleFocus.requestFocus());
-    }
     _reportHeight();
     final s = store;
     return Align(
@@ -198,7 +277,7 @@ class _PopupState extends State<Popup> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [if (s == null) _locked() else ..._capture(s), _bar(s)],
+            children: [if (s == null) _locked() else if (_choosing) _chooser(s) else ..._capture(s), _bar(s)],
           ),
         ),
       ),
@@ -228,24 +307,137 @@ class _PopupState extends State<Popup> {
     ),
   );
 
+  Widget _chooser(IdeaStore s) {
+    Widget tile(String key, Widget icon, String label, VoidCallback onTap) => Expanded(
+      child: Hoverable(
+        onTap: onTap,
+        builder: (hover) => Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          decoration: BoxDecoration(
+            color: hover ? C.sel : C.field,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: hover ? C.accent : C.line2),
+          ),
+          child: Column(
+            children: [
+              SizedBox(height: 26, child: Center(child: icon)),
+              const SizedBox(height: 8),
+              Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Kbd(key),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final todos = s.openTodos.take(5).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              tile('1', const Text('💡', style: TextStyle(fontSize: 22)), 'Idea', () => _pick(Kind.idea)),
+              const SizedBox(width: 10),
+              tile('2', const TodoCheck(done: false, size: 22), 'Todo', () => _pick(Kind.todo)),
+              const SizedBox(width: 10),
+              tile(
+                '3',
+                const Icon(Icons.open_in_new, size: 22, color: C.dim),
+                'Open app',
+                () => unawaited(app.openMain()),
+              ),
+            ],
+          ),
+        ),
+        if (todos.isNotEmpty) ...[
+          const Divider(height: 1, color: C.line),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+            child: Text(
+              'OPEN TODOS · ${s.openTodos.length}',
+              style: const TextStyle(fontSize: 11, letterSpacing: .6, color: C.dim),
+            ),
+          ),
+          for (final t in todos)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+              child: Row(
+                children: [
+                  GestureDetector(onTap: () => _toggleTodo(t), child: const TodoCheck(done: false, size: 14)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      t.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 6),
+        ],
+      ],
+    );
+  }
+
   List<Widget> _capture(IdeaStore s) {
-    final parsed = parseTitle(_title.text);
+    final todoMode = _kind == Kind.todo;
+    final parsed = todoMode ? (title: _title.text.trim(), project: '') : parseTitle(_title.text);
     final words = parsed.title.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
-    _shown =
-        (words.isEmpty
-                ? s.ideas
-                : s.ideas.where((i) {
-                    final hay = '${i.title} ${i.notes}'.toLowerCase();
-                    return words.any(hay.contains);
-                  }))
-            .take(7)
-            .toList();
+    bool similar(Idea i) => words.any('${i.title} ${i.notes}'.toLowerCase().contains);
+    // The list below the field: open todos (filtered as you type) in todo
+    // mode, recent or similar ideas in idea mode.
+    final todos = todoMode ? (words.isEmpty ? s.openTodos : s.openTodos.where(similar)).take(7).toList() : <Idea>[];
+    final ideas = todoMode
+        ? <Idea>[]
+        : (words.isEmpty ? s.ideas : s.ideas.where(similar)).take(words.isEmpty ? 5 : 7).toList();
+    _shown = [...todos, ...ideas];
     if (_sel >= _shown.length) _sel = _shown.length - 1;
 
-    final completing = RegExp(r'@([\w.-]*)$').firstMatch(_title.text);
+    final completing = todoMode ? null : RegExp(r'@([\w.-]*)$').firstMatch(_title.text);
     final suggestions = completing == null
         ? const <String>[]
         : s.projects.where((p) => p.startsWith(completing.group(1)!)).take(4).toList();
+
+    Widget section(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+      child: Text(label, style: const TextStyle(fontSize: 11, letterSpacing: .6, color: C.dim)),
+    );
+
+    Widget row(int k, Idea i) => Hoverable(
+      onTap: () => unawaited(app.openMain(select: i.id)),
+      builder: (hover) => Container(
+        color: k == _sel ? C.sel : (hover ? C.hover : null),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+        child: Row(
+          children: [
+            if (i.isTodo)
+              GestureDetector(
+                onTap: () => _toggleTodo(i),
+                child: TodoCheck(done: i.done, size: 14),
+              )
+            else
+              Dot(i.status.color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text.rich(
+                highlight(i.title, words.join(' '), const TextStyle(fontSize: 13, color: C.text)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (i.project.isNotEmpty) ...[const SizedBox(width: 8), ProjectChip(i.project)],
+            const SizedBox(width: 10),
+            Text(ago(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim)),
+          ],
+        ),
+      ),
+    );
 
     return [
       Padding(
@@ -253,9 +445,11 @@ class _PopupState extends State<Popup> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 2),
-              child: Text('💡', style: TextStyle(fontSize: 18)),
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: todoMode
+                  ? const Padding(padding: EdgeInsets.all(2), child: TodoCheck(done: false, size: 18))
+                  : const Text('💡', style: TextStyle(fontSize: 18)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -267,7 +461,7 @@ class _PopupState extends State<Popup> {
                     focusNode: _titleFocus,
                     style: const TextStyle(fontSize: 18, height: 1.4),
                     decoration: plainInput.copyWith(
-                      hintText: 'Drop an idea…  @project',
+                      hintText: todoMode ? 'Add a todo…' : 'Drop an idea…  @project',
                       hintStyle: const TextStyle(color: C.dim2),
                     ),
                   ),
@@ -315,47 +509,31 @@ class _PopupState extends State<Popup> {
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: C.line)),
         ),
-        constraints: const BoxConstraints(maxHeight: 280),
+        constraints: const BoxConstraints(maxHeight: 300),
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.only(bottom: 6),
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
-              child: Text(
-                words.isEmpty ? 'RECENT' : '${_shown.length} SIMILAR',
-                style: const TextStyle(fontSize: 11, letterSpacing: .6, color: C.dim),
-              ),
-            ),
-            if (_shown.isEmpty)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(18, 8, 18, 10),
-                child: Text('Nothing similar. Press ↵ to save it.', style: TextStyle(color: C.dim)),
-              ),
-            for (final (k, i) in _shown.indexed)
-              Hoverable(
-                onTap: () => unawaited(app.openMain(select: i.id)),
-                builder: (hover) => Container(
-                  color: k == _sel ? C.sel : (hover ? C.hover : null),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-                  child: Row(
-                    children: [
-                      Dot(i.status.color),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text.rich(
-                          highlight(i.title, words.join(' '), const TextStyle(fontSize: 13, color: C.text)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (i.project.isNotEmpty) ...[const SizedBox(width: 8), ProjectChip(i.project)],
-                      const SizedBox(width: 10),
-                      Text(ago(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim)),
-                    ],
-                  ),
+            if (todos.isNotEmpty || todoMode)
+              section(todoMode && words.isNotEmpty ? '${todos.length} SIMILAR TODOS' : 'OPEN TODOS'),
+            if (todoMode && todos.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
+                child: Text(
+                  words.isEmpty ? 'All done. Type one and press ↵.' : 'Nothing similar. Press ↵ to add it.',
+                  style: const TextStyle(color: C.dim),
                 ),
               ),
+            for (final (k, i) in todos.indexed) row(k, i),
+            if (!todoMode) ...[
+              section(words.isEmpty ? 'RECENT IDEAS' : '${ideas.length} SIMILAR'),
+              if (ideas.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 8, 18, 10),
+                  child: Text('Nothing similar. Press ↵ to save it.', style: TextStyle(color: C.dim)),
+                ),
+              for (final (k, i) in ideas.indexed) row(todos.length + k, i),
+            ],
           ],
         ),
       ),
@@ -377,17 +555,24 @@ class _PopupState extends State<Popup> {
         const Spacer(),
         if (s == null)
           const KeyHint('esc', 'hide')
-        else if (_notesFocus.hasFocus) ...const [
+        else if (_choosing) ...const [
+          KeyHint('1', 'idea'),
+          KeyHint('2', 'todo'),
+          KeyHint('3', 'open app'),
+          KeyHint('esc', 'hide'),
+        ] else if (_notesFocus.hasFocus) ...const [
           KeyHint('↵', 'newline'),
           KeyHint('⌘↵', 'save'),
           KeyHint('⇧⇥', 'title'),
           KeyHint('esc', 'hide'),
-        ] else ...const [
-          KeyHint('↵', 'save'),
-          KeyHint('⌘↵', 'save & stay'),
-          KeyHint('⇥', 'description'),
-          KeyHint('↓', 'browse'),
-          KeyHint('esc', 'hide'),
+        ] else ...[
+          const KeyHint('↵', 'save'),
+          if (_sel >= 0 && _sel < _shown.length && _shown[_sel].isTodo)
+            const KeyHint('⌘D', 'done')
+          else
+            const KeyHint('⇥', 'description'),
+          const KeyHint('↓', 'browse'),
+          const KeyHint('esc', 'hide'),
         ],
       ],
     ),

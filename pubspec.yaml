@@ -1,5 +1,5 @@
-name: ideja
-description: "Ideja: a hotkey idea inbox for macOS, synced through Supabase."
+name: dzep
+description: "Džep: a hotkey idea inbox for macOS, synced through Supabase."
 publish_to: 'none'
 version: 0.1.0+1
 

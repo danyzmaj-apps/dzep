@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import 'package:dzep/store.dart';
 import 'package:flutter/foundation.dart';
-import 'package:ideja/store.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// GitHub sign-in and the signed-in user's [IdeaStore]: what the Mac and the
@@ -9,7 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class Session extends ChangeNotifier {
   Session(this.client, this.device);
 
-  static const _redirect = 'ideja://login-callback';
+  static const _redirect = 'dzep://login-callback';
 
   final SupabaseClient client;
 

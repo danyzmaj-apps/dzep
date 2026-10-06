@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import 'package:dzep/store.dart';
 import 'package:flutter/material.dart';
-import 'package:ideja/store.dart';
 
 /// The mockup's palette (design/mockup.html).
 abstract final class C {
@@ -94,6 +94,26 @@ class Dot extends StatelessWidget {
     width: size,
     height: size,
     decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+}
+
+/// A todo's round checkbox.
+class TodoCheck extends StatelessWidget {
+  const TodoCheck({required this.done, this.size = 16, super.key});
+  final bool done;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: done ? C.ok : null,
+      border: Border.all(color: done ? C.ok : const Color(0xFF5A606E), width: 1.5),
+    ),
+    child: done ? Icon(Icons.check, size: size * .7, color: const Color(0xFF111111)) : null,
   );
 }
 

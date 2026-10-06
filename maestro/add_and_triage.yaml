@@ -1,20 +1,30 @@
-# Signed-in iPhone app: add an idea with the + button, then move it to
-# Building from its detail page. Needs a signed-in session on the simulator.
-# Run: maestro test -e TS=$(date +%H%M%S) maestro/add_and_triage.yaml
-appId: com.danyzmaj.ideja
+# Signed-in iPhone app: on the Ideas tab, add an idea with the + button, then
+# move it to Building from its detail page. Needs a signed-in session.
+# Run: maestro test -e TS=$(date +%H%M%S) maestro/
+appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Inbox"
+    visible: "Ideas.*"
     timeout: 15000
+- tapOn: "Ideas.*"
 - tapOn: "New idea"
+- tapOn: "Drop an idea.*"
 - inputText: "Maestro idea ${TS}"
 - tapOn: "Save"
 - extendedWaitUntil:
     visible: "Maestro idea ${TS}.*"
     timeout: 5000
 - tapOn: "Maestro idea ${TS}.*"
-- tapOn: "Building"
+# "Building" is also a filter chip on the list page, which stays in the
+# accessibility tree under the detail page; the detail's chip is the one
+# below the idea's title (the list's sits above its rows).
+- extendedWaitUntil:
+    visible: "Description: context.*"
+    timeout: 5000
+- tapOn:
+    text: "Building"
+    below: "Maestro idea ${TS}.*"
 - tapOn: "Back"
 - tapOn: "Building"
 - assertVisible: "Maestro idea ${TS}.*"

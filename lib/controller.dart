@@ -1,7 +1,8 @@
 import 'dart:async';
 
-import 'package:ideja/native.dart';
-import 'package:ideja/session.dart';
+import 'package:dzep/native.dart';
+import 'package:dzep/session.dart';
+import 'package:dzep/store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// What the one window is showing.
@@ -41,6 +42,23 @@ class AppController extends Session {
   Future<void> signOut() async {
     settingsOpen = false;
     await super.signOut();
+    _shownTodoCount = 0;
+    await Native.setTodoCount(0);
+  }
+
+  int _shownTodoCount = 0;
+
+  @override
+  Future<void> onSignedIn(IdeaStore store) async {
+    void update() {
+      final n = store.openTodos.length;
+      if (n == _shownTodoCount || this.store != store) return;
+      _shownTodoCount = n;
+      unawaited(Native.setTodoCount(n));
+    }
+
+    store.addListener(update);
+    update();
   }
 
   // ---------------------------------------------------------------- window

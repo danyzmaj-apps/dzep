@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 /// The Swift side (macos/Runner/MainFlutterWindow.swift): window shapes,
 /// menu-bar icon, global hotkey, launch at login.
 class Native {
-  static const _channel = MethodChannel('ideja/native');
+  static const _channel = MethodChannel('dzep/native');
 
   /// Events from the Swift side: hotKey, togglePopup, openMain,
   /// openSettings, blur, closed.
@@ -18,6 +18,14 @@ class Native {
   static Future<void> hide() => _channel.invokeMethod('hide');
   static Future<void> quit() => _channel.invokeMethod('quit');
   static Future<void> startDrag() => _channel.invokeMethod('startDrag');
+  static Future<void> setTodoCount(int count) => _channel.invokeMethod('setTodoCount', {'count': count});
+
+  // iPhone: the App Group the Siri intents and the widget read.
+  static Future<void> setSharedToken(String? token) => _channel.invokeMethod('setSharedToken', {'token': token});
+  static Future<void> setSharedTodos(List<Map<String, String>> todos) =>
+      _channel.invokeMethod('setSharedTodos', {'todos': todos});
+  static Future<List<String>> takePending() async =>
+      (await _channel.invokeListMethod<String>('takePending')) ?? const [];
 
   static Future<bool> setHotKey(HotKey key) async =>
       await _channel.invokeMethod<bool>('setHotKey', {'keyCode': key.keyCode, 'modifiers': key.carbonModifiers}) ??

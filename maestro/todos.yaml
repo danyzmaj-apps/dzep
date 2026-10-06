@@ -1,0 +1,32 @@
+# Signed-in iPhone app opens on Todos: add one with +, tick it off with its
+# circle, find it under Done. Needs a signed-in session.
+appId: com.danyzmaj.dzep
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Todos.*"
+    timeout: 15000
+- tapOn: "New todo"
+- tapOn: "Add a todo.*"
+- inputText: "Maestro todo ${TS}"
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Maestro todo ${TS}.*"
+    timeout: 5000
+# Newest first: the top row's circle (tooltip "Done") is the new todo's.
+- tapOn:
+    text: "Done"
+    index: 0
+- extendedWaitUntil:
+    notVisible: "Maestro todo ${TS}.*"
+    timeout: 5000
+# The "Done ✓ / Undo" snackbar floats over the bottom of the list (and never
+# times out under accessibility automation): bring the header to the middle.
+- scrollUntilVisible:
+    element: "DONE · .*"
+    direction: DOWN
+    centerElement: true
+- tapOn: "DONE · .*"
+- scrollUntilVisible:
+    element: "Maestro todo ${TS}.*"
+    direction: DOWN
