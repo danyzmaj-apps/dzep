@@ -12,12 +12,12 @@ import 'package:flutter/services.dart';
 
 /// Sidebar selection: the todo lists, an idea status ('inbox', …, or 'all'),
 /// or a project.
-typedef View = ({bool project, String id});
+typedef Shelf = ({bool project, String id});
 
-const View _todos = (project: false, id: 'todos');
-const View _todosDone = (project: false, id: 'todos-done');
-const View _inbox = (project: false, id: 'inbox');
-const View _all = (project: false, id: 'all');
+const Shelf _todos = (project: false, id: 'todos');
+const Shelf _todosDone = (project: false, id: 'todos-done');
+const Shelf _inbox = (project: false, id: 'inbox');
+const Shelf _all = (project: false, id: 'all');
 
 /// Drag strip for the transparent title bar.
 class _TitleDrag extends StatelessWidget {
@@ -113,7 +113,7 @@ class Library extends StatefulWidget {
 }
 
 class _LibraryState extends State<Library> {
-  View _view = _inbox;
+  Shelf _view = _inbox;
   String? _selId;
   String _query = '';
   String? _focusNotesOf;
@@ -163,7 +163,7 @@ class _LibraryState extends State<Library> {
 
   bool get _todoView => !_view.project && (_view == _todos || _view == _todosDone);
 
-  bool _inView(Idea i, View v) {
+  bool _inView(Idea i, Shelf v) {
     if (v.project) return i.project == v.id;
     if (v.id == 'all') return true;
     return i.status.name == v.id;
@@ -181,7 +181,7 @@ class _LibraryState extends State<Library> {
     return store.ideas.where((i) => _inView(i, _view) && _matches(i)).toList();
   }
 
-  String _viewName(View v) {
+  String _viewName(Shelf v) {
     if (v.project) return '@${v.id}';
     if (v == _todos) return 'Todos';
     if (v == _todosDone) return 'Done';
@@ -191,7 +191,7 @@ class _LibraryState extends State<Library> {
 
   void _select(String? id) => setState(() => _selId = id);
 
-  void _setView(View v) {
+  void _setView(Shelf v) {
     setState(() {
       _view = v;
       _selId = _visible.firstOrNull?.id;
@@ -351,7 +351,7 @@ class _LibraryState extends State<Library> {
   );
 
   Widget _sidebar() {
-    Widget nav(View v, Widget icon, String name) {
+    Widget nav(Shelf v, Widget icon, String name) {
       final n = v == _todos
           ? store.openTodos.length
           : v == _todosDone

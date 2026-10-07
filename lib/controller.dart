@@ -5,30 +5,22 @@ import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// What the one window is showing.
-enum Mode { hidden, popup, main }
-
-/// The Mac app: [Session] plus the window mode and the hotkey.
+/// The Mac app: [Session] plus its two windows (the ⇧⌘Space popup panel and
+/// the main window, each its own Flutter view) and the hotkey.
 class AppController extends Session {
   AppController(super.client, this._prefs, super.device);
 
   final SharedPreferences _prefs;
 
-  Mode get mode => _mode;
-  Mode _mode = Mode.hidden;
+  /// The popup panel is on screen.
+  bool get popupOpen => _popupOpen;
+  bool _popupOpen = false;
 
-  /// The capture panel shown over the main window (the hotkey while the main
-  /// window is open). Turning the main window into the popup and back is a
-  /// real window resize each way, and Flutter's renderer (Impeller) crashes
-  /// when those come quickly (hotkey spam), so the main window keeps its
-  /// shape and the same panel opens inside it.
-  bool get captureInMain => _captureInMain;
-  bool _captureInMain = false;
+  /// The main window is open (Džep is a regular app with a Dock icon then).
+  bool get mainOpen => _mainOpen;
+  bool _mainOpen = false;
 
-  /// Whether the capture panel is on screen, in the popup or in the main window.
-  bool get captureVisible => _mode == Mode.popup || (_mode == Mode.main && _captureInMain);
-
-  /// Bumped on every capture open so it resets (focus, selection).
+  /// Bumped on every popup open so it resets (focus, selection).
   int popupSession = 0;
 
   bool settingsOpen = false;
@@ -76,7 +68,7 @@ class AppController extends Session {
   void _onNative(String event) {
     switch (event) {
       case 'hotKey' || 'togglePopup':
-        unawaited(captureVisible ? closePopup() : openPopup());
+        unawaited(_popupOpen ? closePopup() : openPopup());
       case 'openMain':
         unawaited(openMain());
       case 'openSettings':
@@ -84,51 +76,32 @@ class AppController extends Session {
         unawaited(openMain());
       case 'blur':
         // Clicking elsewhere dismisses the popup, like Spotlight.
-        if (_mode == Mode.popup) unawaited(hide());
-      case 'closed':
-        _mode = Mode.hidden;
-        _captureInMain = false;
+        if (_popupOpen) unawaited(closePopup());
+      case 'mainClosed':
+        _mainOpen = false;
         notifyListeners();
     }
   }
 
   Future<void> openPopup() async {
     popupSession++;
-    if (_mode == Mode.main) {
-      _captureInMain = true;
-      notifyListeners();
-      await Native.showMain(); // already that shape: brings it forward, no resize
-      return;
-    }
-    _mode = Mode.popup;
+    _popupOpen = true;
     notifyListeners();
     await Native.showPopup();
   }
 
-  /// Esc / save / hotkey again: the popup hides, the in-window panel closes.
   Future<void> closePopup() async {
-    if (_mode == Mode.main) {
-      _captureInMain = false;
-      notifyListeners();
-    } else {
-      await hide();
-    }
+    _popupOpen = false;
+    notifyListeners();
+    await Native.hidePopup();
   }
 
   Future<void> openMain({String? select}) async {
     if (select != null) pendingSelect = select;
-    _captureInMain = false;
-    final wasMain = _mode == Mode.main;
-    _mode = Mode.main;
+    if (_popupOpen) await closePopup();
+    _mainOpen = true;
     notifyListeners();
-    if (!wasMain) await Native.showMain();
-  }
-
-  Future<void> hide() async {
-    _mode = Mode.hidden;
-    _captureInMain = false;
-    notifyListeners();
-    await Native.hide();
+    await Native.showMain();
   }
 
   void setSettingsOpen({required bool open}) {

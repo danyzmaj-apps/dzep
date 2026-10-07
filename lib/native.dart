@@ -1,19 +1,25 @@
 import 'package:flutter/services.dart';
 
-/// The Swift side (macos/Runner/MainFlutterWindow.swift): window shapes,
-/// menu-bar icon, global hotkey, launch at login.
+/// The Swift side (macos/Runner/MainFlutterWindow.swift): the popup panel and
+/// the main window, menu-bar icon, global hotkey, launch at login.
 class Native {
   static const _channel = MethodChannel('dzep/native');
 
   /// Events from the Swift side: hotKey, togglePopup, openMain,
-  /// openSettings, blur, closed.
+  /// openSettings, blur (the popup lost focus), mainClosed (⌘W).
   static void listen(void Function(String event) onEvent) {
     _channel.setMethodCallHandler((call) async => onEvent(call.method));
   }
 
+  /// Which Flutter view is which window (the engine runs in multi-view mode).
+  static Future<({int popup, int main})> viewIds() async {
+    final ids = await _channel.invokeMapMethod<String, int>('viewIds');
+    return (popup: ids!['popup']!, main: ids['main']!);
+  }
+
   static Future<void> showPopup() => _channel.invokeMethod('showPopup');
+  static Future<void> hidePopup() => _channel.invokeMethod('hidePopup');
   static Future<void> showMain() => _channel.invokeMethod('showMain');
-  static Future<void> hide() => _channel.invokeMethod('hide');
   static Future<void> quit() => _channel.invokeMethod('quit');
   static Future<void> startDrag() => _channel.invokeMethod('startDrag');
   static Future<void> setTodoCount(int count) => _channel.invokeMethod('setTodoCount', {'count': count});

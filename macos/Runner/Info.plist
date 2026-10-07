@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Džep</string>
 	<key>CFBundleDisplayName</key>
 	<string>Džep</string>
 	<key>CFBundlePackageType</key>
@@ -30,8 +30,6 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>LSUIElement</key>
-	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

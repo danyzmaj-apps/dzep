@@ -35,43 +35,80 @@ Future<void> main() async {
   } on Object catch (e) {
     debugPrint('Džep: terminal API unavailable: $e');
   }
-  runApp(DzepApp(app: app));
+  // The engine runs in multi-view mode: the popup panel and the main window
+  // are separate Flutter views of this one app.
+  runWidget(DzepWindows(app: app, ids: await Native.viewIds()));
   await app.start();
 }
 
-class DzepApp extends StatelessWidget {
-  const DzepApp({required this.app, super.key});
+/// One [View] per native window, each with its own [MaterialApp]; both read
+/// the same [AppController].
+class DzepWindows extends StatefulWidget {
+  const DzepWindows({required this.app, required this.ids, super.key});
   final AppController app;
+  final ({int popup, int main}) ids;
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Džep',
-    debugShowCheckedModeBanner: false,
-    theme: appTheme(),
-    color: Colors.transparent,
-    home: Material(
-      type: MaterialType.transparency,
-      child: Toaster(
-        child: ListenableBuilder(
-          listenable: app,
-          // The capture panel stays mounted when hidden so it can reset and
-          // take keys the moment the hotkey fires, before the next frame. It
-          // is the whole (transparent) popup window, or an overlay on top of
-          // the main window.
-          // StackFit.expand: a hidden Offstage takes no size, which would
-          // shrink the Stack (and the main window inside it) to nothing.
-          builder: (context, _) => Stack(
-            fit: StackFit.expand,
-            children: [
-              if (app.mode == Mode.main) Positioned.fill(child: MainWindow(app: app)),
-              Offstage(
-                offstage: !app.captureVisible,
-                child: Popup(app: app, inMainWindow: app.mode == Mode.main),
-              ),
-            ],
-          ),
+  State<DzepWindows> createState() => _DzepWindowsState();
+}
+
+class _DzepWindowsState extends State<DzepWindows> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Views can arrive after the first build.
+  @override
+  void didChangeMetrics() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = widget.app;
+    Widget window(Widget child) => MaterialApp(
+      title: 'Džep',
+      debugShowCheckedModeBanner: false,
+      theme: appTheme(),
+      color: Colors.transparent,
+      home: Material(
+        type: MaterialType.transparency,
+        child: Toaster(
+          child: ListenableBuilder(listenable: app, builder: (_, _) => child),
         ),
       ),
-    ),
-  );
+    );
+
+    return ViewCollection(
+      views: [
+        for (final view in WidgetsBinding.instance.platformDispatcher.views)
+          if (view.viewId == widget.ids.popup)
+            View(
+              view: view,
+              // Stays mounted while hidden so it resets and takes keys the
+              // moment the hotkey fires, before the next frame.
+              child: window(
+                ListenableBuilder(
+                  listenable: app,
+                  builder: (_, _) => Offstage(
+                    offstage: !app.popupOpen,
+                    child: Popup(app: app),
+                  ),
+                ),
+              ),
+            )
+          else if (view.viewId == widget.ids.main)
+            View(
+              view: view,
+              child: window(MainWindow(app: app)),
+            ),
+      ],
+    );
+  }
 }

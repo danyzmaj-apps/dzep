@@ -19,11 +19,8 @@ final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
 /// The ⇧⌘Space panel: title field focused, ↵ saves to Inbox and gets out of
 /// the way. Tab adds a description; the list shows recent or similar ideas.
 class Popup extends StatefulWidget {
-  const Popup({required this.app, required this.inMainWindow, super.key});
+  const Popup({required this.app, super.key});
   final AppController app;
-
-  /// Shown as an overlay over the main window rather than as the popup.
-  final bool inMainWindow;
 
   @override
   State<Popup> createState() => _PopupState();
@@ -92,7 +89,7 @@ class _PopupState extends State<Popup> {
   /// Sees every key, whatever has focus: the chooser has no field to focus,
   /// and the window can take keys a frame before Flutter has rebuilt it.
   bool _onAnyKey(KeyEvent e) {
-    if (!app.captureVisible || e is KeyUpEvent) return false;
+    if (!app.popupOpen || e is KeyUpEvent) return false;
     final k = e.logicalKey;
     if (_choosing) {
       if (k == LogicalKeyboardKey.digit1 || k == LogicalKeyboardKey.numpad1) {
@@ -100,8 +97,7 @@ class _PopupState extends State<Popup> {
       } else if (k == LogicalKeyboardKey.digit2 || k == LogicalKeyboardKey.numpad2) {
         _pick(Kind.todo);
       } else if (k == LogicalKeyboardKey.digit3 || k == LogicalKeyboardKey.numpad3) {
-        // Already in the main window: just close the overlay.
-        unawaited(widget.inMainWindow ? app.closePopup() : app.openMain());
+        unawaited(app.openMain());
       } else if (k == LogicalKeyboardKey.escape) {
         unawaited(app.closePopup());
       } else {
@@ -260,63 +256,59 @@ class _PopupState extends State<Popup> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => unawaited(app.closePopup()),
-      child: ColoredBox(
-        // Over the main window: dim what's behind, like a sheet.
-        color: widget.inMainWindow ? const Color(0x8C000000) : Colors.transparent,
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(20, widget.inMainWindow ? 64 : 4, 20, 40),
-            child: GestureDetector(
-              onTap: () {}, // clicks on the panel stay on the panel
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 680),
-                decoration: BoxDecoration(
-                  color: const Color(0xF517181D),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: C.line2),
-                  boxShadow: const [BoxShadow(color: Color(0x8C000000), blurRadius: 36, offset: Offset(0, 14))],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: AnimatedSize(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.topCenter,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        // Stack the outgoing and incoming stages at the top, so
-                        // the size animation is the only thing that moves.
-                        layoutBuilder: (current, previous) =>
-                            Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(
-                            position: Tween(begin: const Offset(0, .04), end: Offset.zero).animate(animation),
-                            child: child,
-                          ),
-                        ),
-                        child: KeyedSubtree(
-                          key: ValueKey(stage),
-                          child: s == null
-                              ? _locked()
-                              : _choosing
-                              ? _chooser(s)
-                              : Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: _capture(s),
-                                ),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+          child: GestureDetector(
+            onTap: () {}, // clicks on the panel stay on the panel
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 680),
+              decoration: BoxDecoration(
+                color: const Color(0xF517181D),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: C.line2),
+                boxShadow: const [BoxShadow(color: Color(0x8C000000), blurRadius: 36, offset: Offset(0, 14))],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      // Stack the outgoing and incoming stages at the top, so
+                      // the size animation is the only thing that moves.
+                      layoutBuilder: (current, previous) =>
+                          Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween(begin: const Offset(0, .04), end: Offset.zero).animate(animation),
+                          child: child,
                         ),
                       ),
-                      _bar(s),
-                    ],
-                  ),
+                      child: KeyedSubtree(
+                        key: ValueKey(stage),
+                        child: s == null
+                            ? _locked()
+                            : _choosing
+                            ? _chooser(s)
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: _capture(s),
+                              ),
+                      ),
+                    ),
+                    _bar(s),
+                  ],
                 ),
               ),
             ),
