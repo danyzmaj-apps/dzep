@@ -240,58 +240,6 @@ class _LibraryState extends State<Library> {
     });
   }
 
-  // ---------------------------------------------------------------- keys
-
-  bool get _typing {
-    final ctx = FocusManager.instance.primaryFocus?.context;
-    return ctx != null && ctx.findAncestorWidgetOfExactType<EditableText>() != null;
-  }
-
-  KeyEventResult _onKey(FocusNode _, KeyEvent e) {
-    if (e is KeyUpEvent) return KeyEventResult.ignored;
-    final k = e.logicalKey;
-    final cmd = HardwareKeyboard.instance.isMetaPressed;
-    if (cmd && k == LogicalKeyboardKey.keyN) {
-      _newFocus.requestFocus();
-      return KeyEventResult.handled;
-    }
-    if (cmd && k == LogicalKeyboardKey.comma) {
-      widget.app.setSettingsOpen(open: true);
-      return KeyEventResult.handled;
-    }
-    if (_typing) {
-      if (k == LogicalKeyboardKey.escape) {
-        if (_searchFocus.hasFocus && _search.text.isNotEmpty) {
-          _search.clear();
-          setState(() => _query = '');
-        }
-        _listFocus.requestFocus();
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
-    }
-    if (cmd || HardwareKeyboard.instance.isControlPressed) return KeyEventResult.ignored;
-    final v = _visible;
-    final pos = v.indexWhere((i) => i.id == _selId);
-    final cur = pos >= 0 ? v[pos] : null;
-    if (k == LogicalKeyboardKey.slash) {
-      _searchFocus.requestFocus();
-    } else if (k == LogicalKeyboardKey.keyJ || k == LogicalKeyboardKey.arrowDown) {
-      if (v.isNotEmpty) _select(v[(pos + 1).clamp(0, v.length - 1)].id);
-    } else if (k == LogicalKeyboardKey.keyK || k == LogicalKeyboardKey.arrowUp) {
-      if (v.isNotEmpty) _select(v[(pos - 1).clamp(0, v.length - 1)].id);
-    } else if (cur != null && cur.isTodo && (k == LogicalKeyboardKey.keyD || k == LogicalKeyboardKey.space)) {
-      _toggleDone(cur);
-    } else if (cur != null && (k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete)) {
-      _delete(cur);
-    } else if (cur != null && k == LogicalKeyboardKey.enter) {
-      setState(() => _focusNotesOf = '${cur.id}#title');
-    } else {
-      return KeyEventResult.ignored;
-    }
-    return KeyEventResult.handled;
-  }
-
   // ---------------------------------------------------------------- build
 
   @override
@@ -303,7 +251,6 @@ class _LibraryState extends State<Library> {
       final selected = _selId == null ? null : store.byId(_selId!);
       return Focus(
         focusNode: _listFocus,
-        onKeyEvent: _onKey,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -502,7 +449,6 @@ class _LibraryState extends State<Library> {
                         onSubmitted: (_) => _listFocus.requestFocus(),
                       ),
                     ),
-                    const Kbd('/'),
                   ],
                 ),
               ),
@@ -524,7 +470,7 @@ class _LibraryState extends State<Library> {
                   focusNode: _newFocus,
                   style: const TextStyle(fontSize: 13),
                   decoration: plainInput.copyWith(
-                    hintText: _todoView ? 'New todo…  ↵  (⌘N)' : 'New idea…  ↵  (⌘N)',
+                    hintText: _todoView ? 'New todo…  ↵' : 'New idea…  ↵',
                     hintStyle: const TextStyle(color: C.dim2),
                   ),
                   onSubmitted: (_) => _addFromField(),
@@ -674,35 +620,6 @@ class _EmptyDetail extends StatelessWidget {
         Opacity(opacity: .5, child: Text('💡', style: TextStyle(fontSize: 40))),
         SizedBox(height: 8),
         Text('Select an idea', style: TextStyle(color: C.dim)),
-        SizedBox(height: 14),
-        _Hint('⌘N', 'new idea here'),
-        _Hint('j  k', 'move'),
-        _Hint('/', 'search'),
-      ],
-    ),
-  );
-}
-
-class _Hint extends StatelessWidget {
-  const _Hint(this.keys, this.label);
-  final String keys;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 60,
-          child: Align(alignment: Alignment.centerRight, child: Kbd(keys)),
-        ),
-        const SizedBox(width: 10),
-        SizedBox(
-          width: 120,
-          child: Text(label, style: const TextStyle(fontSize: 12, color: C.dim)),
-        ),
       ],
     ),
   );
@@ -871,8 +788,6 @@ class _DetailState extends State<_Detail> {
                       TodoCheck(done: idea.done, size: 14),
                       const SizedBox(width: 8),
                       Text(idea.done ? 'Done' : 'Mark done', style: const TextStyle(fontSize: 12)),
-                      const SizedBox(width: 6),
-                      const Text('d', style: TextStyle(fontSize: 10, color: C.dim2)),
                     ],
                   ),
                 ),
