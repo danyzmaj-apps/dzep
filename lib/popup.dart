@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dzep/chat.dart';
 import 'package:dzep/chat_view.dart';
 import 'package:dzep/controller.dart';
 import 'package:dzep/idea.dart';
@@ -125,8 +126,8 @@ class _PopupState extends State<Popup> {
       return true;
     }
     // The chat's keys work whether the field or the transcript has focus.
-    if (_asking) {
-      final chat = app.chat;
+    final chat = app.chats;
+    if (_asking && chat != null) {
       if (k == LogicalKeyboardKey.escape) {
         unawaited(app.closePopup());
       } else if (k == LogicalKeyboardKey.keyN && _cmd) {
@@ -255,9 +256,10 @@ class _PopupState extends State<Popup> {
     final k = e.logicalKey;
     if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && !_shift) {
       final text = _question.text;
-      if (text.trim().isNotEmpty && !app.chat.busy && app.deepseekKey.isNotEmpty) {
+      final chat = app.chats;
+      if (chat != null && text.trim().isNotEmpty && !chat.busy) {
         _question.clear();
-        unawaited(app.chat.send(text));
+        unawaited(chat.send(text));
       }
       return KeyEventResult.handled;
     }
@@ -371,7 +373,7 @@ class _PopupState extends State<Popup> {
                             : _choosing
                             ? _chooser(s)
                             : _asking
-                            ? _askPane()
+                            ? _askPane(app.chats!)
                             : Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -653,11 +655,10 @@ class _PopupState extends State<Popup> {
 
   /// The quick-question chat: the conversation above, the question field
   /// below. It continues where it was left; ⌘N starts a new one and the old
-  /// one stays in the main window's Chats.
-  Widget _askPane() => ListenableBuilder(
-    listenable: app.chat,
+  /// one stays in the main window's Quick questions (and on the iPhone).
+  Widget _askPane(ChatStore chat) => ListenableBuilder(
+    listenable: chat,
     builder: (context, _) {
-      final chat = app.chat;
       final c = chat.current;
       return Column(
         mainAxisSize: MainAxisSize.min,
@@ -697,23 +698,6 @@ class _PopupState extends State<Popup> {
               ],
             ),
           ),
-          if (app.deepseekKey.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(50, 0, 18, 14),
-              child: Row(
-                children: [
-                  const Text('No DeepSeek API key yet.', style: TextStyle(fontSize: 12, color: C.warn)),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () {
-                      app.setSettingsOpen(open: true);
-                      unawaited(app.openMain());
-                    },
-                    child: const Text('Add it in Settings', style: TextStyle(fontSize: 12, color: C.accent)),
-                  ),
-                ],
-              ),
-            ),
         ],
       );
     },

@@ -3,8 +3,8 @@
 A personal pocket for dev ideas and work todos: one keystroke on the Mac, one sentence to Siri on the iPhone, synced through Supabase.
 
 - **Mac**: lives in the menu bar. ⇧⌘Space opens a Raycast-style popup with a chooser: **1** idea, **2** todo, **3** open the app, **4** ask; the field is focused right away and ↵ saves. The menu-bar icon shows the open-todo count. The main window is a normal app window (Dock icon and menu bar while it's open, ⌘W closes it, ⌘Q quits) with Todos (open / done), Quick questions and Ideas (grouped by project, with descriptions); every item shows when it was added. A **Todos** widget (desktop or Notification Center; small, medium, large) lists the open todos; click a circle to tick one off.
-- **Quick questions** (Mac): **4** in the popup is a small chat with DeepSeek (`deepseek-flash`, thinking off, streamed). It picks up where you left off; ⌘N starts a new chat, ⇧⌘C copies the last answer (each answer also has a Copy button, and all text is selectable), ⌘O opens it in the main window. Every chat is kept in the main window's Quick questions, where you can continue it there or back in the popup. The API key goes in Settings (stored in the app's preferences); chats live in `chats.json` in the app's Application Support folder, on this Mac only.
-- **iPhone**: Todos and Ideas tabs, a + button, swipe right to tick a todo off. "Hey Siri, add a todo / an idea to Džep" (or the Action Button) saves without opening the app. Widgets: **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
+- **Quick questions** (Mac and iPhone): **4** in the popup is a small chat with DeepSeek (`deepseek-flash`, thinking off, streamed). It picks up where you left off; ⌘N starts a new chat, ⇧⌘C copies the last answer (each answer also has a Copy button, and all text is selectable), ⌘O opens it in the main window. Every chat is in the main window's Quick questions and the iPhone's Ask tab, synced: start on one device, continue on the other. Questions go through the `ask` edge function, which holds the DeepSeek key, so the apps have no key to set.
+- **iPhone**: Todos, Ideas and Ask tabs, a + button, swipe right to tick a todo off. Ask lists your quick-question chats (the same ones as the Mac); ✎ starts one, tap one to continue it, swipe left to delete; each answer has Copy, and the chat's copy button takes the last answer. "Hey Siri, add a todo / an idea to Džep" (or the Action Button) saves without opening the app. Widgets: **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
 - **Reminders** (todos): end a todo with `!` and a time: `call bank !15:00`, `!9`, `!3pm`, `!tomorrow 9`, `!mon 14:30`, `!30m`, `!2h`. That works in the popup, the main window's add field and the iPhone's add sheet; a chip under the field shows what it will set, and a token that doesn't read as a time stays in the title. A time already past today means tomorrow, a weekday is the next one still ahead (today only before that time), a day alone means 9:00, `today` needs a time. Change or clear it in the main window's todo detail (**Remind**: the same syntax without the `!`) or on the iPhone (long-press a todo, or **Remind me** in its detail). At that time every device that knows the reminder shows a local notification: clicking it opens the todo (Mac: selected in the main window; iPhone: its detail), **Done** ticks it off. Ticking a todo off or deleting it cancels its reminder (Undo brings it back).
 - **Terminal**: omp's `/idea` and `/todo` (`~/.omp/agent/extensions/idea.ts`) talk to the Mac app's localhost API; ideas land under the current repo's name as their project.
 
@@ -19,7 +19,7 @@ The first design mockup is `design/mockup.html`.
 | `lib/remind.dart` | Reminders: the `!` parser, how a time reads, which todos should have a notification pending (pure Dart, `test/remind_test.dart`) |
 | `lib/store.dart` | Local JSON cache + Supabase sync (push dirty, pull since cursor, realtime) |
 | `lib/controller.dart`, `popup.dart`, `main_window.dart`, `native.dart` | Mac app |
-| `lib/chat.dart`, `chat_view.dart` | Mac: quick questions (DeepSeek client, saved chats, transcript/list/thread widgets) |
+| `lib/chat.dart`, `chat_view.dart` | Quick questions: `ChatStore` (synced chats, streaming from `ask`) and the transcript/list/thread widgets (Mac and iPhone) |
 | `lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea` and `/todo` |
 | `lib/mobile.dart` | iPhone app |
 | `macos/Runner/MainFlutterWindow.swift`, `AppDelegate.swift` | Popup panel + main window on one multi-view engine, menu-bar icon, Carbon hotkey, activation policy, launch at login, reminder notifications |
@@ -37,11 +37,15 @@ Supabase project `dzep` (`tgqmhieundubwtyvsnih`, eu-central-1).
 
 - `ideas`: ideas and todos (`kind`); a todo is open or done (`done_at`) and may have a reminder (`remind_at`, null for none; clients that predate the column don't send it, so their upserts leave it alone). Ids are client-generated so capture works offline; deletes are soft (`deleted_at`) so other devices learn about them; `updated_at` is set by a trigger (the sync cursor). RLS: own rows only.
 - `device_tokens`: SHA-256 of per-iPhone tokens. Siri and the widget can't reach the app's session, so they call `functions/v1/device` (`{action: add | done}`) with `x-dzep-token`; the function maps the token to the user. Deployed with `--no-verify-jwt`.
+- `chats` + `chat_messages`: quick-question chats. The app picks a chat's id; only the `ask` function writes messages. A new message moves its chat's `updated_at` (trigger), so devices pull changed chats by that cursor (and realtime on `chats`) and refetch their messages. Deletes are soft (`chats.deleted_at`). RLS: own rows only, and messages only into one's own chats.
+- `functions/v1/ask` (`{chat_id, question}`, the user's token): creates the chat if new, saves the question, streams DeepSeek's answer back as server-sent events (`{delta}` … `{done}` or `{error}`) and saves it, even if the app goes away mid-answer (`EdgeRuntime.waitUntil`). The DeepSeek key is the secret `DEEPSEEK_API_KEY`. Deployed with `--no-verify-jwt`: the token is checked in the function with `auth.getUser`.
 - Auth: GitHub OAuth app owned by `danyzmaj-apps`; redirect `dzep://login-callback`.
 
 ```sh
 supabase db push
 supabase functions deploy device --no-verify-jwt
+supabase functions deploy ask --no-verify-jwt
+supabase secrets set DEEPSEEK_API_KEY=…
 ```
 
 ## Mac notes
@@ -92,7 +96,7 @@ Unit tests (the reminder parser and which reminders are pending):
 fvm flutter test
 ```
 
-Maestro flows need a signed-in simulator:
+Maestro flows need a signed-in simulator (the test account `maestro@ideja.test`); `ask.yaml` also needs the network, since it asks a real question through the `ask` function and deletes its chat at the end:
 
 ```sh
 maestro test -e TS=$(date +%H%M%S) maestro/

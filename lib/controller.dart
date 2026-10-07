@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:dzep/chat.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The Mac app: [Session] plus its two windows (the ⇧⌘Space popup panel and
@@ -41,20 +39,7 @@ class AppController extends Session {
   late HotKey _hotKey = _loadHotKey();
   bool hotKeyRegistered = false;
 
-  /// Quick questions: the popup's 4 and the main window's Chats.
-  late final chat = Chat(() => deepseekKey);
-
-  /// DeepSeek API key for [chat], set in Settings.
-  String get deepseekKey => _prefs.getString('deepseekKey') ?? '';
-
-  Future<void> setDeepseekKey(String key) async {
-    await _prefs.setString('deepseekKey', key.trim());
-    notifyListeners();
-  }
-
   Future<void> start() async {
-    final dir = await getApplicationSupportDirectory();
-    await chat.load(File('${dir.path}/chats.json'));
     Native.listen(_onNative);
     hotKeyRegistered = await Native.setHotKey(_hotKey);
     await startAuth();
@@ -136,7 +121,7 @@ class AppController extends Session {
 
   /// Shows [c] in the popup's chat.
   Future<void> openAsk(Conversation c) async {
-    chat.resume(c);
+    chats?.resume(c);
     askNext = true;
     await openPopup();
   }

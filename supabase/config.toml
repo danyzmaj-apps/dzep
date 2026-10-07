@@ -415,3 +415,6 @@ enabled = true
 # The device token is the credential (see the function header).
 [functions.device]
 verify_jwt = false
+
+[functions.ask]
+verify_jwt = false

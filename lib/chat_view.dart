@@ -7,11 +7,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Copies [text] and says so.
+/// Copies [text] and says so: the Mac's toast, the iPhone's snackbar.
 void copyAnswer(BuildContext context, String? text) {
   if (text == null || text.isEmpty) return;
   unawaited(Clipboard.setData(ClipboardData(text: text)));
-  Toaster.of(context).show('Copied ✓');
+  final toaster = context.findAncestorStateOfType<ToasterState>();
+  if (toaster != null) {
+    toaster.show('Copied ✓');
+  } else {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Copied ✓')));
+  }
 }
 
 /// A conversation's turns, newest at the bottom, all selectable (drag, ⌘C,
@@ -25,7 +32,7 @@ class ChatTranscript extends StatelessWidget {
     super.key,
   });
 
-  final Chat chat;
+  final ChatStore chat;
   final Conversation conversation;
 
   /// Sized to its content (the popup) instead of filling the space.
@@ -127,7 +134,7 @@ class _Answer extends StatelessWidget {
 class ChatList extends StatelessWidget {
   const ChatList({required this.chat, required this.selected, required this.onSelect, super.key});
 
-  final Chat chat;
+  final ChatStore chat;
   final Conversation? selected;
 
   /// Null starts a new chat.
@@ -220,7 +227,7 @@ class ChatThread extends StatefulWidget {
     super.key,
   });
 
-  final Chat chat;
+  final ChatStore chat;
   final Conversation? conversation;
 
   /// After a send; a new chat now exists.
@@ -257,7 +264,7 @@ class _ChatThreadState extends State<ChatThread> {
     if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && !keys.isShiftPressed) {
       final text = _field.text;
       final chat = widget.chat;
-      if (text.trim().isNotEmpty && !chat.busy && chat.hasKey) {
+      if (text.trim().isNotEmpty && !chat.busy) {
         _field.clear();
         unawaited(chat.send(text, into: widget.conversation));
         widget.onSent(chat.current!);
@@ -342,9 +349,7 @@ class _ChatThreadState extends State<ChatThread> {
                   maxLines: 8,
                   style: const TextStyle(fontSize: 14, height: 1.45),
                   decoration: plainInput.copyWith(
-                    hintText: !chat.hasKey
-                        ? 'Add a DeepSeek API key in Settings first'
-                        : (c == null ? 'Ask a quick question…  ↵' : 'Follow up…  ↵'),
+                    hintText: c == null ? 'Ask a quick question…  ↵' : 'Follow up…  ↵',
                     hintStyle: const TextStyle(color: C.dim2),
                   ),
                 ),

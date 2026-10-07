@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 /// One turn of a conversation; an answer grows while it streams.
@@ -12,16 +14,22 @@ class ChatMessage {
   factory ChatMessage.fromJson(Map<String, dynamic> j) =>
       ChatMessage(fromUser: j['user'] == true, text: j['text'] as String? ?? '', error: j['error'] as String?);
 
+  factory ChatMessage.fromServer(Map<String, dynamic> row) => ChatMessage(
+    fromUser: row['role'] == 'user',
+    text: row['content'] as String? ?? '',
+    error: row['error'] as String?,
+  );
+
   final bool fromUser;
   String text;
 
-  /// Set when the answer failed; the turn is left out of later requests.
+  /// Set when the answer failed.
   String? error;
 
   Map<String, dynamic> toJson() => {'user': fromUser, 'text': text, 'error': ?error};
 }
 
-/// A saved quick-question chat.
+/// A quick-question chat (rows of `chats` + `chat_messages`).
 class Conversation {
   Conversation({required this.id, required this.createdAt, required this.updatedAt, List<ChatMessage>? messages})
     : messages = messages ?? [];
@@ -34,8 +42,10 @@ class Conversation {
   );
 
   final String id;
-  final DateTime createdAt;
+  DateTime createdAt;
   DateTime updatedAt;
+
+  /// Replaced in place on sync: open screens hold this list.
   final List<ChatMessage> messages;
 
   /// The first question's first line.
@@ -61,21 +71,45 @@ class Conversation {
   };
 }
 
-/// Quick questions (4 in the popup, Chats in the main window): DeepSeek's
-/// OpenAI-compatible chat API, streamed. Conversations are kept on this Mac
-/// (`chats.json` next to the ideas cache) so any of them can be continued.
-class Chat extends ChangeNotifier {
-  Chat(this._key);
+/// The signed-in user's quick-question chats, on the Mac and the iPhone.
+/// Questions go to the `ask` edge function (supabase/functions/ask), which
+/// holds the DeepSeek key, saves both turns and streams the answer back; this
+/// store shows the stream and keeps every chat current through a cursor pull
+/// on `chats` (a new message moves its chat's `updated_at`) and realtime. A
+/// local cache shows them offline.
+class ChatStore extends ChangeNotifier {
+  ChatStore._(this._client, this.userId, this._file);
 
-  /// The API key from Settings, read on every send.
-  final String Function() _key;
+  static Future<ChatStore> open(SupabaseClient client, String userId) async {
+    final dir = await getApplicationSupportDirectory();
+    final store = ChatStore._(client, userId, File('${dir.path}/chats-$userId.json'));
+    await store._load();
+    store._start();
+    return store;
+  }
 
-  static final Uri _endpoint = Uri.parse('https://api.deepseek.com/chat/completions');
-  static const model = 'deepseek-flash';
+  final SupabaseClient _client;
+  final String userId;
+  final File _file;
+
+  final Map<String, Conversation> _chats = {};
+  DateTime? _cursor;
+
+  /// Chats deleted here that the server hasn't heard about yet.
+  final Set<String> _deletes = {};
+
+  RealtimeChannel? _channel;
+  Timer? _saveTimer;
+  Timer? _pullTimer;
+  Timer? _pullSoon;
+  bool _pulling = false;
+  bool _pullAgain = false;
+  bool _closed = false;
 
   /// Newest activity first.
-  List<Conversation> get conversations => _conversations;
-  final List<Conversation> _conversations = [];
+  List<Conversation> get conversations => _chats.values.toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+  Conversation? byId(String id) => _chats[id];
 
   /// The conversation the popup shows; null for a fresh one.
   Conversation? get current => _current;
@@ -84,32 +118,13 @@ class Chat extends ChangeNotifier {
   /// The conversation an answer is streaming into.
   Conversation? get streaming => _streaming;
   Conversation? _streaming;
-  HttpClient? _client;
+
+  /// Completes to stop the streaming answer (the server still saves it).
+  Completer<void>? _abort;
 
   bool get busy => _streaming != null;
 
-  /// A DeepSeek key is set in Settings.
-  bool get hasKey => _key().isNotEmpty;
-
-  File? _file;
-  Timer? _saveTimer;
-
-  Future<void> load(File file) async {
-    _file = file;
-    try {
-      final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      _conversations
-        ..clear()
-        ..addAll([for (final c in json['conversations'] as List) Conversation.fromJson(c as Map<String, dynamic>)]);
-      notifyListeners();
-    } on PathNotFoundException {
-      // First run.
-    } on Object catch (e) {
-      debugPrint('Džep: unreadable chats file: $e');
-    }
-  }
-
-  /// The popup starts over; the old conversation stays in Chats.
+  /// The popup starts over; the old conversation stays in the list.
   void newChat() {
     _current = null;
     notifyListeners();
@@ -123,94 +138,99 @@ class Chat extends ChangeNotifier {
 
   void delete(Conversation c) {
     if (_streaming == c) _stop();
-    _conversations.remove(c);
+    _chats.remove(c.id);
+    _deletes.add(c.id);
     if (_current == c) _current = null;
-    _scheduleSave();
     notifyListeners();
+    _scheduleSave();
+    unawaited(_pushDeletes());
   }
 
-  /// Asks [text] in [into] (default: the popup's conversation, or a new one),
-  /// which becomes the current conversation.
+  /// Asks [text] in [into] (default: the current conversation, or a new
+  /// one), which becomes the current conversation.
   Future<void> send(String text, {Conversation? into}) async {
-    final key = _key();
     final question = text.trim();
-    if (key.isEmpty || busy || question.isEmpty) return;
-    final now = DateTime.now();
+    if (busy || question.isEmpty || _closed) return;
+    final now = DateTime.now().toUtc();
     final c = into ?? _current ?? Conversation(id: const Uuid().v4(), createdAt: now, updatedAt: now);
-    if (!_conversations.contains(c)) _conversations.insert(0, c);
+    _chats[c.id] = c;
+    _deletes.remove(c.id);
     _current = c;
-    c.messages.add(ChatMessage(fromUser: true, text: question));
-    _touch(c);
-    final history = [
-      {'role': 'system', 'content': _system()},
-      for (final m in c.messages)
-        if (m.error == null && m.text.isNotEmpty) {'role': m.fromUser ? 'user' : 'assistant', 'content': m.text},
-    ];
+    c
+      ..messages.add(ChatMessage(fromUser: true, text: question))
+      ..updatedAt = now;
     final reply = ChatMessage(fromUser: false);
     c.messages.add(reply);
-    final client = _client = HttpClient();
+    final abort = _abort = Completer<void>();
     _streaming = c;
     notifyListeners();
     try {
-      final req = await client.postUrl(_endpoint);
-      req.headers
-        ..set(HttpHeaders.authorizationHeader, 'Bearer $key')
-        ..contentType = ContentType.json;
-      req.add(
-        utf8.encode(
-          jsonEncode({
-            'model': model,
-            'stream': true,
-            // A quick answer, not a pondered one.
-            'thinking': {'type': 'disabled'},
-            'messages': history,
-          }),
-        ),
+      final res = await _client.functions.invoke(
+        'ask',
+        body: {'chat_id': c.id, 'question': question},
+        abortSignal: abort.future,
       );
-      final res = await req.close();
-      if (res.statusCode != HttpStatus.ok) {
-        throw _ChatError(_describe(res.statusCode, await utf8.decodeStream(res)));
-      }
-      // Server-sent events: `data: {chunk}` lines, then `data: [DONE]`.
-      await for (final line in res.transform(utf8.decoder).transform(const LineSplitter())) {
-        if (_client != client) return;
+      final stream = res.data as Stream<List<int>>;
+      await for (final line in stream.transform(utf8.decoder).transform(const LineSplitter())) {
+        if (_abort != abort) return;
         if (!line.startsWith('data:')) continue;
-        final data = line.substring(5).trim();
-        if (data == '[DONE]') break;
-        if (jsonDecode(data) case {'choices': [{'delta': {'content': final String chunk}}, ...]}
-            when chunk.isNotEmpty) {
-          reply.text += chunk;
-          notifyListeners();
+        switch (jsonDecode(line.substring(5))) {
+          case {'delta': final String delta}:
+            reply.text += delta;
+            notifyListeners();
+          case {'error': final String message}:
+            reply.error = message;
         }
       }
-      if (reply.text.isEmpty) throw const _ChatError('DeepSeek sent an empty answer.');
+      if (reply.text.isEmpty) reply.error ??= 'The answer was cut off.';
     } on Object catch (e) {
-      if (_client != client) return;
-      reply.error = e is _ChatError ? e.message : 'Couldn’t reach DeepSeek: $e';
+      if (_abort != abort) return;
+      reply.error = switch (e) {
+        FunctionException(details: {'error': final String message}) => message,
+        FunctionsFetchException() => 'Couldn’t reach the server. Check your connection.',
+        FunctionException(:final status) => 'The server failed ($status).',
+        _ => 'Couldn’t get an answer: $e',
+      };
     } finally {
-      client.close(force: true);
-      if (_client == client) {
-        _client = null;
+      if (_abort == abort) {
+        _abort = null;
         _streaming = null;
-        _touch(c);
         notifyListeners();
+        _scheduleSave();
+        // Swap the streamed turns for the saved ones.
+        unawaited(_pull(refetch: c.id));
       }
     }
   }
 
-  /// Stops the streaming answer, keeping what arrived.
+  /// Stops the streaming answer; the server still saves it and the next pull
+  /// brings it.
   void _stop() {
-    _client?.close(force: true);
-    _client = null;
+    final abort = _abort;
+    _abort = null;
     _streaming = null;
+    if (abort != null && !abort.isCompleted) abort.complete();
   }
 
-  void _touch(Conversation c) {
-    c.updatedAt = DateTime.now();
-    _conversations
-      ..remove(c)
-      ..insert(0, c);
-    _scheduleSave();
+  // ---------------------------------------------------------------- disk
+
+  Future<void> _load() async {
+    if (!_file.existsSync()) return;
+    try {
+      final json = jsonDecode(await _file.readAsString()) as Map<String, dynamic>;
+      final cursor = json['cursor'] as String?;
+      _cursor = cursor == null ? null : DateTime.parse(cursor);
+      _deletes.addAll([for (final id in json['deletes'] as List? ?? const []) id as String]);
+      for (final raw in json['chats'] as List) {
+        final c = Conversation.fromJson(raw as Map<String, dynamic>);
+        _chats[c.id] = c;
+      }
+    } on Object catch (e) {
+      // Only a cache: the server has every chat.
+      debugPrint('Džep: chats cache unreadable ($e), starting from the server');
+      _cursor = null;
+      _chats.clear();
+    }
   }
 
   void _scheduleSave() {
@@ -219,47 +239,142 @@ class Chat extends ChangeNotifier {
   }
 
   Future<void> _save() async {
-    final file = _file;
-    if (file == null) return;
     final json = jsonEncode({
-      'conversations': [for (final c in _conversations) c.toJson()],
+      'cursor': _cursor?.toUtc().toIso8601String(),
+      'deletes': _deletes.toList(),
+      'chats': [for (final c in _chats.values) c.toJson()],
     });
-    await file.parent.create(recursive: true);
-    final tmp = File('${file.path}.tmp');
+    await _file.parent.create(recursive: true);
+    final tmp = File('${_file.path}.tmp');
     await tmp.writeAsString(json, flush: true);
-    await tmp.rename(file.path);
+    await tmp.rename(_file.path);
   }
 
-  String _system() {
-    final now = DateTime.now();
-    final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    return 'You answer quick questions from a software developer in a small popup on their Mac. '
-        'Be brief and direct: lead with the answer, skip preamble. '
-        'Use Markdown only when it helps (code blocks for code, short lists). Today is $today.';
+  // ---------------------------------------------------------------- sync
+
+  void _start() {
+    _channel = _client
+        .channel('chats-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chats',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
+          callback: (_) {
+            // A burst (question, answer) becomes one pull.
+            _pullSoon?.cancel();
+            _pullSoon = Timer(const Duration(milliseconds: 300), () => unawaited(syncNow()));
+          },
+        )
+        .subscribe((status, _) {
+          if (status == RealtimeSubscribeStatus.subscribed) unawaited(syncNow());
+        });
+    _pullTimer = Timer.periodic(const Duration(minutes: 2), (_) => unawaited(syncNow()));
+    unawaited(syncNow());
   }
 
-  static String _describe(int status, String body) {
-    final message = switch (_tryDecode(body)) {
-      {'error': {'message': final String m}} => m,
-      _ => body.trim(),
-    };
-    return switch (status) {
-      HttpStatus.unauthorized => 'DeepSeek rejected the API key (Settings in the main window).',
-      HttpStatus.paymentRequired => 'DeepSeek: insufficient balance.',
-      _ => 'DeepSeek error $status${message.isEmpty ? '' : ': $message'}',
-    };
+  Future<void> syncNow() async {
+    await _pushDeletes();
+    await _pull();
   }
 
-  static Object? _tryDecode(String body) {
+  Future<void> _pushDeletes() async {
+    if (_deletes.isEmpty || _closed) return;
+    final ids = _deletes.toList();
     try {
-      return jsonDecode(body);
-    } on FormatException {
-      return null;
+      await _client.from('chats').update({'deleted_at': DateTime.now().toUtc().toIso8601String()}).inFilter('id', ids);
+      _deletes.removeAll(ids);
+      _scheduleSave();
+    } on Object catch (e) {
+      debugPrint('Džep: chat delete not pushed yet: $e');
     }
   }
-}
 
-class _ChatError implements Exception {
-  const _ChatError(this.message);
-  final String message;
+  /// Chats changed since the cursor, each with all its messages; [refetch]
+  /// also brings that one chat whatever the cursor says.
+  Future<void> _pull({String? refetch}) async {
+    if (_closed) return;
+    if (_pulling) {
+      _pullAgain = true;
+      return;
+    }
+    _pulling = true;
+    try {
+      final rows = [
+        ...await _client
+            .from('chats')
+            .select()
+            .gt('updated_at', (_cursor ?? DateTime.utc(2000)).toIso8601String())
+            .order('updated_at', ascending: true),
+      ];
+      if (refetch != null && !rows.any((r) => r['id'] == refetch)) {
+        rows.addAll(await _client.from('chats').select().eq('id', refetch));
+      }
+      final ids = [
+        for (final r in rows)
+          if (r['deleted_at'] == null) r['id'] as String,
+      ];
+      final messages = ids.isEmpty
+          ? const <Map<String, dynamic>>[]
+          : await _client
+                .from('chat_messages')
+                .select('chat_id, role, content, error, created_at')
+                .inFilter('chat_id', ids)
+                // postgrest's order() is newest first unless told otherwise.
+                .order('created_at', ascending: true);
+      _merge(rows, messages);
+    } on Object catch (e) {
+      debugPrint('Džep: chats pull failed: $e');
+    } finally {
+      _pulling = false;
+    }
+    if (_pullAgain) {
+      _pullAgain = false;
+      unawaited(_pull());
+    }
+  }
+
+  void _merge(List<Map<String, dynamic>> rows, List<Map<String, dynamic>> messages) {
+    if (_closed || rows.isEmpty) return;
+    final byChat = <String, List<ChatMessage>>{};
+    for (final m in messages) {
+      (byChat[m['chat_id'] as String] ??= []).add(ChatMessage.fromServer(m));
+    }
+    for (final row in rows) {
+      final id = row['id'] as String;
+      final updatedAt = DateTime.parse(row['updated_at'] as String);
+      if (_cursor == null || updatedAt.isAfter(_cursor!)) _cursor = updatedAt;
+      if (_deletes.contains(id)) continue;
+      if (row['deleted_at'] != null) {
+        final gone = _chats.remove(id);
+        if (gone != null && _current == gone) _current = null;
+        if (gone != null && _streaming == gone) _stop();
+        continue;
+      }
+      final known = _chats[id];
+      final c =
+          known ?? Conversation(id: id, createdAt: DateTime.parse(row['created_at'] as String), updatedAt: updatedAt);
+      _chats[id] = c;
+      known?.updatedAt = updatedAt;
+      // The streaming chat keeps its live turns; it's refetched when done.
+      if (c == _streaming) continue;
+      c.messages
+        ..clear()
+        ..addAll(byChat[id] ?? const []);
+    }
+    notifyListeners();
+    _scheduleSave();
+  }
+
+  /// Stops syncing and flushes the cache (sign-out, quit).
+  Future<void> close() async {
+    _closed = true;
+    _stop();
+    _pullTimer?.cancel();
+    _pullSoon?.cancel();
+    _saveTimer?.cancel();
+    await _save();
+    final channel = _channel;
+    if (channel != null) await _client.removeChannel(channel);
+  }
 }

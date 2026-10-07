@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:app_links/app_links.dart';
 import 'package:crypto/crypto.dart';
+import 'package:dzep/chat.dart';
+import 'package:dzep/chat_view.dart';
 import 'package:dzep/idea.dart';
 import 'package:dzep/main_window.dart' show Avatar, SignInPage;
 import 'package:dzep/native.dart';
@@ -118,7 +120,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
-  /// 0: Todos (the app opens here), 1: Ideas.
+  /// 0: Todos (the app opens here), 1: Ideas, 2: Ask.
   int _tab = 0;
   bool _showDone = false;
   _Filter _filter = (project: false, id: 'all');
@@ -127,6 +129,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   StreamSubscription<Uri>? _links;
 
   IdeaStore get store => widget.store;
+
+  /// Open whenever the idea store is (see Session).
+  ChatStore get chats => widget.session.chats!;
+
+  void _openChat(Conversation? c) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => ChatPage(chats: chats, conversation: c),
+    ),
+  );
 
   @override
   void initState() {
@@ -250,15 +261,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: store,
+    listenable: Listenable.merge([store, chats]),
     builder: (context, _) => Scaffold(
       floatingActionButton: FloatingActionButton(
         key: const ValueKey('add'),
-        tooltip: _tab == 0 ? 'New todo' : 'New idea',
+        tooltip: switch (_tab) {
+          0 => 'New todo',
+          1 => 'New idea',
+          _ => 'New chat',
+        },
         backgroundColor: C.accent,
         foregroundColor: const Color(0xFF0E0F12),
-        onPressed: () => unawaited(_openAdd(_tab == 0 ? Kind.todo : Kind.idea)),
-        child: const Icon(Icons.add, size: 28),
+        onPressed: () => _tab == 2 ? _openChat(null) : unawaited(_openAdd(_tab == 0 ? Kind.todo : Kind.idea)),
+        child: Icon(_tab == 2 ? Icons.edit_outlined : Icons.add, size: 28),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -276,6 +291,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             label: 'Todos',
           ),
           const NavigationDestination(icon: Icon(Icons.lightbulb_outline), label: 'Ideas'),
+          const NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), label: 'Ask'),
         ],
       ),
       body: SafeArea(
@@ -287,10 +303,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
               child: Row(
                 children: [
-                  Text(
-                    _tab == 0 ? 'Todos' : 'Ideas',
-                    style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
-                  ),
+                  Text(switch (_tab) {
+                    0 => 'Todos',
+                    1 => 'Ideas',
+                    _ => 'Ask',
+                  }, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
                   const Spacer(),
                   SyncDot(store.syncState),
                   IconButton(
@@ -301,27 +318,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-              child: TextField(
-                controller: _search,
-                onChanged: (q) => setState(() => _query = q),
-                style: const TextStyle(fontSize: 15),
-                decoration: InputDecoration(
-                  hintText: 'Search',
-                  hintStyle: const TextStyle(color: C.dim2),
-                  prefixIcon: const Icon(Icons.search, color: C.dim, size: 20),
-                  filled: true,
-                  fillColor: C.field,
-                  isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+            if (_tab != 2)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                child: TextField(
+                  controller: _search,
+                  onChanged: (q) => setState(() => _query = q),
+                  style: const TextStyle(fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: 'Search',
+                    hintStyle: const TextStyle(color: C.dim2),
+                    prefixIcon: const Icon(Icons.search, color: C.dim, size: 20),
+                    filled: true,
+                    fillColor: C.field,
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  ),
                 ),
               ),
-            ),
             if (_tab == 1) SizedBox(height: 38, child: _filters()),
             const Divider(height: 1, color: C.line),
             Expanded(
-              child: RefreshIndicator(onRefresh: store.syncNow, child: _tab == 0 ? _todosList() : _ideasList()),
+              child: _tab == 2
+                  ? RefreshIndicator(onRefresh: chats.syncNow, child: _chatsList())
+                  : RefreshIndicator(onRefresh: store.syncNow, child: _tab == 0 ? _todosList() : _ideasList()),
             ),
           ],
         ),
@@ -341,6 +361,47 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ),
     ],
   );
+
+  Widget _chatsList() {
+    final list = chats.conversations;
+    if (list.isEmpty) return _empty('No chats yet. Tap ✎ to ask a quick question.');
+    return ListView.separated(
+      padding: const EdgeInsets.only(bottom: 96),
+      itemCount: list.length,
+      separatorBuilder: (_, _) => const Divider(height: 1, color: C.line, indent: 52),
+      itemBuilder: (context, i) {
+        final c = list[i];
+        return Dismissible(
+          key: ValueKey('chat-${c.id}'),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            color: const Color(0xFF7F1D1D),
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 24),
+            child: const Icon(Icons.delete_outline, color: Colors.white),
+          ),
+          onDismissed: (_) {
+            chats.delete(c);
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(const SnackBar(content: Text('Chat deleted')));
+          },
+          child: ListTile(
+            onTap: () => _openChat(c),
+            leading: Icon(Icons.auto_awesome, size: 18, color: chats.streaming == c ? C.accent : C.dim2),
+            title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15)),
+            subtitle: Text(
+              (c.lastAnswer ?? '').replaceAll('\n', ' '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, color: C.dim),
+            ),
+            trailing: Text(stamp(c.updatedAt), style: const TextStyle(fontSize: 11, color: C.dim)),
+          ),
+        );
+      },
+    );
+  }
 
   Widget _ideasList() {
     final ideas = store.ideas.where(_matches).toList();
@@ -981,5 +1042,125 @@ class _ReminderSheetState extends State<_ReminderSheet> {
         ],
       ),
     ),
+  );
+}
+
+// ==================================================================== ask
+
+/// One quick-question chat (null: a new one), continued from the composer.
+class ChatPage extends StatefulWidget {
+  const ChatPage({required this.chats, required this.conversation, super.key});
+  final ChatStore chats;
+  final Conversation? conversation;
+
+  @override
+  State<ChatPage> createState() => _ChatPageState();
+}
+
+class _ChatPageState extends State<ChatPage> {
+  late Conversation? _c = widget.conversation;
+  final _field = TextEditingController();
+  final _focus = FocusNode();
+
+  ChatStore get chats => widget.chats;
+
+  @override
+  void initState() {
+    super.initState();
+    _field.addListener(() => setState(() {}));
+    if (_c == null) _focus.requestFocus();
+  }
+
+  @override
+  void dispose() {
+    _field.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _send() {
+    final text = _field.text;
+    if (text.trim().isEmpty || chats.busy) return;
+    _field.clear();
+    unawaited(chats.send(text, into: _c));
+    // A new chat exists from here on.
+    setState(() => _c = chats.current);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: chats,
+    builder: (context, _) {
+      final c = _c;
+      // Deleted on another device.
+      if (c != null && chats.byId(c.id) == null && !chats.busy) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) Navigator.of(context).maybePop();
+        });
+      }
+      final canSend = _field.text.trim().isNotEmpty && !chats.busy;
+      return Scaffold(
+        appBar: AppBar(
+          backgroundColor: C.win,
+          title: Text(c?.title ?? 'New chat', maxLines: 1, overflow: TextOverflow.ellipsis),
+          actions: [
+            if (c != null)
+              IconButton(
+                tooltip: 'Copy last answer',
+                onPressed: () => copyAnswer(context, c.lastAnswer),
+                icon: const Icon(Icons.content_copy, size: 20),
+              ),
+          ],
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child: c == null || c.messages.isEmpty
+                  ? const Center(
+                      child: Text('Ask a quick question below.', style: TextStyle(color: C.dim)),
+                    )
+                  : ChatTranscript(chat: chats, conversation: c, padding: const EdgeInsets.fromLTRB(18, 8, 18, 16)),
+            ),
+            Container(
+              decoration: const BoxDecoration(
+                color: C.bar,
+                border: Border(top: BorderSide(color: C.line)),
+              ),
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+              child: SafeArea(
+                top: false,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _field,
+                        focusNode: _focus,
+                        minLines: 1,
+                        maxLines: 6,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: const TextStyle(fontSize: 16, height: 1.4),
+                        decoration: plainInput.copyWith(
+                          hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
+                          hintStyle: const TextStyle(color: C.dim2),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Send',
+                      onPressed: canSend ? _send : null,
+                      icon: chats.busy
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
   );
 }

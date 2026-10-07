@@ -132,6 +132,9 @@ class _LibraryState extends State<Library> {
 
   IdeaStore get store => widget.store;
 
+  /// Open whenever the idea store is (see Session).
+  ChatStore get _chatStore => widget.app.chats!;
+
   @override
   void initState() {
     super.initState();
@@ -206,7 +209,7 @@ class _LibraryState extends State<Library> {
     setState(() {
       _view = v;
       _selId = _visible.firstOrNull?.id;
-      if (v == _chats) _chat = widget.app.chat.current ?? widget.app.chat.conversations.firstOrNull;
+      if (v == _chats) _chat = _chatStore.current ?? _chatStore.conversations.firstOrNull;
     });
   }
 
@@ -262,12 +265,12 @@ class _LibraryState extends State<Library> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([store, widget.app.chat]),
+    listenable: Listenable.merge([store, _chatStore]),
     builder: (context, _) {
       final visible = _visible;
       if (_selId != null && store.byId(_selId!) == null) _selId = null;
       final selected = _selId == null ? null : store.byId(_selId!);
-      final chat = widget.app.chat;
+      final chat = _chatStore;
       if (_chat != null && !chat.conversations.contains(_chat)) _chat = chat.conversations.firstOrNull;
       final chats = _view == _chats;
       return Focus(
@@ -324,7 +327,7 @@ class _LibraryState extends State<Library> {
           : v == _todosDone
           ? 0
           : v == _chats
-          ? widget.app.chat.conversations.length
+          ? _chatStore.conversations.length
           : store.ideas.where((i) => _inView(i, v)).length;
       final on = _view == v;
       return Hoverable(
@@ -1033,7 +1036,6 @@ class _SettingsSheetState extends State<SettingsSheet> {
   bool? _launchAtLogin;
   String? _launchError;
   final _recorderFocus = FocusNode();
-  late final _deepseekKey = TextEditingController(text: app.deepseekKey);
 
   AppController get app => widget.app;
 
@@ -1046,7 +1048,6 @@ class _SettingsSheetState extends State<SettingsSheet> {
   @override
   void dispose() {
     _recorderFocus.dispose();
-    _deepseekKey.dispose();
     super.dispose();
   }
 
@@ -1148,43 +1149,6 @@ class _SettingsSheetState extends State<SettingsSheet> {
                                         : null,
                                   ),
                                 ),
-                        ),
-                      ),
-                    ]),
-                    _group('QUICK QUESTION', [
-                      _row(
-                        label: 'DeepSeek API key',
-                        sub: 'For 4 · Ask in the popup (platform.deepseek.com)',
-                        trailing: SizedBox(
-                          width: 190,
-                          child: TextField(
-                            controller: _deepseekKey,
-                            obscureText: true,
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            onChanged: (v) => unawaited(app.setDeepseekKey(v)),
-                            style: const TextStyle(fontSize: 12),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              hintText: 'sk-…',
-                              hintStyle: TextStyle(color: C.dim2),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              filled: true,
-                              fillColor: Color(0xFF262833),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.all(Radius.circular(7)),
-                                borderSide: BorderSide(color: C.line2),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.all(Radius.circular(7)),
-                                borderSide: BorderSide(color: C.line2),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.all(Radius.circular(7)),
-                                borderSide: BorderSide(color: C.accent),
-                              ),
-                            ),
-                          ),
                         ),
                       ),
                     ]),

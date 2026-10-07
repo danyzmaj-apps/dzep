@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dzep/chat.dart';
 import 'package:dzep/idea.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/remind.dart';
@@ -8,8 +9,8 @@ import 'package:dzep/store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// GitHub sign-in and the signed-in user's [IdeaStore]: what the Mac and the
-/// iPhone app share.
+/// GitHub sign-in and the signed-in user's [IdeaStore] and [ChatStore]: what
+/// the Mac and the iPhone app share.
 class Session extends ChangeNotifier {
   Session(this.client, this.device);
 
@@ -24,6 +25,10 @@ class Session extends ChangeNotifier {
   User? _user;
   IdeaStore? get store => _store;
   IdeaStore? _store;
+
+  /// Quick-question chats; open whenever [store] is.
+  ChatStore? get chats => _chats;
+  ChatStore? _chats;
   StreamSubscription<AuthState>? _auth;
 
   String? authError;
@@ -76,10 +81,13 @@ class Session extends ChangeNotifier {
       return;
     }
     await _store?.close();
+    await _chats?.close();
     _store = null;
+    _chats = null;
     _user = user;
     if (user != null) {
       final store = _store = await IdeaStore.open(client, user.id, device);
+      _chats = await ChatStore.open(client, user.id);
       store.addListener(() => _syncReminders(store));
       _syncReminders(store);
       unawaited(onSignedIn(store));
@@ -156,6 +164,7 @@ class Session extends ChangeNotifier {
   void dispose() {
     unawaited(_auth?.cancel());
     unawaited(_store?.close());
+    unawaited(_chats?.close());
     super.dispose();
   }
 }
