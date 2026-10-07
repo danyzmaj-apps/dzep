@@ -178,19 +178,38 @@ class Kitty {
     return out;
   }
 
-  /// What the window shows now, with its colors as ANSI escapes (lib/ansi.dart
-  /// reads them), without trailing blanks.
-  Future<String> screen(String key) async {
+  /// Realtime drops or refuses messages past ~100 KB (one of 180 KB closed the
+  /// socket), and every change is sent again, so scrollback keeps only its
+  /// newest lines up to this many UTF-8 bytes.
+  static const historyBytes = 64000;
+
+  /// What the window shows now (with [history], its scrollback above too),
+  /// with its colors as ANSI escapes (lib/ansi.dart reads them), without
+  /// trailing blanks.
+  Future<String> screen(String key, {bool history = false}) async {
     final (socket, id) = _parse(key);
-    final text = await _rc(socket, ['get-text', '--match', 'id:$id', '--extent', 'screen', '--ansi']);
+    final text = await _rc(socket, [
+      'get-text',
+      '--match',
+      'id:$id',
+      '--extent',
+      if (history) 'all' else 'screen',
+      '--ansi',
+    ]);
     // Plain spaces at a line's end, among its closing escapes, are padding.
     final pad = RegExp(r'(?: |\x1b\[[0-9;:]*m)+$');
     final sgr = RegExp(r'\x1b\[[0-9;:]*m');
-    return text
-        .split('\n')
-        .map((l) => l.replaceFirstMapped(pad, (m) => sgr.allMatches(m[0]!).map((e) => e[0]).join()))
-        .join('\n')
-        .trimRight();
+    final lines = [
+      for (final l in text.split('\n')) l.replaceFirstMapped(pad, (m) => sgr.allMatches(m[0]!).map((e) => e[0]).join()),
+    ];
+    var bytes = 0;
+    var from = lines.length;
+    while (from > 0) {
+      bytes += utf8.encode(lines[from - 1]).length + 1;
+      if (bytes > historyBytes) break;
+      from--;
+    }
+    return lines.sublist(from).join('\n').trimRight();
   }
 
   /// The window's colors: `{fg, bg, palette}` as 0xRRGGBB, palette of 256.

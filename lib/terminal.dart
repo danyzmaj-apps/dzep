@@ -15,7 +15,8 @@ import 'package:uuid/uuid.dart';
 //
 //   iPhone → Mac  hello  {from, watch?}   every 4 s while a Terminal screen is open
 //   Mac → iPhone  state  {windows, projects, home, error?}   on every hello and on changes
-//   Mac → iPhone  screen {window, text, colors?}   the watched windows' text (ANSI), on changes;
+//   Mac → iPhone  screen {window, text, colors?}   the watched windows' text (ANSI) with the newest
+//                 scrollback above it (Kitty.historyBytes), on changes;
 //                 colors (kitty's palette, lib/ansi.dart) with a watch's first screen
 //   iPhone → Mac  run    {id, op: send|key|launch|close|image, window?, text?, enter?, key?, cwd?, omp?, path?}
 //                 image: `path` in the private `terminal` bucket (<user id>/…), uploaded by the phone
@@ -180,7 +181,7 @@ class TerminalBridge {
       for (final w in watched) {
         if (!windows.any((x) => x.key == w)) continue;
         try {
-          final text = await _kitty.screen(w);
+          final text = await _kitty.screen(w, history: true);
           final first = !_sentScreens.containsKey(w);
           if (_sentScreens[w] == text) continue;
           _sentScreens[w] = text;
