@@ -331,7 +331,7 @@ class TerminalRemote extends ChangeNotifier {
   /// One of [Kitty.keys].
   Future<void> press(String window, String key) => _run({'op': 'key', 'window': window, 'key': key});
 
-  /// A new kitty tab in [cwd], running omp if [omp]; its window key.
+  /// A new kitty window in [cwd], running omp if [omp]; its window key.
   Future<String> launch(String cwd, {required bool omp}) async =>
       (await _run({'op': 'launch', 'cwd': cwd, 'omp': omp}))['window'] as String;
 

@@ -229,8 +229,9 @@ class Kitty {
     await _rc(socket, ['send-key', '--match', 'id:$id', name]);
   }
 
-  /// A new tab in [cwd] running the login shell, which then starts omp if
-  /// [omp]; returns the new window's key. kitty keeps its current focus.
+  /// A new kitty OS window in [cwd] (a session of its own, like one opened by
+  /// hand) running the login shell, which then starts omp if [omp]; returns
+  /// the new window's key. kitty keeps its current focus.
   Future<String> launch(String cwd, {required bool omp}) async {
     if (!Directory(cwd).existsSync()) throw KittyException('No such folder: $cwd');
     final sockets = _sockets();
@@ -239,7 +240,7 @@ class Kitty {
     for (final socket in sockets) {
       final String id;
       try {
-        id = (await _rc(socket, ['launch', '--type', 'tab', '--keep-focus', '--cwd', cwd])).trim();
+        id = (await _rc(socket, ['launch', '--type', 'os-window', '--keep-focus', '--cwd', cwd])).trim();
       } on KittyException catch (e) {
         last = e;
         continue;

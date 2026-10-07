@@ -348,7 +348,7 @@ class _TerminalPageState extends State<TerminalPage> {
   );
 }
 
-/// A new kitty tab in one of the Mac's projects (or any folder typed in),
+/// A new kitty window in one of the Mac's projects (or any folder typed in),
 /// running omp unless turned off. Pops the new window's key.
 class NewSessionSheet extends StatefulWidget {
   const NewSessionSheet({required this.remote, super.key});
