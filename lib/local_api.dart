@@ -101,17 +101,10 @@ class LocalApi {
     if (req.method == 'PATCH' && path.length == 3) {
       final idea = store.byId(path[2]);
       if (idea == null) return (404, {'error': 'No such item.'});
-      if (idea.isTodo) {
-        final done = body['done'];
-        if (done is! bool) return (400, {'error': 'done (true/false) is required for a todo.'});
-        store.update(idea, done: done);
-        return (200, {'idea': idea.toApi()});
-      }
-      final status = Status.values.where((s) => s.name == body['status']).firstOrNull;
-      if (status == null) {
-        return (400, {'error': 'status must be one of ${Status.values.map((s) => s.name).join(', ')}.'});
-      }
-      store.update(idea, status: status);
+      if (!idea.isTodo) return (400, {'error': 'Ideas have no status; only todos can be marked done.'});
+      final done = body['done'];
+      if (done is! bool) return (400, {'error': 'done (true/false) is required.'});
+      store.update(idea, done: done);
       return (200, {'idea': idea.toApi()});
     }
 

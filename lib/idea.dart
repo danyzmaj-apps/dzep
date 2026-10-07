@@ -1,21 +1,5 @@
-import 'dart:ui' show Color;
-
-/// Where an idea is in its life. Inbox is where every new idea lands.
-enum Status {
-  inbox('Inbox', Color(0xFF8B93A7)),
-  building('Building', Color(0xFFFBBF24)),
-  shipped('Shipped', Color(0xFF4ADE80)),
-  dropped('Dropped', Color(0xFF5B606C));
-
-  const Status(this.label, this.color);
-
-  final String label;
-  final Color color;
-
-  static Status parse(String? name) => Status.values.firstWhere((s) => s.name == name, orElse: () => Status.inbox);
-}
-
-/// Ideas go through [Status]; todos are just open or done ([Idea.doneAt]).
+/// An idea (optionally under a project) or a todo, which is open or done
+/// ([Idea.doneAt]).
 enum Kind { idea, todo }
 
 /// One row of the `ideas` table: an idea or a todo ([kind]). [updatedAt] is
@@ -31,7 +15,6 @@ class Idea {
     this.kind = Kind.idea,
     this.notes = '',
     this.project = '',
-    this.status = Status.inbox,
     this.device = '',
     this.doneAt,
     this.deletedAt,
@@ -45,7 +28,6 @@ class Idea {
     title: row['title'] as String? ?? '',
     notes: row['notes'] as String? ?? '',
     project: row['project'] as String? ?? '',
-    status: Status.parse(row['status'] as String?),
     device: row['device'] as String? ?? '',
     createdAt: DateTime.parse(row['created_at'] as String),
     updatedAt: DateTime.parse(row['updated_at'] as String),
@@ -62,7 +44,6 @@ class Idea {
   String title;
   String notes;
   String project;
-  Status status;
   String device;
   final DateTime createdAt;
   DateTime updatedAt;
@@ -80,7 +61,6 @@ class Idea {
     title = server.title;
     notes = server.notes;
     project = server.project;
-    status = server.status;
     device = server.device;
     updatedAt = server.updatedAt;
     doneAt = server.doneAt;
@@ -94,7 +74,6 @@ class Idea {
     'title': title,
     'notes': notes,
     'project': project,
-    'status': status.name,
     'device': device,
     'created_at': createdAt.toUtc().toIso8601String(),
     'done_at': doneAt?.toUtc().toIso8601String(),
@@ -115,7 +94,6 @@ class Idea {
     'title': title,
     'notes': notes,
     'project': project,
-    'status': status.name,
     'done': done,
     'created_at': createdAt.toUtc().toIso8601String(),
   };

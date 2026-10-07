@@ -1,5 +1,6 @@
-# Signed-in iPhone app: on the Ideas tab, add an idea with the + button, then
-# move it to Building from its detail page. Needs a signed-in session.
+# Signed-in iPhone app: on the Ideas tab, add an idea with the + button, put
+# it under a project from its detail page, then find it under that project's
+# filter chip. Needs a signed-in session.
 # Run: maestro test -e TS=$(date +%H%M%S) maestro/
 appId: com.danyzmaj.dzep
 ---
@@ -16,17 +17,18 @@ appId: com.danyzmaj.dzep
     visible: "Maestro idea ${TS}.*"
     timeout: 5000
 - tapOn: "Maestro idea ${TS}.*"
-# "Building" is also a filter chip on the list page, which stays in the
-# accessibility tree under the detail page; the detail's chip is the one
-# below the idea's title (the list's sits above its rows).
 - extendedWaitUntil:
     visible: "Description: context.*"
     timeout: 5000
-- tapOn:
-    text: "Building"
-    below: "Maestro idea ${TS}.*"
+- tapOn: "project"
+- inputText: "maestro${TS}"
 - tapOn: "Back"
-- tapOn: "Building"
+# Project chips sit in a horizontal row, sorted; earlier runs' projects may
+# push this one off-screen.
+- scrollUntilVisible:
+    element: "@maestro${TS}"
+    direction: RIGHT
+    centerElement: true
+- tapOn: "@maestro${TS}"
 - assertVisible: "Maestro idea ${TS}.*"
-- tapOn: "Inbox"
-- assertNotVisible: "Maestro idea ${TS}.*"
+- assertVisible: "\\d\\d:\\d\\d"

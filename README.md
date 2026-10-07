@@ -2,7 +2,7 @@
 
 A personal pocket for dev ideas and work todos: one keystroke on the Mac, one sentence to Siri on the iPhone, synced through Supabase.
 
-- **Mac**: lives in the menu bar. ⇧⌘Space opens a Raycast-style popup with a chooser: **1** idea, **2** todo, **3** open the app; the field is focused right away and ↵ saves. The menu-bar icon shows the open-todo count. The main window is a normal app window (Dock icon and menu bar while it's open, ⌘W closes it, ⌘Q quits) with Todos (open / done) and Ideas (Inbox → Building → Shipped / Dropped, projects, descriptions).
+- **Mac**: lives in the menu bar. ⇧⌘Space opens a Raycast-style popup with a chooser: **1** idea, **2** todo, **3** open the app; the field is focused right away and ↵ saves. The menu-bar icon shows the open-todo count. The main window is a normal app window (Dock icon and menu bar while it's open, ⌘W closes it, ⌘Q quits) with Todos (open / done) and Ideas (grouped by project, with descriptions); every item shows when it was added.
 - **iPhone**: Todos and Ideas tabs, a + button, swipe right to tick a todo off. "Hey Siri, add a todo / an idea to Džep" (or the Action Button) saves without opening the app. Widgets: **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
 - **Terminal**: omp's `/idea` and `/todo` (`~/.omp/agent/extensions/idea.ts`) talk to the Mac app's localhost API; ideas land under the current repo's name as their project.
 
@@ -55,7 +55,7 @@ On launch the Mac app listens on a random 127.0.0.1 port and writes `{port, toke
 GET   /v1/ideas?project=NAME     → {"ideas": [...]}  ideas, oldest first
 GET   /v1/ideas?kind=todo        → {"ideas": [...]}  open todos, oldest first
 POST  /v1/ideas                  {title, kind?, notes?, project?}
-PATCH /v1/ideas/ID               {status} for an idea, {done} for a todo
+PATCH /v1/ideas/ID               {done} (todos only)
 Authorization: Bearer <token>
 ```
 

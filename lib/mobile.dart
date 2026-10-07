@@ -139,7 +139,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// 0: Todos (the app opens here), 1: Ideas.
   int _tab = 0;
   bool _showDone = false;
-  _Filter _filter = (project: false, id: 'inbox');
+  _Filter _filter = (project: false, id: 'all');
   String _query = '';
   final _search = TextEditingController();
   StreamSubscription<Uri>? _links;
@@ -220,11 +220,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   bool _matches(Idea i) {
-    if (_filter.project) {
-      if (i.project != _filter.id) return false;
-    } else if (_filter.id != 'all' && i.status.name != _filter.id) {
-      return false;
-    }
+    if (_filter.project && i.project != _filter.id) return false;
     return _searchHit(i);
   }
 
@@ -340,8 +336,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return _empty(
         _query.isNotEmpty
             ? 'No matches.'
-            : _filter.id == 'inbox'
-            ? 'Inbox zero 🎉\nTap + or say “Hey Siri, add an idea to Džep”.'
+            : !_filter.project
+            ? 'No ideas yet.\nTap + or say “Hey Siri, add an idea to Džep”.'
             : 'Nothing here yet.',
       );
     }
@@ -439,7 +435,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ),
             ),
-            Text(ago(t.createdAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
+            Text(stamp(t.createdAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
           ],
         ),
       ),
@@ -469,16 +465,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
-        chip((project: false, id: 'inbox'), 'Inbox'),
         chip((project: false, id: 'all'), 'All'),
-        for (final s in Status.values.skip(1)) chip((project: false, id: s.name), s.label, dot: s.color),
         for (final p in store.projects) chip((project: true, id: p), '@$p'),
       ],
     );
   }
 
   Widget _row(Idea i) {
-    final faded = i.status == Status.shipped || i.status == Status.dropped;
     final firstNote = i.notes.split('\n').first;
     return Dismissible(
       key: ValueKey(i.id),
@@ -504,7 +497,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(padding: const EdgeInsets.only(top: 6), child: Dot(i.status.color)),
+              const Padding(padding: EdgeInsets.only(top: 6), child: Dot(C.dim)),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -514,13 +507,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       highlight(
                         i.title.isEmpty ? 'Untitled' : i.title,
                         _query,
-                        TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w500,
-                          color: faded ? C.dim : C.text,
-                          decoration: i.status == Status.dropped ? TextDecoration.lineThrough : null,
-                          decorationColor: C.dim,
-                        ),
+                        const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: C.text),
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -541,7 +528,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(ago(i.createdAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
+              Text(stamp(i.createdAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
             ],
           ),
         ),
@@ -639,7 +626,7 @@ class _AddSheetState extends State<AddSheet> {
     );
     unawaited(HapticFeedback.lightImpact());
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(todo ? 'Todo added ✓' : 'Saved to Inbox ✓')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(todo ? 'Todo added ✓' : 'Idea saved ✓')));
   }
 
   @override
@@ -821,24 +808,6 @@ class _DetailPageState extends State<DetailPage> {
               ),
             )
           else ...[
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final s in Status.values)
-                  ChoiceChip(
-                    selected: idea.status == s,
-                    showCheckmark: false,
-                    onSelected: (_) => widget.store.update(idea, status: s),
-                    backgroundColor: C.field,
-                    selectedColor: C.sel,
-                    side: BorderSide(color: idea.status == s ? C.accent : C.line2),
-                    avatar: Dot(s.color),
-                    label: Text(s.label, style: TextStyle(color: idea.status == s ? C.text : C.dim)),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
             TextField(
               controller: _project,
               style: const TextStyle(fontSize: 14, color: C.projectFg),
@@ -869,7 +838,7 @@ class _DetailPageState extends State<DetailPage> {
           ),
           const SizedBox(height: 24),
           Text(
-            'Added ${ago(idea.createdAt)} ago${idea.device.isEmpty ? '' : ' on ${idea.device}'}',
+            'Added ${stamp(idea.createdAt)}${idea.device.isEmpty ? '' : ' on ${idea.device}'}',
             style: const TextStyle(fontSize: 12, color: C.dim2),
           ),
         ],

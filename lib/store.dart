@@ -84,11 +84,10 @@ class IdeaStore extends ChangeNotifier {
     return idea;
   }
 
-  void update(Idea idea, {String? title, String? notes, String? project, Status? status, bool? done}) {
+  void update(Idea idea, {String? title, String? notes, String? project, bool? done}) {
     if (title != null) idea.title = title;
     if (notes != null) idea.notes = notes;
     if (project != null) idea.project = project.trim();
-    if (status != null) idea.status = status;
     if (done != null) idea.doneAt = done ? (idea.doneAt ?? DateTime.now().toUtc()) : null;
     _changed(idea);
   }

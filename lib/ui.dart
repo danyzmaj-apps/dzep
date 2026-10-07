@@ -156,12 +156,18 @@ class SyncDot extends StatelessWidget {
   }
 }
 
-String ago(DateTime t) {
-  final s = DateTime.now().difference(t).inSeconds;
-  if (s < 60) return 'now';
-  if (s < 3600) return '${s ~/ 60}m';
-  if (s < 86400) return '${s ~/ 3600}h';
-  return '${s ~/ 86400}d';
+/// When something was added, for every row: "14:02" today, "Yesterday 14:02",
+/// "7 Oct 14:02" this year, "7 Oct 2025" before that.
+String stamp(DateTime t) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final l = t.toLocal();
+  final now = DateTime.now();
+  final days = DateTime(now.year, now.month, now.day).difference(DateTime(l.year, l.month, l.day)).inDays;
+  final time = '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
+  if (days == 0) return time;
+  if (days == 1) return 'Yesterday $time';
+  if (l.year == now.year) return '${l.day} ${months[l.month - 1]} $time';
+  return '${l.day} ${months[l.month - 1]} ${l.year}';
 }
 
 /// Text with every query word highlighted.

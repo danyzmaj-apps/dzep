@@ -222,6 +222,18 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     return false
   }
 
+  /// ⌘W hides the main window like in any Mac app. Caught here, before the
+  /// Flutter view: a focused text field otherwise keeps the keystroke and it
+  /// never reaches the File menu.
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "w" {
+      performClose(nil)
+      return true
+    }
+    return super.performKeyEquivalent(with: event)
+  }
+
   // MARK: - Menu bar icon
 
   private func setupStatusItem() {

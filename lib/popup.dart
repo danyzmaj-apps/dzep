@@ -16,7 +16,7 @@ final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
   return (title: title, project: m?.group(2) ?? '');
 }
 
-/// The ⇧⌘Space panel: title field focused, ↵ saves to Inbox and gets out of
+/// The ⇧⌘Space panel: title field focused, ↵ saves and gets out of
 /// the way. Tab adds a description; the list shows recent or similar ideas.
 class Popup extends StatefulWidget {
   const Popup({required this.app, super.key});
@@ -235,7 +235,7 @@ class _PopupState extends State<Popup> {
     _title.clear();
     _notes.clear();
     setState(() => _withNotes = false);
-    Toaster.of(context).show(todo ? 'Todo added ✓' : 'Saved to Inbox ✓');
+    Toaster.of(context).show(todo ? 'Todo added ✓' : 'Idea saved ✓');
     if (stay) {
       _titleFocus.requestFocus();
     } else {
@@ -456,7 +456,7 @@ class _PopupState extends State<Popup> {
                 child: TodoCheck(done: i.done, size: 14),
               )
             else
-              Dot(i.status.color),
+              const Dot(C.dim),
             const SizedBox(width: 10),
             Expanded(
               child: Text.rich(
@@ -467,7 +467,7 @@ class _PopupState extends State<Popup> {
             ),
             if (i.project.isNotEmpty) ...[const SizedBox(width: 8), ProjectChip(i.project)],
             const SizedBox(width: 10),
-            Text(ago(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim)),
+            Text(stamp(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim)),
           ],
         ),
       ),

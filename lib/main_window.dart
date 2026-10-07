@@ -16,7 +16,6 @@ typedef Shelf = ({bool project, String id});
 
 const Shelf _todos = (project: false, id: 'todos');
 const Shelf _todosDone = (project: false, id: 'todos-done');
-const Shelf _inbox = (project: false, id: 'inbox');
 const Shelf _all = (project: false, id: 'all');
 
 /// Drag strip for the transparent title bar.
@@ -113,7 +112,7 @@ class Library extends StatefulWidget {
 }
 
 class _LibraryState extends State<Library> {
-  Shelf _view = _inbox;
+  Shelf _view = _all;
   String? _selId;
   String _query = '';
   String? _focusNotesOf;
@@ -163,11 +162,7 @@ class _LibraryState extends State<Library> {
 
   bool get _todoView => !_view.project && (_view == _todos || _view == _todosDone);
 
-  bool _inView(Idea i, Shelf v) {
-    if (v.project) return i.project == v.id;
-    if (v.id == 'all') return true;
-    return i.status.name == v.id;
-  }
+  bool _inView(Idea i, Shelf v) => !v.project || i.project == v.id;
 
   bool _matches(Idea i) {
     final words = _query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
@@ -185,8 +180,7 @@ class _LibraryState extends State<Library> {
     if (v.project) return '@${v.id}';
     if (v == _todos) return 'Todos';
     if (v == _todosDone) return 'Done';
-    if (v.id == 'all') return 'All ideas';
-    return Status.parse(v.id).label;
+    return 'All ideas';
   }
 
   void _select(String? id) => setState(() => _selId = id);
@@ -196,11 +190,6 @@ class _LibraryState extends State<Library> {
       _view = v;
       _selId = _visible.firstOrNull?.id;
     });
-  }
-
-  void _setStatus(Idea i, Status s) {
-    store.update(i, status: s);
-    Toaster.of(context).show(s.label);
   }
 
   void _toggleDone(Idea todo) {
@@ -245,7 +234,7 @@ class _LibraryState extends State<Library> {
     );
     _newIdea.clear();
     setState(() {
-      if (!_view.project && _view.id != 'all' && _view.id != 'inbox') _view = _inbox;
+      if (!_view.project && _view.id != 'all') _view = _all;
       _selId = idea.id;
       _focusNotesOf = idea.id;
     });
@@ -291,8 +280,6 @@ class _LibraryState extends State<Library> {
       if (v.isNotEmpty) _select(v[(pos + 1).clamp(0, v.length - 1)].id);
     } else if (k == LogicalKeyboardKey.keyK || k == LogicalKeyboardKey.arrowUp) {
       if (v.isNotEmpty) _select(v[(pos - 1).clamp(0, v.length - 1)].id);
-    } else if (cur != null && !cur.isTodo && e.character != null && RegExp(r'^[1-4]$').hasMatch(e.character!)) {
-      _setStatus(cur, Status.values[int.parse(e.character!) - 1]);
     } else if (cur != null && cur.isTodo && (k == LogicalKeyboardKey.keyD || k == LogicalKeyboardKey.space)) {
       _toggleDone(cur);
     } else if (cur != null && (k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete)) {
@@ -338,7 +325,6 @@ class _LibraryState extends State<Library> {
                           ? _DetailFocus.title
                           : null,
                       onFocused: () => _focusNotesOf = null,
-                      onStatus: (s) => _setStatus(selected, s),
                       onToggleDone: () => _toggleDone(selected),
                       onDelete: () => _delete(selected),
                       onDone: _listFocus.requestFocus,
@@ -406,10 +392,7 @@ class _LibraryState extends State<Library> {
                 nav(_todos, const Icon(Icons.radio_button_unchecked, size: 13, color: C.dim), 'Todos'),
                 nav(_todosDone, const Icon(Icons.check_circle_outline, size: 13, color: C.dim), 'Done'),
                 header('IDEAS'),
-                nav(_inbox, const Text('📥', style: TextStyle(fontSize: 12)), 'Inbox'),
-                nav(_all, const Icon(Icons.notes, size: 14, color: C.dim), 'All ideas'),
-                header('STATUS'),
-                for (final s in Status.values.skip(1)) nav((project: false, id: s.name), Dot(s.color), s.label),
+                nav(_all, const Icon(Icons.lightbulb_outline, size: 14, color: C.dim), 'All ideas'),
                 if (store.projects.isNotEmpty) header('PROJECTS'),
                 for (final p in store.projects)
                   nav((project: true, id: p), const Icon(Icons.crop_square, size: 13, color: C.dim), p),
@@ -557,8 +540,8 @@ class _LibraryState extends State<Library> {
                   child: Text(
                     _query.isNotEmpty
                         ? 'No matches.'
-                        : _view == _inbox
-                        ? 'Inbox zero 🎉\nNew ideas from ${widget.app.hotKey.label} land here.'
+                        : _view == _all
+                        ? 'No ideas yet.\n${widget.app.hotKey.label} then 1 adds one from anywhere.'
                         : _view == _todos
                         ? 'All done 🎉\n${widget.app.hotKey.label} then ⌘T adds a todo from anywhere.'
                         : 'Nothing here yet.',
@@ -574,8 +557,8 @@ class _LibraryState extends State<Library> {
 
   Widget _row(Idea i) {
     final on = i.id == _selId;
-    final faded = i.isTodo ? i.done : (i.status == Status.shipped || i.status == Status.dropped);
-    final struck = i.isTodo ? i.done : i.status == Status.dropped;
+    final faded = i.isTodo && i.done;
+    final struck = faded;
     final titleStyle = TextStyle(
       fontSize: 13,
       fontWeight: FontWeight.w500,
@@ -607,7 +590,7 @@ class _LibraryState extends State<Library> {
                 ),
               )
             else
-              Padding(padding: const EdgeInsets.only(top: 5), child: Dot(i.status.color)),
+              const Padding(padding: EdgeInsets.only(top: 5), child: Dot(C.dim)),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -630,7 +613,7 @@ class _LibraryState extends State<Library> {
               ),
             ),
             const SizedBox(width: 8),
-            Text(ago(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim2)),
+            Text(stamp(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim2)),
           ],
         ),
       ),
@@ -694,7 +677,6 @@ class _EmptyDetail extends StatelessWidget {
         SizedBox(height: 14),
         _Hint('⌘N', 'new idea here'),
         _Hint('j  k', 'move'),
-        _Hint('1–4', 'set status'),
         _Hint('/', 'search'),
       ],
     ),
@@ -735,7 +717,6 @@ class _Detail extends StatefulWidget {
     required this.viewName,
     required this.focus,
     required this.onFocused,
-    required this.onStatus,
     required this.onToggleDone,
     required this.onDelete,
     required this.onDone,
@@ -747,7 +728,6 @@ class _Detail extends StatefulWidget {
   final String viewName;
   final _DetailFocus? focus;
   final VoidCallback onFocused;
-  final ValueChanged<Status> onStatus;
   final VoidCallback onToggleDone;
   final VoidCallback onDelete;
   final VoidCallback onDone;
@@ -897,33 +877,8 @@ class _DetailState extends State<_Detail> {
                   ),
                 ),
               )
-            else ...[
-              _prop(
-                'Status',
-                Wrap(
-                  spacing: 2,
-                  children: [
-                    for (final (k, s) in Status.values.indexed)
-                      _SegButton(
-                        on: idea.status == s,
-                        onTap: () => widget.onStatus(s),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Dot(s.color),
-                            const SizedBox(width: 6),
-                            Text(s.label, style: const TextStyle(fontSize: 12)),
-                            const SizedBox(width: 6),
-                            Text('${k + 1}', style: const TextStyle(fontSize: 10, color: C.dim2)),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
+            else
               _prop('Project', _projectField()),
-            ],
             const SizedBox(height: 22),
             TextField(
               controller: _notes,
