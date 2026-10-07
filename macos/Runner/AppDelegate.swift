@@ -30,10 +30,19 @@ class AppDelegate: FlutterAppDelegate {
     return false
   }
 
-  // Dock icon clicked: bring the main window back.
+  // Dock icon clicked (or the LaunchServices activation the main window asks
+  // for): bring the main window back, unless it's already showing.
   override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-    (NSApp.windows.first { $0 is MainFlutterWindow } as? MainFlutterWindow)?.reopen()
+    if let window = mainWindow, !window.isVisible { window.reopen() }
     return true
+  }
+
+  override func applicationDidBecomeActive(_ notification: Notification) {
+    mainWindow?.becameActive()
+  }
+
+  private var mainWindow: MainFlutterWindow? {
+    NSApp.windows.first { $0 is MainFlutterWindow } as? MainFlutterWindow
   }
 
   override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

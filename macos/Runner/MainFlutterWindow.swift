@@ -157,12 +157,34 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     // A real app while the window is open: Dock icon, menu bar, ⌘-Tab.
     NSApp.setActivationPolicy(.regular)
     makeKeyAndOrderFront(nil)
+    resumeFlutter()
+    activate()
+  }
+
+  /// Makes Džep the active app, so the menu bar, ⌘W and ⌘Q are Džep's.
+  ///
+  /// Since macOS 14 `NSApp.activate()` is only a request, and macOS turns it
+  /// down when the user's last input went to another app — which is the case
+  /// after "3" in the popup, since the popup deliberately doesn't activate
+  /// Džep. Opening the app through LaunchServices (what the Dock and `open -a`
+  /// do) is always honoured, so that's the fallback.
+  private func activate() {
     if #available(macOS 14.0, *) {
       NSApp.activate()
     } else {
       NSApp.activate(ignoringOtherApps: true)
     }
-    resumeFlutter()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+      guard !NSApp.isActive else { return }
+      let config = NSWorkspace.OpenConfiguration()
+      config.activates = true
+      NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config)
+    }
+  }
+
+  /// Once Džep really is active, the main window (if open) takes the keyboard.
+  func becameActive() {
+    if isVisible { makeKeyAndOrderFront(nil) }
   }
 
   /// Flutter's engine only draws while it believes the app is visible, which
