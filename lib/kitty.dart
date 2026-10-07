@@ -229,6 +229,13 @@ class Kitty {
     await _rc(socket, ['send-key', '--match', 'id:$id', name]);
   }
 
+  /// Closes the window and whatever runs in it (kitty doesn't ask; the
+  /// iPhone does, before it sends this).
+  Future<void> close(String key) async {
+    final (socket, id) = await _live(key);
+    await _rc(socket, ['close-window', '--match', 'id:$id']);
+  }
+
   /// A new kitty OS window in [cwd] (a session of its own, like one opened by
   /// hand) running the login shell, which then starts omp if [omp]; returns
   /// the new window's key. kitty keeps its current focus.

@@ -17,7 +17,7 @@ import 'package:uuid/uuid.dart';
 //   Mac → iPhone  state  {windows, projects, home, error?}   on every hello and on changes
 //   Mac → iPhone  screen {window, text, colors?}   the watched windows' text (ANSI), on changes;
 //                 colors (kitty's palette, lib/ansi.dart) with a watch's first screen
-//   iPhone → Mac  run    {id, op: send|key|launch, window?, text?, enter?, key?, cwd?, omp?}
+//   iPhone → Mac  run    {id, op: send|key|launch|close, window?, text?, enter?, key?, cwd?, omp?}
 //   Mac → iPhone  ran    {id, error?, window?}
 
 /// Broadcast callbacks get the payload's fields at the top level, next to
@@ -105,6 +105,8 @@ class TerminalBridge {
           await _kitty.send(p['window'] as String, p['text'] as String? ?? '', enter: p['enter'] != false);
         case 'key':
           await _kitty.press(p['window'] as String, p['key'] as String);
+        case 'close':
+          await _kitty.close(p['window'] as String);
         case 'launch':
           window = await _kitty.launch(p['cwd'] as String, omp: p['omp'] == true);
         default:
@@ -330,6 +332,9 @@ class TerminalRemote extends ChangeNotifier {
 
   /// One of [Kitty.keys].
   Future<void> press(String window, String key) => _run({'op': 'key', 'window': window, 'key': key});
+
+  /// Closes [window] on the Mac, with what runs in it.
+  Future<void> close(String window) => _run({'op': 'close', 'window': window});
 
   /// A new kitty window in [cwd], running omp if [omp]; its window key.
   Future<String> launch(String cwd, {required bool omp}) async =>

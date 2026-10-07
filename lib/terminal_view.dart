@@ -20,6 +20,37 @@ void _toast(BuildContext context, Object e) => ScaffoldMessenger.of(context)
 String _short(TerminalRemote r, String path) =>
     r.home.isNotEmpty && path.startsWith(r.home) ? '~${path.substring(r.home.length)}' : path;
 
+/// Asks, then closes [w] on the Mac; true once it's closed.
+Future<bool> _close(BuildContext context, TerminalRemote remote, TermWindow w) async {
+  final what = w.isOmp ? 'the omp session' : (w.program.isEmpty ? 'what runs in it' : w.program);
+  final sure = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Close this window?'),
+      content: Text(
+        'It closes on the Mac, and $what in ${_short(remote, w.cwd)} ends with it.',
+        style: const TextStyle(color: C.dim, height: 1.4),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+        TextButton(
+          key: const ValueKey('close-confirm'),
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Close', style: TextStyle(color: Color(0xFFFCA5A5))),
+        ),
+      ],
+    ),
+  );
+  if (sure != true) return false;
+  try {
+    await remote.close(w.key);
+    return true;
+  } on Object catch (e) {
+    if (context.mounted) _toast(context, e);
+    return false;
+  }
+}
+
 /// What's wrong with the link, if anything, as one line for the top of a screen.
 Widget? _linkNote(TerminalRemote r) {
   final (text, busy) = switch (r.link) {
@@ -109,25 +140,36 @@ class _TerminalListState extends State<TerminalList> {
                     );
                   }
                   final w = windows[i];
-                  return ListTile(
-                    key: ValueKey('term-${w.key}'),
-                    onTap: () => widget.onOpen(w.key),
-                    leading: Icon(
-                      w.isOmp ? Icons.auto_awesome : Icons.terminal,
-                      size: 18,
-                      color: w.focused ? C.accent : C.dim2,
+                  return Dismissible(
+                    key: ValueKey('swipe-${w.key}'),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      color: const Color(0xFF7F1D1D),
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 24),
+                      child: const Icon(Icons.close, color: Colors.white),
                     ),
-                    title: Text(
-                      w.title.isEmpty ? w.program : w.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 15),
-                    ),
-                    subtitle: Text(
-                      '${w.program} · ${_short(remote, w.cwd)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, color: C.dim),
+                    confirmDismiss: (_) => _close(context, remote, w),
+                    child: ListTile(
+                      key: ValueKey('term-${w.key}'),
+                      onTap: () => widget.onOpen(w.key),
+                      leading: Icon(
+                        w.isOmp ? Icons.auto_awesome : Icons.terminal,
+                        size: 18,
+                        color: w.focused ? C.accent : C.dim2,
+                      ),
+                      title: Text(
+                        w.title.isEmpty ? w.program : w.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                      subtitle: Text(
+                        '${w.program} · ${_short(remote, w.cwd)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, color: C.dim),
+                      ),
                     ),
                   );
                 },
@@ -244,6 +286,17 @@ class _TerminalPageState extends State<TerminalPage> {
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            if (w != null && online)
+              IconButton(
+                key: const ValueKey('close-window'),
+                tooltip: 'Close window',
+                onPressed: () => unawaited(
+                  _close(context, remote, w).then((closed) {
+                    if (closed && context.mounted) Navigator.of(context).maybePop();
+                  }),
+                ),
+                icon: const Icon(Icons.close, color: C.dim),
+              ),
             IconButton(
               tooltip: _wrap ? "Don't wrap lines" : 'Wrap lines',
               onPressed: () => setState(() => _wrap = !_wrap),
