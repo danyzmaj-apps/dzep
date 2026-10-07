@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dzep/chat.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
@@ -31,6 +32,17 @@ class AppController extends Session {
   HotKey get hotKey => _hotKey;
   late HotKey _hotKey = _loadHotKey();
   bool hotKeyRegistered = false;
+
+  /// The popup's quick-question chat.
+  late final chat = Chat(() => deepseekKey);
+
+  /// DeepSeek API key for [chat], set in Settings.
+  String get deepseekKey => _prefs.getString('deepseekKey') ?? '';
+
+  Future<void> setDeepseekKey(String key) async {
+    await _prefs.setString('deepseekKey', key.trim());
+    notifyListeners();
+  }
 
   Future<void> start() async {
     Native.listen(_onNative);

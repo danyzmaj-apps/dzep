@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:dzep/chat.dart';
 import 'package:dzep/controller.dart';
 import 'package:dzep/idea.dart';
 import 'package:dzep/store.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// `@name` tokens in the title: the first one is the project.
 final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
@@ -33,8 +36,14 @@ class _PopupState extends State<Popup> {
   late final FocusNode _notesFocus = FocusNode(onKeyEvent: _onNotesKey);
   bool _withNotes = false;
 
-  /// Every open starts by choosing: 1 idea, 2 todo, 3 open the app.
+  final _question = TextEditingController();
+  late final FocusNode _questionFocus = FocusNode(onKeyEvent: _onQuestionKey);
+
+  /// Every open starts by choosing: 1 idea, 2 todo, 3 open the app, 4 ask.
   bool _choosing = true;
+
+  /// Picked 4: the quick-question chat instead of capture.
+  bool _asking = false;
 
   /// What ↵ saves, picked in the chooser.
   Kind _kind = Kind.idea;
@@ -63,6 +72,8 @@ class _PopupState extends State<Popup> {
     _notes.dispose();
     _titleFocus.dispose();
     _notesFocus.dispose();
+    _question.dispose();
+    _questionFocus.dispose();
     super.dispose();
   }
 
@@ -75,6 +86,7 @@ class _PopupState extends State<Popup> {
     _choosing = true;
     _titleFocus.unfocus();
     _notesFocus.unfocus();
+    _questionFocus.unfocus();
     if (mounted) setState(() {});
   }
 
@@ -83,8 +95,9 @@ class _PopupState extends State<Popup> {
   bool get _cmd => HardwareKeyboard.instance.isMetaPressed;
   bool get _shift => HardwareKeyboard.instance.isShiftPressed;
 
-  /// Characters typed between picking and the title field taking focus.
-  bool _awaitingTitle = false;
+  /// The field a pick is about to focus: characters typed before it has
+  /// focus go into it.
+  TextEditingController? _awaiting;
 
   /// Sees every key, whatever has focus: the chooser has no field to focus,
   /// and the window can take keys a frame before Flutter has rebuilt it.
@@ -98,6 +111,8 @@ class _PopupState extends State<Popup> {
         _pick(Kind.todo);
       } else if (k == LogicalKeyboardKey.digit3 || k == LogicalKeyboardKey.numpad3) {
         unawaited(app.openMain());
+      } else if (k == LogicalKeyboardKey.digit4 || k == LogicalKeyboardKey.numpad4) {
+        _ask();
       } else if (k == LogicalKeyboardKey.escape) {
         unawaited(app.closePopup());
       } else {
@@ -106,8 +121,9 @@ class _PopupState extends State<Popup> {
       return true;
     }
     final ch = e.character;
-    if (_awaitingTitle && !_titleFocus.hasFocus && ch != null && ch.runes.every((r) => r >= 0x20)) {
-      _title.text += ch;
+    final target = _awaiting;
+    if (target != null && ch != null && ch.runes.every((r) => r >= 0x20)) {
+      target.text += ch;
       return true;
     }
     return false;
@@ -123,13 +139,27 @@ class _PopupState extends State<Popup> {
       }
       _kind = kind;
       _choosing = false;
+      _asking = false;
       _sel = -1;
     });
-    _awaitingTitle = true;
+    _focusSoon(_title, _titleFocus);
+  }
+
+  /// Opens the chat where it was left; ⌘N starts a new one.
+  void _ask() {
+    setState(() {
+      _choosing = false;
+      _asking = true;
+    });
+    _focusSoon(_question, _questionFocus);
+  }
+
+  void _focusSoon(TextEditingController text, FocusNode focus) {
+    _awaiting = text;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _titleFocus.requestFocus();
-      _title.selection = TextSelection.collapsed(offset: _title.text.length);
-      _awaitingTitle = false;
+      focus.requestFocus();
+      text.selection = TextSelection.collapsed(offset: text.text.length);
+      _awaiting = null;
     });
   }
 
@@ -198,6 +228,29 @@ class _PopupState extends State<Popup> {
     return KeyEventResult.ignored;
   }
 
+  KeyEventResult _onQuestionKey(FocusNode _, KeyEvent e) {
+    if (e is KeyUpEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && !_shift) {
+      final text = _question.text;
+      if (text.trim().isNotEmpty && !app.chat.busy && app.deepseekKey.isNotEmpty) {
+        _question.clear();
+        unawaited(app.chat.send(text));
+      }
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.keyN && _cmd) {
+      app.chat.clear();
+      _question.clear();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.escape) {
+      unawaited(app.closePopup());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   /// Tab right after `@pro` completes it to a known project.
   bool _completeProject() {
     final m = RegExp(r'@([\w.-]*)$').firstMatch(_title.text);
@@ -248,7 +301,7 @@ class _PopupState extends State<Popup> {
   @override
   Widget build(BuildContext context) {
     final s = store;
-    final stage = s == null ? 'locked' : (_choosing ? 'choose' : _kind.name);
+    final stage = s == null ? 'locked' : (_choosing ? 'choose' : (_asking ? 'ask' : _kind.name));
     // The window is a fixed, transparent 720×660 (no resizes, see
     // MainFlutterWindow.swift); the panel sits at its top and animates its
     // height between stages. A click on the empty area closes the popup,
@@ -300,6 +353,8 @@ class _PopupState extends State<Popup> {
                             ? _locked()
                             : _choosing
                             ? _chooser(s)
+                            : _asking
+                            ? _askPane()
                             : Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -383,6 +438,8 @@ class _PopupState extends State<Popup> {
                 'Open app',
                 () => unawaited(app.openMain()),
               ),
+              const SizedBox(width: 10),
+              tile('4', const Icon(Icons.auto_awesome, size: 22, color: C.accent), 'Ask', _ask),
             ],
           ),
         ),
@@ -574,6 +631,121 @@ class _PopupState extends State<Popup> {
     ];
   }
 
+  /// The quick-question chat: the conversation above, the question field
+  /// below. A reversed list keeps the newest text in view while it streams.
+  Widget _askPane() => ListenableBuilder(
+    listenable: app.chat,
+    builder: (context, _) {
+      final chat = app.chat;
+      final last = chat.messages.lastOrNull;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (chat.messages.isNotEmpty)
+            Container(
+              constraints: const BoxConstraints(maxHeight: 440),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: C.line)),
+              ),
+              child: SelectionArea(
+                child: ListView(
+                  reverse: true,
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+                  children: [
+                    for (final m in chat.messages.reversed)
+                      if (m.fromUser) _questionRow(m) else _answer(m, streaming: chat.busy && m == last),
+                  ],
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 3),
+                  child: Icon(Icons.auto_awesome, size: 20, color: C.accent),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _question,
+                    focusNode: _questionFocus,
+                    minLines: 1,
+                    maxLines: 6,
+                    style: const TextStyle(fontSize: 18, height: 1.4),
+                    decoration: plainInput.copyWith(
+                      hintText: chat.messages.isEmpty ? 'Ask a quick question…' : 'Follow up…',
+                      hintStyle: const TextStyle(color: C.dim2),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (app.deepseekKey.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(50, 0, 18, 14),
+              child: Row(
+                children: [
+                  const Text('No DeepSeek API key yet.', style: TextStyle(fontSize: 12, color: C.warn)),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () {
+                      app.setSettingsOpen(open: true);
+                      unawaited(app.openMain());
+                    },
+                    child: const Text('Add it in Settings', style: TextStyle(fontSize: 12, color: C.accent)),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    },
+  );
+
+  Widget _questionRow(ChatMessage m) => Padding(
+    padding: const EdgeInsets.only(top: 12, bottom: 6),
+    child: Text(m.text, style: const TextStyle(fontSize: 13, height: 1.45, color: C.dim)),
+  );
+
+  Widget _answer(ChatMessage m, {required bool streaming}) {
+    if (m.error != null) {
+      return Text(m.error!, style: const TextStyle(fontSize: 13, color: Color(0xFFFCA5A5)));
+    }
+    if (m.text.isEmpty) {
+      return Text(streaming ? '…' : '', style: const TextStyle(fontSize: 14, color: C.dim));
+    }
+    const code = TextStyle(fontFamily: 'Menlo', fontSize: 12.5, color: Color(0xFFD7DAE3));
+    return MarkdownBody(
+      data: m.text,
+      onTapLink: (_, href, _) {
+        final uri = href == null ? null : Uri.tryParse(href);
+        if (uri != null) unawaited(launchUrl(uri));
+      },
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        p: const TextStyle(fontSize: 14, height: 1.5, color: C.text),
+        listBullet: const TextStyle(fontSize: 14, height: 1.5, color: C.dim),
+        a: const TextStyle(color: C.accent),
+        code: code.copyWith(backgroundColor: C.field),
+        codeblockPadding: const EdgeInsets.all(10),
+        codeblockDecoration: BoxDecoration(
+          color: C.field,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: C.line),
+        ),
+        blockquoteDecoration: const BoxDecoration(
+          border: Border(left: BorderSide(color: C.line2, width: 2)),
+        ),
+        blockSpacing: 10,
+      ),
+    );
+  }
+
   Widget _bar(IdeaStore? s) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: const BoxDecoration(
@@ -593,6 +765,12 @@ class _PopupState extends State<Popup> {
           KeyHint('1', 'idea'),
           KeyHint('2', 'todo'),
           KeyHint('3', 'open app'),
+          KeyHint('4', 'ask'),
+          KeyHint('esc', 'hide'),
+        ] else if (_asking) ...const [
+          KeyHint('↵', 'ask'),
+          KeyHint('⇧↵', 'newline'),
+          KeyHint('⌘N', 'new chat'),
           KeyHint('esc', 'hide'),
         ] else if (_notesFocus.hasFocus) ...const [
           KeyHint('↵', 'newline'),

@@ -938,6 +938,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
   bool? _launchAtLogin;
   String? _launchError;
   final _recorderFocus = FocusNode();
+  late final _deepseekKey = TextEditingController(text: app.deepseekKey);
 
   AppController get app => widget.app;
 
@@ -950,6 +951,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
   @override
   void dispose() {
     _recorderFocus.dispose();
+    _deepseekKey.dispose();
     super.dispose();
   }
 
@@ -1051,6 +1053,43 @@ class _SettingsSheetState extends State<SettingsSheet> {
                                         : null,
                                   ),
                                 ),
+                        ),
+                      ),
+                    ]),
+                    _group('QUICK QUESTION', [
+                      _row(
+                        label: 'DeepSeek API key',
+                        sub: 'For 4 · Ask in the popup (platform.deepseek.com)',
+                        trailing: SizedBox(
+                          width: 190,
+                          child: TextField(
+                            controller: _deepseekKey,
+                            obscureText: true,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            onChanged: (v) => unawaited(app.setDeepseekKey(v)),
+                            style: const TextStyle(fontSize: 12),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              hintText: 'sk-…',
+                              hintStyle: TextStyle(color: C.dim2),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              filled: true,
+                              fillColor: Color(0xFF262833),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.all(Radius.circular(7)),
+                                borderSide: BorderSide(color: C.line2),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.all(Radius.circular(7)),
+                                borderSide: BorderSide(color: C.line2),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.all(Radius.circular(7)),
+                                borderSide: BorderSide(color: C.accent),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ]),
