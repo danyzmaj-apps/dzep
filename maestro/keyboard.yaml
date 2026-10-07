@@ -1,0 +1,37 @@
+# Keyboard: a tap outside a field or dragging a list puts it away; Send
+# keeps it up; tapping a field still brings it up. The simulator only shows
+# its on-screen keyboard once something is typed. Needs the network (step 3).
+appId: com.danyzmaj.dzep
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Todos.*"
+    timeout: 15000
+# 1. Tap on empty space (the header) closes the keyboard.
+- tapOn: "Search"
+- inputText: "q"
+- extendedWaitUntil: {visible: "Next keyboard", timeout: 4000}
+- tapOn: {point: "35%, 11%"}
+- extendedWaitUntil: {notVisible: "Next keyboard", timeout: 4000}
+# 2. Dragging the list closes it.
+- tapOn: {point: "50%, 18%"}
+- inputText: "q"
+- extendedWaitUntil: {visible: "Next keyboard", timeout: 4000}
+- swipe: {start: "50%, 45%", end: "50%, 60%"}
+- extendedWaitUntil: {notVisible: "Next keyboard", timeout: 4000}
+- tapOn: {point: "50%, 18%"}
+- eraseText: 5
+- tapOn: {point: "35%, 11%"}
+# 3. Chat: Send keeps the keyboard; a tap on the transcript closes it.
+- tapOn: "Ask\nTab.*"
+- tapOn: "New chat"
+- inputText: "Reply with exactly KB-OK"
+- extendedWaitUntil: {visible: "Next keyboard", timeout: 4000}
+- tapOn: "Send"
+- extendedWaitUntil: {visible: "KB-OK(\nCopy)?", timeout: 45000}
+- assertVisible: "Next keyboard"
+- tapOn: {point: "50%, 25%"}
+- extendedWaitUntil: {notVisible: "Next keyboard", timeout: 4000}
+- tapOn: "Back"
+- swipe: {start: "85%, 18%", end: "5%, 18%", duration: 400}
+- assertVisible: "Chat deleted"

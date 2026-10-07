@@ -9,7 +9,8 @@ appId: com.danyzmaj.dzep
     timeout: 15000
 - tapOn: "Ask\nTab.*"
 - tapOn: "New chat"
-- tapOn: "Ask a quick question.*"
+# The field (its hint), not the "Ask a quick question below." empty state.
+- tapOn: "Ask a quick question…"
 - inputText: "Reply with exactly the word PONG${TS} and nothing else"
 - tapOn: "Send"
 # An answer and its Copy button read as one accessibility node.

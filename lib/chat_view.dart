@@ -45,6 +45,8 @@ class ChatTranscript extends StatelessWidget {
     return SelectionArea(
       child: ListView(
         reverse: true,
+        // Scrolling the transcript puts the iPhone keyboard away.
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         shrinkWrap: shrinkWrap,
         padding: padding,
         children: [

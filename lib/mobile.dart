@@ -106,6 +106,11 @@ class MobileApp extends StatelessWidget {
   );
 }
 
+/// For fields' `onTapOutside`: a tap anywhere else puts the keyboard away.
+/// (A tap on the field itself never counts, unlike a screen-wide tap
+/// catcher, which can steal the tap that should focus it.)
+void dismissKeyboard(PointerDownEvent _) => FocusManager.instance.primaryFocus?.unfocus();
+
 // ==================================================================== home
 
 typedef _Filter = ({bool project, String id});
@@ -322,6 +327,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
                 child: TextField(
+                  onTapOutside: dismissKeyboard,
                   controller: _search,
                   onChanged: (q) => setState(() => _query = q),
                   style: const TextStyle(fontSize: 15),
@@ -366,6 +372,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final list = chats.conversations;
     if (list.isEmpty) return _empty('No chats yet. Tap ✎ to ask a quick question.');
     return ListView.separated(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.only(bottom: 96),
       itemCount: list.length,
       separatorBuilder: (_, _) => const Divider(height: 1, color: C.line, indent: 52),
@@ -415,6 +422,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
     }
     return ListView.builder(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       // Room to scroll the last rows clear of the + button and a snackbar.
       padding: const EdgeInsets.only(bottom: 170),
       itemCount: ideas.length,
@@ -429,6 +437,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return _empty(_query.isNotEmpty ? 'No matches.' : 'All done 🎉\nTap + or say “Hey Siri, add a todo to Džep”.');
     }
     return ListView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.only(bottom: 170),
       children: [
         if (open.isEmpty)
@@ -738,6 +747,7 @@ class _AddSheetState extends State<AddSheet> {
             ),
             const SizedBox(height: 14),
             TextField(
+              onTapOutside: dismissKeyboard,
               key: const ValueKey('add-title'),
               controller: _title,
               autofocus: true,
@@ -764,6 +774,7 @@ class _AddSheetState extends State<AddSheet> {
               ),
             const SizedBox(height: 12),
             TextField(
+              onTapOutside: dismissKeyboard,
               key: const ValueKey('add-notes'),
               controller: _notes,
               minLines: 2,
@@ -899,6 +910,7 @@ class _DetailPageState extends State<DetailPage> {
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
         children: [
           TextField(
+            onTapOutside: dismissKeyboard,
             controller: _title,
             maxLines: null,
             textCapitalization: TextCapitalization.sentences,
@@ -930,6 +942,7 @@ class _DetailPageState extends State<DetailPage> {
             )
           else ...[
             TextField(
+              onTapOutside: dismissKeyboard,
               controller: _project,
               style: const TextStyle(fontSize: 14, color: C.projectFg),
               decoration: InputDecoration(
@@ -946,6 +959,7 @@ class _DetailPageState extends State<DetailPage> {
           ],
           const SizedBox(height: 20),
           TextField(
+            onTapOutside: dismissKeyboard,
             controller: _notes,
             maxLines: null,
             minLines: 8,
@@ -1134,6 +1148,7 @@ class _ChatPageState extends State<ChatPage> {
                   children: [
                     Expanded(
                       child: TextField(
+                        onTapOutside: dismissKeyboard,
                         controller: _field,
                         focusNode: _focus,
                         minLines: 1,
@@ -1147,12 +1162,16 @@ class _ChatPageState extends State<ChatPage> {
                         ),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Send',
-                      onPressed: canSend ? _send : null,
-                      icon: chats.busy
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
+                    // Part of the field for tap-outside: sending keeps the
+                    // keyboard up for the next question.
+                    TextFieldTapRegion(
+                      child: IconButton(
+                        tooltip: 'Send',
+                        onPressed: canSend ? _send : null,
+                        icon: chats.busy
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                            : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
+                      ),
                     ),
                   ],
                 ),
