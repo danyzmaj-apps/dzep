@@ -39,10 +39,10 @@ class _PopupState extends State<Popup> {
   final _question = TextEditingController();
   late final FocusNode _questionFocus = FocusNode(onKeyEvent: _onQuestionKey);
 
-  /// Every open starts by choosing: 1 idea, 2 todo, 3 open the app, 4 ask.
+  /// Every open starts by choosing: 1 idea, 2 todo, 3 ask, 4 open the app.
   bool _choosing = true;
 
-  /// Picked 4: the quick-question chat instead of capture.
+  /// Picked 3: the quick-question chat instead of capture.
   bool _asking = false;
 
   /// What ↵ saves, picked in the chooser.
@@ -115,9 +115,9 @@ class _PopupState extends State<Popup> {
       } else if (k == LogicalKeyboardKey.digit2 || k == LogicalKeyboardKey.numpad2) {
         _pick(Kind.todo);
       } else if (k == LogicalKeyboardKey.digit3 || k == LogicalKeyboardKey.numpad3) {
-        unawaited(app.openMain());
-      } else if (k == LogicalKeyboardKey.digit4 || k == LogicalKeyboardKey.numpad4) {
         _ask();
+      } else if (k == LogicalKeyboardKey.digit4 || k == LogicalKeyboardKey.numpad4) {
+        unawaited(app.openMain());
       } else if (k == LogicalKeyboardKey.escape) {
         unawaited(app.closePopup());
       } else {
@@ -451,14 +451,14 @@ class _PopupState extends State<Popup> {
               const SizedBox(width: 10),
               tile('2', const TodoCheck(done: false, size: 22), 'Todo', () => _pick(Kind.todo)),
               const SizedBox(width: 10),
+              tile('3', const Icon(Icons.auto_awesome, size: 22, color: C.accent), 'Ask', _ask),
+              const SizedBox(width: 10),
               tile(
-                '3',
+                '4',
                 const Icon(Icons.open_in_new, size: 22, color: C.dim),
                 'Open app',
                 () => unawaited(app.openMain()),
               ),
-              const SizedBox(width: 10),
-              tile('4', const Icon(Icons.auto_awesome, size: 22, color: C.accent), 'Ask', _ask),
             ],
           ),
         ),
@@ -721,8 +721,8 @@ class _PopupState extends State<Popup> {
         else if (_choosing) ...const [
           KeyHint('1', 'idea'),
           KeyHint('2', 'todo'),
-          KeyHint('3', 'open app'),
-          KeyHint('4', 'ask'),
+          KeyHint('3', 'ask'),
+          KeyHint('4', 'open app'),
           KeyHint('esc', 'hide'),
         ] else if (_asking) ...const [
           KeyHint('↵', 'ask'),
