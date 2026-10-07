@@ -1,0 +1,4 @@
+// The project-level configs (Runner/Configs/*.xcconfig) include Runner's
+// CocoaPods settings, which link Flutter's plugin frameworks into every target.
+// The widget extension uses system frameworks only.
+OTHER_LDFLAGS =

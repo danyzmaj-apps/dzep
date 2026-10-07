@@ -3,7 +3,8 @@ import Foundation
 /// What the app, its Siri intents and the widget extension share through the
 /// App Group: the device token (written by lib/mobile.dart at sign-in), a
 /// snapshot of open todos for the widget, and actions queued while offline
-/// (the app replays them on next open). Compiled into Runner and DzepWidget.
+/// (the app replays them on next open). Compiled into Runner and DzepWidget,
+/// the iPhone's and the Mac's (macos/Runner.xcodeproj; see the end).
 enum DzepShared {
   static let defaults = UserDefaults(suiteName: "group.com.danyzmaj.dzep")!
 
@@ -19,7 +20,8 @@ enum DzepShared {
     set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "todos") }
   }
 
-  /// Offline actions, as the JSON the `device` function takes.
+  /// Actions for the app to replay (the iPhone's offline ones, every tick of
+  /// the Mac's widget), as the JSON the `device` function takes.
   static func queue(_ action: [String: String]) {
     guard let data = try? JSONSerialization.data(withJSONObject: action),
       let entry = String(data: data, encoding: .utf8)
@@ -46,4 +48,22 @@ enum DzepShared {
     default: return .failed
     }
   }
+
+  #if os(macOS)
+    // The Mac's widget never calls the server: the menu-bar app is always
+    // running and has the session. The widget queues its ticks and posts
+    // `queued`; the app takes the queue at once (or on next launch).
+
+    /// The open todos while signed in, nil while signed out (the Mac has no
+    /// device token to tell).
+    static var snapshot: [Todo]? {
+      get { defaults.object(forKey: "todos") == nil ? nil : todos }
+      set {
+        if let newValue { todos = newValue } else { defaults.removeObject(forKey: "todos") }
+      }
+    }
+
+    /// Darwin notification the widget posts after queueing a tick.
+    static let queued = "group.com.danyzmaj.dzep.queued"
+  #endif
 }

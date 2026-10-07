@@ -1,3 +1,4 @@
+import 'package:dzep/remind.dart';
 import 'package:flutter/services.dart';
 
 /// The Swift side (macos/Runner/MainFlutterWindow.swift): the popup panel and
@@ -6,9 +7,13 @@ class Native {
   static const _channel = MethodChannel('dzep/native');
 
   /// Events from the Swift side: hotKey, togglePopup, openMain,
-  /// openSettings, blur (the popup lost focus), mainClosed (⌘W).
-  static void listen(void Function(String event) onEvent) {
-    _channel.setMethodCallHandler((call) async => onEvent(call.method));
+  /// openSettings, blur (the popup lost focus), mainClosed (⌘W), openTodo
+  /// ({id}: a reminder notification was clicked), pending (an action waits in
+  /// [takePending], e.g. a tick from the desktop widget).
+  static void listen(void Function(String event, Map<Object?, Object?> args) onEvent) {
+    _channel.setMethodCallHandler(
+      (call) async => onEvent(call.method, call.arguments as Map<Object?, Object?>? ?? const {}),
+    );
   }
 
   /// Which Flutter view is which window (the engine runs in multi-view mode).
@@ -24,9 +29,26 @@ class Native {
   static Future<void> startDrag() => _channel.invokeMethod('startDrag');
   static Future<void> setTodoCount(int count) => _channel.invokeMethod('setTodoCount', {'count': count});
 
-  // iPhone: the App Group the Siri intents and the widget read.
+  // Mac and iPhone: todo reminders, as local notifications.
+  /// Replaces every pending reminder with [reminders] (lib/remind.dart picks
+  /// them); the first non-empty set asks for permission.
+  static Future<void> setReminders(List<Reminder> reminders) => _channel.invokeMethod('setReminders', {
+    'reminders': [
+      for (final r in reminders) {'id': r.id, 'title': r.title, 'at': r.at.millisecondsSinceEpoch},
+    ],
+  });
+
+  /// iPhone: the todo whose reminder was tapped, once (a tap that launched
+  /// the app lands before Dart listens, so openTodo only says "look").
+  static Future<String?> takeTappedTodo() => _channel.invokeMethod<String>('takeTappedTodo');
+
+  // The App Group the widgets (and the iPhone's Siri intents) read:
+  // ios/Shared/DzepShared.swift.
   static Future<void> setSharedToken(String? token) => _channel.invokeMethod('setSharedToken', {'token': token});
-  static Future<void> setSharedTodos(List<Map<String, String>> todos) =>
+
+  /// Null on the Mac's sign-out, which its widget shows as signed out (the
+  /// iPhone's goes with the token).
+  static Future<void> setSharedTodos(List<Map<String, String>>? todos) =>
       _channel.invokeMethod('setSharedTodos', {'todos': todos});
   static Future<List<String>> takePending() async =>
       (await _channel.invokeListMethod<String>('takePending')) ?? const [];

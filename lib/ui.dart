@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dzep/remind.dart';
 import 'package:dzep/store.dart';
 import 'package:flutter/material.dart';
 
@@ -131,6 +132,34 @@ class ProjectChip extends StatelessWidget {
     ),
     child: Text('@$name', style: const TextStyle(fontSize: 11, color: C.projectFg)),
   );
+}
+
+/// A todo's reminder: a bell and when, amber once it has gone off.
+class ReminderChip extends StatelessWidget {
+  const ReminderChip(this.at, {super.key});
+  final DateTime at;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final color = at.isAfter(now) ? C.accent : C.warn;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: .35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.notifications_none, size: 11, color: color),
+          const SizedBox(width: 3),
+          Text(reminderLabel(at, now), style: TextStyle(fontSize: 11, color: color)),
+        ],
+      ),
+    );
+  }
 }
 
 class SyncDot extends StatelessWidget {

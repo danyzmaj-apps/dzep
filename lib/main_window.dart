@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:dzep/chat.dart';
+import 'package:dzep/chat_view.dart';
 import 'package:dzep/controller.dart';
 import 'package:dzep/idea.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/popup.dart';
+import 'package:dzep/remind.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
 import 'package:dzep/ui.dart';
@@ -17,6 +20,7 @@ typedef Shelf = ({bool project, String id});
 const Shelf _todos = (project: false, id: 'todos');
 const Shelf _todosDone = (project: false, id: 'todos-done');
 const Shelf _all = (project: false, id: 'all');
+const Shelf _chats = (project: false, id: 'chats');
 
 /// Drag strip for the transparent title bar.
 class _TitleDrag extends StatelessWidget {
@@ -117,6 +121,9 @@ class _LibraryState extends State<Library> {
   String _query = '';
   String? _focusNotesOf;
   final _search = TextEditingController();
+
+  /// The conversation shown in Chats; null for a new one.
+  Conversation? _chat;
   final _searchFocus = FocusNode();
   final _newIdea = TextEditingController();
   final _newFocus = FocusNode();
@@ -145,8 +152,16 @@ class _LibraryState extends State<Library> {
     super.dispose();
   }
 
-  /// The popup asked to open a specific idea or todo.
+  /// The popup asked to open a specific idea, todo or chat.
   void _takePendingSelect() {
+    final chat = widget.app.pendingChat;
+    if (chat != null) {
+      widget.app.pendingChat = null;
+      setState(() {
+        _view = _chats;
+        _chat = chat;
+      });
+    }
     final id = widget.app.pendingSelect;
     if (id == null) return;
     widget.app.pendingSelect = null;
@@ -171,6 +186,7 @@ class _LibraryState extends State<Library> {
   }
 
   List<Idea> get _visible {
+    if (_view == _chats) return const [];
     if (_view == _todos) return store.openTodos.where(_matches).toList();
     if (_view == _todosDone) return store.doneTodos.where(_matches).toList();
     return store.ideas.where((i) => _inView(i, _view) && _matches(i)).toList();
@@ -180,6 +196,7 @@ class _LibraryState extends State<Library> {
     if (v.project) return '@${v.id}';
     if (v == _todos) return 'Todos';
     if (v == _todosDone) return 'Done';
+    if (v == _chats) return 'Chats';
     return 'All ideas';
   }
 
@@ -189,6 +206,7 @@ class _LibraryState extends State<Library> {
     setState(() {
       _view = v;
       _selId = _visible.firstOrNull?.id;
+      if (v == _chats) _chat = widget.app.chat.current ?? widget.app.chat.conversations.firstOrNull;
     });
   }
 
@@ -214,9 +232,9 @@ class _LibraryState extends State<Library> {
 
   void _addFromField() {
     if (_todoView) {
-      final title = _newIdea.text.trim();
-      if (title.isEmpty) return;
-      final todo = store.add(title: title, kind: Kind.todo);
+      final parsed = parseReminder(_newIdea.text, DateTime.now());
+      if (parsed.title.isEmpty) return;
+      final todo = store.add(title: parsed.title, kind: Kind.todo, remindAt: parsed.at);
       _newIdea.clear();
       // Stay in the field: todos tend to come in batches.
       setState(() {
@@ -244,11 +262,14 @@ class _LibraryState extends State<Library> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: store,
+    listenable: Listenable.merge([store, widget.app.chat]),
     builder: (context, _) {
       final visible = _visible;
       if (_selId != null && store.byId(_selId!) == null) _selId = null;
       final selected = _selId == null ? null : store.byId(_selId!);
+      final chat = widget.app.chat;
+      if (_chat != null && !chat.conversations.contains(_chat)) _chat = chat.conversations.firstOrNull;
+      final chats = _view == _chats;
       return Focus(
         focusNode: _listFocus,
         child: Row(
@@ -256,10 +277,23 @@ class _LibraryState extends State<Library> {
           children: [
             SizedBox(width: 210, child: _sidebar()),
             const VerticalDivider(width: 1, color: C.line),
-            SizedBox(width: 370, child: _listPane(visible)),
+            SizedBox(
+              width: 370,
+              child: chats
+                  ? ChatList(chat: chat, selected: _chat, onSelect: (c) => setState(() => _chat = c))
+                  : _listPane(visible),
+            ),
             const VerticalDivider(width: 1, color: C.line),
             Expanded(
-              child: selected == null
+              child: chats
+                  ? ChatThread(
+                      key: ValueKey(_chat?.id),
+                      chat: chat,
+                      conversation: _chat,
+                      onSent: (c) => setState(() => _chat = c),
+                      onContinue: (c) => unawaited(widget.app.openAsk(c)),
+                    )
+                  : selected == null
                   ? const _EmptyDetail()
                   : _Detail(
                       key: ValueKey(selected.id),
@@ -289,6 +323,8 @@ class _LibraryState extends State<Library> {
           ? store.openTodos.length
           : v == _todosDone
           ? 0
+          : v == _chats
+          ? widget.app.chat.conversations.length
           : store.ideas.where((i) => _inView(i, v)).length;
       final on = _view == v;
       return Hoverable(
@@ -338,6 +374,8 @@ class _LibraryState extends State<Library> {
                 header('TODOS'),
                 nav(_todos, const Icon(Icons.radio_button_unchecked, size: 13, color: C.dim), 'Todos'),
                 nav(_todosDone, const Icon(Icons.check_circle_outline, size: 13, color: C.dim), 'Done'),
+                header('CHATS'),
+                nav(_chats, const Icon(Icons.auto_awesome, size: 13, color: C.dim), 'Quick questions'),
                 header('IDEAS'),
                 nav(_all, const Icon(Icons.lightbulb_outline, size: 14, color: C.dim), 'All ideas'),
                 if (store.projects.isNotEmpty) header('PROJECTS'),
@@ -555,6 +593,8 @@ class _LibraryState extends State<Library> {
                     ),
                   if (i.project.isNotEmpty)
                     Padding(padding: const EdgeInsets.only(top: 4), child: ProjectChip(i.project)),
+                  if (i.remindAt case final at? when !i.done)
+                    Padding(padding: const EdgeInsets.only(top: 4), child: ReminderChip(at)),
                 ],
               ),
             ),
@@ -657,6 +697,7 @@ class _DetailState extends State<_Detail> {
   late final _title = TextEditingController(text: widget.idea.title);
   late final _notes = TextEditingController(text: widget.idea.notes);
   late final _project = TextEditingController(text: widget.idea.project);
+  final _remind = TextEditingController();
   final _titleFocus = FocusNode();
   final _notesFocus = FocusNode();
   final _projectFocus = FocusNode();
@@ -702,6 +743,7 @@ class _DetailState extends State<_Detail> {
     _title.dispose();
     _notes.dispose();
     _project.dispose();
+    _remind.dispose();
     _titleFocus.dispose();
     _notesFocus.dispose();
     _projectFocus.dispose();
@@ -794,6 +836,7 @@ class _DetailState extends State<_Detail> {
               )
             else
               _prop('Project', _projectField()),
+            if (idea.isTodo && !idea.done) ...[const SizedBox(height: 10), _prop('Remind', _remindField())],
             const SizedBox(height: 22),
             TextField(
               controller: _notes,
@@ -834,6 +877,58 @@ class _DetailState extends State<_Detail> {
       ),
     ],
   );
+
+  /// The `!` syntax without the `!` (`15:00`, `3pm`, `tomorrow 9`,
+  /// `mon 14:30`, `2h`): ↵ sets the reminder, × clears it.
+  Widget _remindField() => Wrap(
+    spacing: 4,
+    runSpacing: 6,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      if (idea.remindAt case final at?) ...[
+        ReminderChip(at),
+        IconButton(
+          tooltip: 'Clear reminder',
+          iconSize: 13,
+          color: C.dim,
+          icon: const Icon(Icons.close),
+          onPressed: () => widget.store.update(idea, remind: (at: null)),
+        ),
+      ],
+      Container(
+        width: 200,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: C.field,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: C.line2),
+        ),
+        child: TextField(
+          controller: _remind,
+          style: const TextStyle(fontSize: 12),
+          decoration: plainInput.copyWith(
+            hintText: '${idea.remindAt == null ? 'none' : 'change'}: 15:00, tomorrow 9, 2h',
+            hintStyle: const TextStyle(color: C.dim2),
+          ),
+          onSubmitted: (_) => _commitRemind(),
+        ),
+      ),
+    ],
+  );
+
+  void _commitRemind() {
+    final spec = _remind.text.trim().replaceFirst(RegExp('^!'), '');
+    if (spec.isNotEmpty) {
+      final at = parseWhen(spec, DateTime.now());
+      if (at == null) {
+        Toaster.of(context).show('Try 15:00, 3pm, tomorrow 9, mon 14:30 or 2h');
+        return;
+      }
+      widget.store.update(idea, remind: (at: at));
+      _remind.clear();
+    }
+    widget.onDone();
+  }
 
   Widget _projectField() => RawAutocomplete<String>(
     textEditingController: _project,

@@ -1,14 +1,13 @@
 import 'dart:async';
 
-import 'package:dzep/chat.dart';
+import 'package:dzep/chat_view.dart';
 import 'package:dzep/controller.dart';
 import 'package:dzep/idea.dart';
+import 'package:dzep/remind.dart';
 import 'package:dzep/store.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// `@name` tokens in the title: the first one is the project.
 final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
@@ -83,7 +82,12 @@ class _PopupState extends State<Popup> {
     if (_session == app.popupSession) return;
     _session = app.popupSession;
     _sel = -1;
-    _choosing = true;
+    _choosing = !app.askNext;
+    _asking = app.askNext;
+    if (app.askNext) {
+      app.askNext = false;
+      _focusSoon(_question, _questionFocus);
+    }
     _titleFocus.unfocus();
     _notesFocus.unfocus();
     _questionFocus.unfocus();
@@ -115,6 +119,24 @@ class _PopupState extends State<Popup> {
         _ask();
       } else if (k == LogicalKeyboardKey.escape) {
         unawaited(app.closePopup());
+      } else {
+        return false;
+      }
+      return true;
+    }
+    // The chat's keys work whether the field or the transcript has focus.
+    if (_asking) {
+      final chat = app.chat;
+      if (k == LogicalKeyboardKey.escape) {
+        unawaited(app.closePopup());
+      } else if (k == LogicalKeyboardKey.keyN && _cmd) {
+        chat.newChat();
+        _question.clear();
+        _questionFocus.requestFocus();
+      } else if (k == LogicalKeyboardKey.keyO && _cmd) {
+        unawaited(app.openMain(conversation: chat.current));
+      } else if (k == LogicalKeyboardKey.keyC && _cmd && _shift) {
+        copyAnswer(context, chat.current?.lastAnswer);
       } else {
         return false;
       }
@@ -239,15 +261,6 @@ class _PopupState extends State<Popup> {
       }
       return KeyEventResult.handled;
     }
-    if (k == LogicalKeyboardKey.keyN && _cmd) {
-      app.chat.clear();
-      _question.clear();
-      return KeyEventResult.handled;
-    }
-    if (k == LogicalKeyboardKey.escape) {
-      unawaited(app.closePopup());
-      return KeyEventResult.handled;
-    }
     return KeyEventResult.ignored;
   }
 
@@ -275,7 +288,9 @@ class _PopupState extends State<Popup> {
     final s = store;
     if (s == null) return;
     final todo = _kind == Kind.todo;
-    final parsed = todo ? (title: _title.text.trim(), project: '') : parseTitle(_title.text);
+    // Todos take a `!` reminder (lib/remind.dart), ideas a `@project`.
+    final remind = todo ? parseReminder(_title.text, DateTime.now()) : null;
+    final parsed = remind != null ? (title: remind.title, project: '') : parseTitle(_title.text);
     var title = parsed.title;
     var notes = _notes.text.trim();
     if (title.isEmpty && notes.isEmpty) return;
@@ -284,11 +299,13 @@ class _PopupState extends State<Popup> {
       title = lines.first.trim();
       notes = lines.skip(1).join('\n').trim();
     }
-    s.add(title: title, kind: _kind, notes: notes, project: parsed.project);
+    s.add(title: title, kind: _kind, notes: notes, project: parsed.project, remindAt: remind?.at);
     _title.clear();
     _notes.clear();
     setState(() => _withNotes = false);
-    Toaster.of(context).show(todo ? 'Todo added ✓' : 'Idea saved ✓');
+    final at = remind?.at;
+    final saved = todo ? 'Todo added ✓' : 'Idea saved ✓';
+    Toaster.of(context).show(at == null ? saved : '$saved  🔔 ${reminderLabel(at, DateTime.now())}');
     if (stay) {
       _titleFocus.requestFocus();
     } else {
@@ -478,7 +495,8 @@ class _PopupState extends State<Popup> {
 
   List<Widget> _capture(IdeaStore s) {
     final todoMode = _kind == Kind.todo;
-    final parsed = todoMode ? (title: _title.text.trim(), project: '') : parseTitle(_title.text);
+    final remind = todoMode ? parseReminder(_title.text, DateTime.now()) : null;
+    final parsed = remind != null ? (title: remind.title, project: '') : parseTitle(_title.text);
     final words = parsed.title.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
     bool similar(Idea i) => words.any('${i.title} ${i.notes}'.toLowerCase().contains);
     // The list below the field: open todos (filtered as you type) in todo
@@ -523,6 +541,7 @@ class _PopupState extends State<Popup> {
               ),
             ),
             if (i.project.isNotEmpty) ...[const SizedBox(width: 8), ProjectChip(i.project)],
+            if (i.remindAt case final at? when !i.done) ...[const SizedBox(width: 8), ReminderChip(at)],
             const SizedBox(width: 10),
             Text(stamp(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim)),
           ],
@@ -552,7 +571,7 @@ class _PopupState extends State<Popup> {
                     focusNode: _titleFocus,
                     style: const TextStyle(fontSize: 18, height: 1.4),
                     decoration: plainInput.copyWith(
-                      hintText: todoMode ? 'Add a todo…' : 'Drop an idea…  @project',
+                      hintText: todoMode ? 'Add a todo…  !15:00' : 'Drop an idea…  @project',
                       hintStyle: const TextStyle(color: C.dim2),
                     ),
                   ),
@@ -586,6 +605,7 @@ class _PopupState extends State<Popup> {
         child: Row(
           children: [
             if (parsed.project.isNotEmpty) ...[ProjectChip(parsed.project), const SizedBox(width: 8)],
+            if (remind?.at case final at?) ...[ReminderChip(at), const SizedBox(width: 8)],
             if (suggestions.isNotEmpty)
               Text('tab → ${suggestions.join(' · ')}', style: const TextStyle(fontSize: 12, color: C.dim2))
             else if (!_withNotes && parsed.title.isNotEmpty) ...[
@@ -632,33 +652,24 @@ class _PopupState extends State<Popup> {
   }
 
   /// The quick-question chat: the conversation above, the question field
-  /// below. A reversed list keeps the newest text in view while it streams.
+  /// below. It continues where it was left; ⌘N starts a new one and the old
+  /// one stays in the main window's Chats.
   Widget _askPane() => ListenableBuilder(
     listenable: app.chat,
     builder: (context, _) {
       final chat = app.chat;
-      final last = chat.messages.lastOrNull;
+      final c = chat.current;
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (chat.messages.isNotEmpty)
+          if (c != null && c.messages.isNotEmpty)
             Container(
               constraints: const BoxConstraints(maxHeight: 440),
               decoration: const BoxDecoration(
                 border: Border(bottom: BorderSide(color: C.line)),
               ),
-              child: SelectionArea(
-                child: ListView(
-                  reverse: true,
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
-                  children: [
-                    for (final m in chat.messages.reversed)
-                      if (m.fromUser) _questionRow(m) else _answer(m, streaming: chat.busy && m == last),
-                  ],
-                ),
-              ),
+              child: ChatTranscript(chat: chat, conversation: c, shrinkWrap: true),
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
@@ -678,7 +689,7 @@ class _PopupState extends State<Popup> {
                     maxLines: 6,
                     style: const TextStyle(fontSize: 18, height: 1.4),
                     decoration: plainInput.copyWith(
-                      hintText: chat.messages.isEmpty ? 'Ask a quick question…' : 'Follow up…',
+                      hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
                       hintStyle: const TextStyle(color: C.dim2),
                     ),
                   ),
@@ -708,44 +719,6 @@ class _PopupState extends State<Popup> {
     },
   );
 
-  Widget _questionRow(ChatMessage m) => Padding(
-    padding: const EdgeInsets.only(top: 12, bottom: 6),
-    child: Text(m.text, style: const TextStyle(fontSize: 13, height: 1.45, color: C.dim)),
-  );
-
-  Widget _answer(ChatMessage m, {required bool streaming}) {
-    if (m.error != null) {
-      return Text(m.error!, style: const TextStyle(fontSize: 13, color: Color(0xFFFCA5A5)));
-    }
-    if (m.text.isEmpty) {
-      return Text(streaming ? '…' : '', style: const TextStyle(fontSize: 14, color: C.dim));
-    }
-    const code = TextStyle(fontFamily: 'Menlo', fontSize: 12.5, color: Color(0xFFD7DAE3));
-    return MarkdownBody(
-      data: m.text,
-      onTapLink: (_, href, _) {
-        final uri = href == null ? null : Uri.tryParse(href);
-        if (uri != null) unawaited(launchUrl(uri));
-      },
-      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-        p: const TextStyle(fontSize: 14, height: 1.5, color: C.text),
-        listBullet: const TextStyle(fontSize: 14, height: 1.5, color: C.dim),
-        a: const TextStyle(color: C.accent),
-        code: code.copyWith(backgroundColor: C.field),
-        codeblockPadding: const EdgeInsets.all(10),
-        codeblockDecoration: BoxDecoration(
-          color: C.field,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: C.line),
-        ),
-        blockquoteDecoration: const BoxDecoration(
-          border: Border(left: BorderSide(color: C.line2, width: 2)),
-        ),
-        blockSpacing: 10,
-      ),
-    );
-  }
-
   Widget _bar(IdeaStore? s) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     decoration: const BoxDecoration(
@@ -770,7 +743,9 @@ class _PopupState extends State<Popup> {
         ] else if (_asking) ...const [
           KeyHint('↵', 'ask'),
           KeyHint('⇧↵', 'newline'),
+          KeyHint('⇧⌘C', 'copy answer'),
           KeyHint('⌘N', 'new chat'),
+          KeyHint('⌘O', 'chats'),
           KeyHint('esc', 'hide'),
         ] else if (_notesFocus.hasFocus) ...const [
           KeyHint('↵', 'newline'),

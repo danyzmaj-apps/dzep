@@ -67,7 +67,7 @@ class IdeaStore extends ChangeNotifier {
 
   // ---------------------------------------------------------------- edits
 
-  Idea add({required String title, Kind kind = Kind.idea, String notes = '', String project = ''}) {
+  Idea add({required String title, Kind kind = Kind.idea, String notes = '', String project = '', DateTime? remindAt}) {
     final now = DateTime.now().toUtc();
     final idea = Idea(
       id: const Uuid().v4(),
@@ -75,6 +75,7 @@ class IdeaStore extends ChangeNotifier {
       title: title.trim(),
       notes: notes.trim(),
       project: kind == Kind.todo ? '' : project.trim(),
+      remindAt: kind == Kind.todo ? remindAt?.toUtc() : null,
       device: device,
       createdAt: now,
       updatedAt: now,
@@ -84,11 +85,15 @@ class IdeaStore extends ChangeNotifier {
     return idea;
   }
 
-  void update(Idea idea, {String? title, String? notes, String? project, bool? done}) {
+  /// Null leaves a field as it is; [remind] sets the reminder, `(at: null)`
+  /// clears it. A done or deleted todo keeps its reminder (for Undo) but
+  /// never notifies (see `pendingReminders`).
+  void update(Idea idea, {String? title, String? notes, String? project, bool? done, ({DateTime? at})? remind}) {
     if (title != null) idea.title = title;
     if (notes != null) idea.notes = notes;
     if (project != null) idea.project = project.trim();
     if (done != null) idea.doneAt = done ? (idea.doneAt ?? DateTime.now().toUtc()) : null;
+    if (remind != null) idea.remindAt = remind.at?.toUtc();
     _changed(idea);
   }
 

@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dzep/chat.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The Mac app: [Session] plus its two windows (the ⇧⌘Space popup panel and
@@ -29,11 +31,17 @@ class AppController extends Session {
   /// Idea the main window should select next (from the popup's list).
   String? pendingSelect;
 
+  /// Conversation the main window's Chats should show next (popup ⌘O).
+  Conversation? pendingChat;
+
+  /// The next popup open goes straight to the chat (Continue in popup).
+  bool askNext = false;
+
   HotKey get hotKey => _hotKey;
   late HotKey _hotKey = _loadHotKey();
   bool hotKeyRegistered = false;
 
-  /// The popup's quick-question chat.
+  /// Quick questions: the popup's 4 and the main window's Chats.
   late final chat = Chat(() => deepseekKey);
 
   /// DeepSeek API key for [chat], set in Settings.
@@ -45,6 +53,8 @@ class AppController extends Session {
   }
 
   Future<void> start() async {
+    final dir = await getApplicationSupportDirectory();
+    await chat.load(File('${dir.path}/chats.json'));
     Native.listen(_onNative);
     hotKeyRegistered = await Native.setHotKey(_hotKey);
     await startAuth();
@@ -58,6 +68,7 @@ class AppController extends Session {
     await super.signOut();
     _shownTodoCount = 0;
     await Native.setTodoCount(0);
+    await Native.setSharedTodos(null);
   }
 
   int _shownTodoCount = 0;
@@ -65,19 +76,28 @@ class AppController extends Session {
   @override
   Future<void> onSignedIn(IdeaStore store) async {
     void update() {
-      final n = store.openTodos.length;
-      if (n == _shownTodoCount || this.store != store) return;
-      _shownTodoCount = n;
-      unawaited(Native.setTodoCount(n));
+      if (this.store != store) return;
+      final open = store.openTodos;
+      // The desktop widget's snapshot; Swift reloads the widget only on a change.
+      unawaited(
+        Native.setSharedTodos([
+          for (final t in open) {'id': t.id, 'title': t.title},
+        ]),
+      );
+      if (open.length == _shownTodoCount) return;
+      _shownTodoCount = open.length;
+      unawaited(Native.setTodoCount(open.length));
     }
 
     store.addListener(update);
     update();
+    // Ticks the widget queued while Džep wasn't running.
+    await drainPending();
   }
 
   // ---------------------------------------------------------------- window
 
-  void _onNative(String event) {
+  void _onNative(String event, Map<Object?, Object?> args) {
     switch (event) {
       case 'hotKey' || 'togglePopup':
         unawaited(_popupOpen ? closePopup() : openPopup());
@@ -92,6 +112,12 @@ class AppController extends Session {
       case 'mainClosed':
         _mainOpen = false;
         notifyListeners();
+      case 'openTodo':
+        // A reminder notification clicked: that todo, selected.
+        unawaited(openMain(select: args['id'] as String?));
+      case 'pending':
+        // Ticks from outside Dart (the desktop widget) wait in the App Group.
+        unawaited(drainPending());
     }
   }
 
@@ -108,8 +134,16 @@ class AppController extends Session {
     await Native.hidePopup();
   }
 
-  Future<void> openMain({String? select}) async {
+  /// Shows [c] in the popup's chat.
+  Future<void> openAsk(Conversation c) async {
+    chat.resume(c);
+    askNext = true;
+    await openPopup();
+  }
+
+  Future<void> openMain({String? select, Conversation? conversation}) async {
     if (select != null) pendingSelect = select;
+    if (conversation != null) pendingChat = conversation;
     if (_popupOpen) await closePopup();
     _mainOpen = true;
     notifyListeners();

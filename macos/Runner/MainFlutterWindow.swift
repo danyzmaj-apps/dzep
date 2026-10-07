@@ -2,6 +2,9 @@ import Carbon.HIToolbox
 import Cocoa
 import FlutterMacOS
 import ServiceManagement
+import UserNotifications
+import WidgetKit
+import notify
 
 /// The ⇧⌘Space capture panel, Raycast-style: it takes the keyboard without
 /// activating Džep (`.nonactivatingPanel`, which AppKit only honours when a
@@ -50,6 +53,15 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     channel.setMethodCallHandler { [weak self] call, result in
       self?.handle(call, result: result)
     }
+    // The desktop widget (macos/DzepWidget) queues its ticks in the App Group
+    // and posts this; Dart then takes the queue ("takePending").
+    var widgetTicks: Int32 = 0
+    notify_register_dispatch(DzepShared.queued, &widgetTicks, .main) { [weak self] _ in
+      self?.channel.invokeMethod("pending", arguments: nil)
+    }
+    // Now, before launch ends: a reminder click that launched Džep comes in
+    // right after.
+    setUpReminders()
     engine.run(withEntrypoint: nil)
 
     popupController = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
@@ -133,6 +145,24 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       let count = args["count"] as? Int ?? 0
       statusItem?.button?.title = count > 0 ? " \(count)" : ""
       result(nil)
+    case "setSharedTodos":
+      // The desktop widget's snapshot (macos/DzepWidget); null once signed out.
+      let todos = (args["todos"] as? [[String: String]])?.compactMap { t -> DzepShared.Todo? in
+        guard let id = t["id"], let title = t["title"] else { return nil }
+        return DzepShared.Todo(id: id, title: title)
+      }
+      if todos != DzepShared.snapshot {
+        DzepShared.snapshot = todos
+        WidgetCenter.shared.reloadAllTimelines()
+      }
+      result(nil)
+    case "takePending":
+      // Todos ticked off in the widget, for Dart to apply.
+      let pending = DzepShared.defaults.stringArray(forKey: "pending") ?? []
+      DzepShared.defaults.removeObject(forKey: "pending")
+      result(pending)
+    case "setReminders":
+      setReminders(args["reminders"] as? [[String: Any]] ?? []) { result(nil) }
     case "quit":
       NSApp.terminate(nil)
       result(nil)
@@ -292,5 +322,71 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     let status = RegisterEventHotKey(
       UInt32(keyCode), UInt32(modifiers), id, GetApplicationEventTarget(), 0, &hotKeyRef)
     return status == noErr
+  }
+}
+
+// MARK: - Todo reminders
+
+/// Local notifications for todo reminders. Dart picks them (lib/remind.dart)
+/// and hands over the whole set on every change; a click opens that todo in
+/// the main window, Done ticks it off through the desktop widget's queue (so
+/// a click that launched Džep is applied once the store is open).
+extension MainFlutterWindow: UNUserNotificationCenterDelegate {
+  fileprivate func setUpReminders() {
+    let center = UNUserNotificationCenter.current()
+    center.delegate = self
+    let done = UNNotificationAction(identifier: "done", title: "Done", options: [])
+    center.setNotificationCategories([
+      UNNotificationCategory(identifier: "todo", actions: [done], intentIdentifiers: [], options: [])
+    ])
+  }
+
+  /// Replaces every pending reminder with `list` ({id, title, at: ms since
+  /// 1970}); the identifier is the todo's id. A non-empty set asks for
+  /// permission first, which only prompts the first time.
+  fileprivate func setReminders(_ list: [[String: Any]], then done: @escaping () -> Void) {
+    let center = UNUserNotificationCenter.current()
+    center.removeAllPendingNotificationRequests()
+    guard !list.isEmpty else { return done() }
+    center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+      let added = DispatchGroup()
+      for r in granted ? list : [] {
+        guard let id = r["id"] as? String, let title = r["title"] as? String, let at = r["at"] as? Int else { continue }
+        let content = UNMutableNotificationContent()
+        content.body = title
+        content.sound = .default
+        content.categoryIdentifier = "todo"
+        let wait = Date(timeIntervalSince1970: Double(at) / 1000).timeIntervalSinceNow
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, wait), repeats: false)
+        added.enter()
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) { _ in added.leave() }
+      }
+      added.notify(queue: .main, execute: done)
+    }
+  }
+
+  /// A reminder going off while Džep is frontmost still shows.
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .list, .sound])
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let id = response.notification.request.identifier
+    let action = response.actionIdentifier
+    DispatchQueue.main.async {
+      if action == "done" {
+        DzepShared.queue(["action": "done", "id": id])
+        self.channel.invokeMethod("pending", arguments: nil)
+      } else if action == UNNotificationDefaultActionIdentifier {
+        self.channel.invokeMethod("openTodo", arguments: ["id": id])
+      }
+      completionHandler()
+    }
   }
 }

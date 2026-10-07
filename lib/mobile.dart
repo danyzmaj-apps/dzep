@@ -8,9 +8,11 @@ import 'package:dzep/idea.dart';
 import 'package:dzep/main_window.dart' show Avatar, SignInPage;
 import 'package:dzep/native.dart';
 import 'package:dzep/popup.dart' show parseTitle;
+import 'package:dzep/remind.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
 import 'package:dzep/ui.dart';
+import 'package:flutter/cupertino.dart' show CupertinoDatePicker;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -67,26 +69,6 @@ class MobileSession extends Session {
     await _prefs.remove(_tokenUserKey);
     await Native.setSharedToken(null);
     if (token != null) await client.from('device_tokens').delete().eq('token_hash', _hash(token));
-  }
-
-  /// Actions Siri or the widget queued offline: {action: add, kind, title}
-  /// or {action: done, id}.
-  Future<void> drainPending() async {
-    final store = this.store;
-    if (store == null) return;
-    for (final raw in await Native.takePending()) {
-      try {
-        final j = jsonDecode(raw) as Map<String, dynamic>;
-        if (j['action'] == 'done') {
-          final todo = store.byId(j['id'] as String? ?? '');
-          if (todo != null && todo.isTodo) store.update(todo, done: true);
-        } else {
-          store.add(title: j['title'] as String? ?? '', kind: j['kind'] == 'todo' ? Kind.todo : Kind.idea);
-        }
-      } on Object catch (e) {
-        debugPrint('Džep: dropped unreadable queued action: $e');
-      }
-    }
   }
 }
 
@@ -154,6 +136,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // stream also carries the link that cold-started the app, so
     // getInitialLink() would handle it twice.
     _links = AppLinks().uriLinkStream.listen(_onLink);
+    Native.listen(_onNative);
+    // A reminder tap that launched the app.
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_openTapped()));
   }
 
   @override
@@ -169,7 +154,34 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       unawaited(widget.session.drainPending());
       unawaited(store.syncNow());
+      unawaited(_openTapped());
     }
+  }
+
+  /// From ios/Runner/AppDelegate.swift: a reminder was tapped, or its Done
+  /// couldn't reach the server and waits in the App Group.
+  void _onNative(String event, Map<Object?, Object?> _) {
+    if (!mounted) return;
+    switch (event) {
+      case 'openTodo':
+        unawaited(_openTapped());
+      case 'pending':
+        unawaited(widget.session.drainPending());
+    }
+  }
+
+  /// Opens the todo whose reminder was tapped, if one was.
+  Future<void> _openTapped() async {
+    final id = await Native.takeTappedTodo();
+    if (!mounted) return;
+    final todo = id == null ? null : store.byId(id);
+    if (todo == null) return;
+    setState(() => _tab = 0);
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DetailPage(idea: todo, store: store),
+      ),
+    );
   }
 
   void _onLink(Uri? uri) {
@@ -409,6 +421,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           builder: (_) => DetailPage(idea: t, store: store),
         ),
       ),
+      onLongPress: t.done ? null : () => unawaited(_pickReminder(context, store, t)),
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 4, 20, 4),
         decoration: const BoxDecoration(
@@ -423,16 +436,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
             const SizedBox(width: 4),
             Expanded(
-              child: Text(
-                t.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: t.done ? C.dim : C.text,
-                  decoration: t.done ? TextDecoration.lineThrough : null,
-                  decorationColor: C.dim,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    t.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: t.done ? C.dim : C.text,
+                      decoration: t.done ? TextDecoration.lineThrough : null,
+                      decorationColor: C.dim,
+                    ),
+                  ),
+                  if (t.remindAt case final at? when !t.done)
+                    Padding(padding: const EdgeInsets.only(top: 3), child: ReminderChip(at)),
+                ],
               ),
             ),
             Text(stamp(t.createdAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
@@ -616,17 +636,23 @@ class _AddSheetState extends State<AddSheet> {
 
   void _save() {
     final todo = _kind == Kind.todo;
-    final parsed = todo ? (title: _title.text.trim(), project: '') : parseTitle(_title.text);
+    // Todos take a `!` reminder (lib/remind.dart), ideas a `@project`.
+    final remind = todo ? parseReminder(_title.text, DateTime.now()) : null;
+    final parsed = remind != null ? (title: remind.title, project: '') : parseTitle(_title.text);
     if (parsed.title.isEmpty) return;
     widget.store.add(
       title: parsed.title,
       kind: _kind,
       notes: _notes.text,
       project: parsed.project.isNotEmpty ? parsed.project : _project,
+      remindAt: remind?.at,
     );
     unawaited(HapticFeedback.lightImpact());
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(todo ? 'Todo added ✓' : 'Idea saved ✓')));
+    final at = remind?.at;
+    final saved = todo ? 'Todo added ✓' : 'Idea saved ✓';
+    final message = at == null ? saved : '$saved  🔔 ${reminderLabel(at, DateTime.now())}';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -658,11 +684,23 @@ class _AddSheetState extends State<AddSheet> {
               textCapitalization: TextCapitalization.sentences,
               style: const TextStyle(fontSize: 19, height: 1.35),
               decoration: plainInput.copyWith(
-                hintText: _kind == Kind.todo ? 'Add a todo…' : 'Drop an idea…',
+                hintText: _kind == Kind.todo ? 'Add a todo…  !15:00' : 'Drop an idea…',
                 hintStyle: const TextStyle(color: C.dim2),
               ),
               onSubmitted: (_) => _save(),
             ),
+            // What a `!` token will set, as it's typed.
+            if (_kind == Kind.todo)
+              ListenableBuilder(
+                listenable: _title,
+                builder: (context, _) => switch (parseReminder(_title.text, DateTime.now()).at) {
+                  final at? => Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Align(alignment: Alignment.centerLeft, child: ReminderChip(at)),
+                  ),
+                  null => const SizedBox.shrink(),
+                },
+              ),
             const SizedBox(height: 12),
             TextField(
               key: const ValueKey('add-notes'),
@@ -754,6 +792,24 @@ class _DetailPageState extends State<DetailPage> {
     super.dispose();
   }
 
+  /// Tap to set or change the todo's reminder, × to clear it.
+  Widget _remindChip() {
+    final at = idea.remindAt;
+    final color = at == null ? C.dim : (at.isAfter(DateTime.now()) ? C.accent : C.warn);
+    return InputChip(
+      onPressed: () => unawaited(_pickReminder(context, widget.store, idea)),
+      onDeleted: at == null ? null : () => widget.store.update(idea, remind: (at: null)),
+      deleteIconColor: C.dim,
+      backgroundColor: C.field,
+      side: BorderSide(color: at == null ? C.line2 : color),
+      avatar: Icon(Icons.notifications_none, size: 18, color: color),
+      label: Text(
+        at == null ? 'Remind me' : reminderLabel(at, DateTime.now()),
+        style: TextStyle(color: at == null ? C.dim : C.text),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -794,18 +850,22 @@ class _DetailPageState extends State<DetailPage> {
           ),
           const SizedBox(height: 18),
           if (idea.isTodo)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ChoiceChip(
-                selected: idea.done,
-                showCheckmark: false,
-                onSelected: (on) => widget.store.update(idea, done: on),
-                backgroundColor: C.field,
-                selectedColor: C.sel,
-                side: BorderSide(color: idea.done ? C.ok : C.line2),
-                avatar: TodoCheck(done: idea.done),
-                label: Text(idea.done ? 'Done' : 'Mark done', style: TextStyle(color: idea.done ? C.text : C.dim)),
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  selected: idea.done,
+                  showCheckmark: false,
+                  onSelected: (on) => widget.store.update(idea, done: on),
+                  backgroundColor: C.field,
+                  selectedColor: C.sel,
+                  side: BorderSide(color: idea.done ? C.ok : C.line2),
+                  avatar: TodoCheck(done: idea.done),
+                  label: Text(idea.done ? 'Done' : 'Mark done', style: TextStyle(color: idea.done ? C.text : C.dim)),
+                ),
+                if (!idea.done) _remindChip(),
+              ],
             )
           else ...[
             TextField(
@@ -840,6 +900,83 @@ class _DetailPageState extends State<DetailPage> {
           Text(
             'Added ${stamp(idea.createdAt)}${idea.device.isEmpty ? '' : ' on ${idea.device}'}',
             style: const TextStyle(fontSize: 12, color: C.dim2),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// ==================================================================== remind
+
+/// Sets a todo's reminder on a date-and-time wheel, or clears it.
+Future<void> _pickReminder(BuildContext context, IdeaStore store, Idea todo) async {
+  final picked = await showModalBottomSheet<({DateTime? at})>(
+    context: context,
+    backgroundColor: C.bar,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    builder: (_) => _ReminderSheet(current: todo.remindAt),
+  );
+  if (picked != null) store.update(todo, remind: picked);
+}
+
+/// Pops `(at: time)` to set, `(at: null)` to clear.
+class _ReminderSheet extends StatefulWidget {
+  const _ReminderSheet({required this.current});
+  final DateTime? current;
+
+  @override
+  State<_ReminderSheet> createState() => _ReminderSheetState();
+}
+
+class _ReminderSheetState extends State<_ReminderSheet> {
+  final _now = DateTime.now();
+
+  /// The wheel starts on the current reminder if it's still ahead, else on
+  /// the next full hour.
+  late DateTime _at = switch (widget.current?.toLocal()) {
+    final at? when at.isAfter(_now) => at,
+    _ => DateTime(_now.year, _now.month, _now.day, _now.hour + 1),
+  };
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Remind me', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+          SizedBox(
+            height: 200,
+            child: CupertinoDatePicker(
+              initialDateTime: _at,
+              minimumDate: _now,
+              use24hFormat: MediaQuery.alwaysUse24HourFormatOf(context),
+              onDateTimeChanged: (t) => _at = t,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (widget.current != null)
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop((at: null)),
+                  child: const Text('Clear', style: TextStyle(color: Color(0xFFFCA5A5))),
+                ),
+              const Spacer(),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop((at: _at)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: C.accent,
+                  foregroundColor: const Color(0xFF0E0F12),
+                  minimumSize: const Size(120, 46),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Set', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ],
           ),
         ],
       ),

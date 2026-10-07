@@ -1,5 +1,5 @@
 /// An idea (optionally under a project) or a todo, which is open or done
-/// ([Idea.doneAt]).
+/// ([Idea.doneAt]) and may carry a reminder ([Idea.remindAt]).
 enum Kind { idea, todo }
 
 /// One row of the `ideas` table: an idea or a todo ([kind]). [updatedAt] is
@@ -17,6 +17,7 @@ class Idea {
     this.project = '',
     this.device = '',
     this.doneAt,
+    this.remindAt,
     this.deletedAt,
     this.dirty = false,
     this.rev = 0,
@@ -32,6 +33,7 @@ class Idea {
     createdAt: DateTime.parse(row['created_at'] as String),
     updatedAt: DateTime.parse(row['updated_at'] as String),
     doneAt: row['done_at'] == null ? null : DateTime.parse(row['done_at'] as String),
+    remindAt: row['remind_at'] == null ? null : DateTime.parse(row['remind_at'] as String),
     deletedAt: row['deleted_at'] == null ? null : DateTime.parse(row['deleted_at'] as String),
   );
 
@@ -48,6 +50,11 @@ class Idea {
   final DateTime createdAt;
   DateTime updatedAt;
   DateTime? doneAt;
+
+  /// When this todo notifies (lib/remind.dart); kept once it has fired, so a
+  /// row can show it as overdue.
+  DateTime? remindAt;
+
   DateTime? deletedAt;
   bool dirty;
   int rev;
@@ -64,6 +71,7 @@ class Idea {
     device = server.device;
     updatedAt = server.updatedAt;
     doneAt = server.doneAt;
+    remindAt = server.remindAt;
     deletedAt = server.deletedAt;
   }
 
@@ -77,6 +85,7 @@ class Idea {
     'device': device,
     'created_at': createdAt.toUtc().toIso8601String(),
     'done_at': doneAt?.toUtc().toIso8601String(),
+    'remind_at': remindAt?.toUtc().toIso8601String(),
     'deleted_at': deletedAt?.toUtc().toIso8601String(),
   };
 
