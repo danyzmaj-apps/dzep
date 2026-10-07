@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:dzep/chat.dart';
+import 'package:dzep/kitty.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
+import 'package:dzep/terminal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The Mac app: [Session] plus its two windows (the ⇧⌘Space popup panel and
@@ -39,6 +41,31 @@ class AppController extends Session {
   late HotKey _hotKey = _loadHotKey();
   bool hotKeyRegistered = false;
 
+  static const _terminalKey = 'terminal_bridge';
+
+  /// The iPhone may see and type into kitty (lib/terminal.dart). Off until
+  /// turned on in Settings: whoever holds the account can then type here.
+  bool get terminalOn => _prefs.getBool(_terminalKey) ?? false;
+  TerminalBridge? _bridge;
+  final kitty = Kitty();
+
+  Future<void> setTerminal({required bool on}) async {
+    await _prefs.setBool(_terminalKey, on);
+    notifyListeners();
+    await _startBridge();
+  }
+
+  /// One bridge for the signed-in user while [terminalOn].
+  Future<void> _startBridge() async {
+    final user = this.user;
+    final want = terminalOn && user != null;
+    if (want == (_bridge != null)) return;
+    final old = _bridge;
+    _bridge = null;
+    await old?.stop();
+    if (want) await (_bridge = TerminalBridge(client, user.id, kitty)).start();
+  }
+
   Future<void> start() async {
     Native.listen(_onNative);
     hotKeyRegistered = await Native.setHotKey(_hotKey);
@@ -51,6 +78,7 @@ class AppController extends Session {
   Future<void> signOut() async {
     settingsOpen = false;
     await super.signOut();
+    await _startBridge();
     _shownTodoCount = 0;
     await Native.setTodoCount(0);
     await Native.setSharedTodos(null);
@@ -78,6 +106,7 @@ class AppController extends Session {
     update();
     // Ticks the widget queued while Džep wasn't running.
     await drainPending();
+    await _startBridge();
   }
 
   // ---------------------------------------------------------------- window

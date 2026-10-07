@@ -4,6 +4,7 @@ import 'package:dzep/chat.dart';
 import 'package:dzep/chat_view.dart';
 import 'package:dzep/controller.dart';
 import 'package:dzep/idea.dart';
+import 'package:dzep/kitty.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/popup.dart';
 import 'package:dzep/remind.dart';
@@ -1035,6 +1036,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
   String? _hotKeyError;
   bool? _launchAtLogin;
   String? _launchError;
+
+  /// kitty as the bridge would find it: its window count, or what's wrong.
+  ({int? windows, String? error})? _kitty;
   final _recorderFocus = FocusNode();
 
   AppController get app => widget.app;
@@ -1043,6 +1047,17 @@ class _SettingsSheetState extends State<SettingsSheet> {
   void initState() {
     super.initState();
     unawaited(Native.launchAtLogin().then((v) => mounted ? setState(() => _launchAtLogin = v) : null));
+    unawaited(_checkKitty());
+  }
+
+  Future<void> _checkKitty() async {
+    ({int? windows, String? error}) r;
+    try {
+      r = (windows: (await app.kitty.windows()).length, error: null);
+    } on KittyException catch (e) {
+      r = (windows: null, error: e.message);
+    }
+    if (mounted) setState(() => _kitty = r);
   }
 
   @override
@@ -1149,6 +1164,23 @@ class _SettingsSheetState extends State<SettingsSheet> {
                                         : null,
                                   ),
                                 ),
+                        ),
+                      ),
+                      _row(
+                        label: 'Terminal from iPhone',
+                        sub: !app.terminalOn
+                            ? 'Your iPhone sees and types into kitty while this Mac is awake'
+                            : _kitty?.error ??
+                                  (_kitty == null
+                                      ? 'Looking for kitty…'
+                                      : '${_kitty!.windows} kitty windows · keeps this Mac from idle sleep'),
+                        subError: app.terminalOn && _kitty?.error != null,
+                        trailing: Switch(
+                          value: app.terminalOn,
+                          onChanged: (v) {
+                            unawaited(app.setTerminal(on: v));
+                            unawaited(_checkKitty());
+                          },
                         ),
                       ),
                     ]),

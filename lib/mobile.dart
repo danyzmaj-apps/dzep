@@ -13,6 +13,8 @@ import 'package:dzep/popup.dart' show parseTitle;
 import 'package:dzep/remind.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
+import 'package:dzep/terminal.dart';
+import 'package:dzep/terminal_view.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/cupertino.dart' show CupertinoDatePicker;
 import 'package:flutter/material.dart';
@@ -125,7 +127,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
-  /// 0: Todos (the app opens here), 1: Ideas, 2: Ask.
+  /// 0: Todos (the app opens here), 1: Ideas, 2: Ask, 3: Terminal.
   int _tab = 0;
   bool _showDone = false;
   _Filter _filter = (project: false, id: 'all');
@@ -138,11 +140,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Open whenever the idea store is (see Session).
   ChatStore get chats => widget.session.chats!;
 
+  /// The Mac's kitty, through Džep on the Mac; live only while a Terminal
+  /// screen is up.
+  late final _terminal = TerminalRemote(widget.session.client, store.userId);
+
   void _openChat(Conversation? c) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => ChatPage(chats: chats, conversation: c),
     ),
   );
+
+  void _openTerminal(String window) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => TerminalPage(remote: _terminal, window: window),
+    ),
+  );
+
+  Future<void> _openNewSession() async {
+    final window = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: C.bar,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => NewSessionSheet(remote: _terminal),
+    );
+    if (window != null && mounted) _openTerminal(window);
+  }
 
   @override
   void initState() {
@@ -162,6 +185,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_links?.cancel());
     _search.dispose();
+    _terminal.dispose();
     super.dispose();
   }
 
@@ -273,11 +297,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         tooltip: switch (_tab) {
           0 => 'New todo',
           1 => 'New idea',
-          _ => 'New chat',
+          2 => 'New chat',
+          _ => 'New session',
         },
         backgroundColor: C.accent,
         foregroundColor: const Color(0xFF0E0F12),
-        onPressed: () => _tab == 2 ? _openChat(null) : unawaited(_openAdd(_tab == 0 ? Kind.todo : Kind.idea)),
+        onPressed: () => switch (_tab) {
+          2 => _openChat(null),
+          3 => unawaited(_openNewSession()),
+          _ => unawaited(_openAdd(_tab == 0 ? Kind.todo : Kind.idea)),
+        },
         child: Icon(_tab == 2 ? Icons.edit_outlined : Icons.add, size: 28),
       ),
       bottomNavigationBar: NavigationBar(
@@ -297,6 +326,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ),
           const NavigationDestination(icon: Icon(Icons.lightbulb_outline), label: 'Ideas'),
           const NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), label: 'Ask'),
+          const NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
         ],
       ),
       body: SafeArea(
@@ -311,7 +341,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   Text(switch (_tab) {
                     0 => 'Todos',
                     1 => 'Ideas',
-                    _ => 'Ask',
+                    2 => 'Ask',
+                    _ => 'Terminal',
                   }, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
                   const Spacer(),
                   SyncDot(store.syncState),
@@ -323,7 +354,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            if (_tab != 2)
+            if (_tab < 2)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
                 child: TextField(
@@ -345,9 +376,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             if (_tab == 1) SizedBox(height: 38, child: _filters()),
             const Divider(height: 1, color: C.line),
             Expanded(
-              child: _tab == 2
-                  ? RefreshIndicator(onRefresh: chats.syncNow, child: _chatsList())
-                  : RefreshIndicator(onRefresh: store.syncNow, child: _tab == 0 ? _todosList() : _ideasList()),
+              child: switch (_tab) {
+                3 => TerminalList(remote: _terminal, onOpen: _openTerminal),
+                2 => RefreshIndicator(onRefresh: chats.syncNow, child: _chatsList()),
+                _ => RefreshIndicator(onRefresh: store.syncNow, child: _tab == 0 ? _todosList() : _ideasList()),
+              },
             ),
           ],
         ),
