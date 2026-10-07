@@ -96,7 +96,7 @@ Unit tests (the reminder parser and which reminders are pending):
 fvm flutter test
 ```
 
-Maestro flows need a signed-in simulator (the test account `maestro@ideja.test`); `ask.yaml` also needs the network, since it asks a real question through the `ask` function and deletes its chat at the end:
+Maestro flows need a signed-in simulator (the test account `maestro@dzep.test`); `ask.yaml` also needs the network, since it asks a real question through the `ask` function and deletes its chat at the end:
 
 ```sh
 maestro test -e TS=$(date +%H%M%S) maestro/
