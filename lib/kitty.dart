@@ -236,6 +236,27 @@ class Kitty {
     await _rc(socket, ['close-window', '--match', 'id:$id']);
   }
 
+  /// Attaches [image] (any format macOS reads) to the omp prompt in the
+  /// window: it goes on the Mac's clipboard as PNG, then Ctrl+V, which omp
+  /// answers by attaching the clipboard's image. Replaces the clipboard.
+  Future<void> pasteImage(String key, File image) async {
+    final (socket, id) = await _live(key);
+    final png = '${image.path}.png';
+    try {
+      final conv = await Process.run('/usr/bin/sips', ['-s', 'format', 'png', image.path, '--out', png]);
+      if (conv.exitCode != 0) throw const KittyException("The Mac couldn't read that image.");
+      final set = await Process.run('/usr/bin/osascript', [
+        '-e',
+        'set the clipboard to (read (POSIX file "$png") as «class PNGf»)',
+      ]);
+      if (set.exitCode != 0) throw KittyException("The image didn't go on the Mac's clipboard: ${set.stderr}");
+      await _rc(socket, ['send-key', '--match', 'id:$id', 'ctrl+v']);
+    } finally {
+      final f = File(png);
+      if (f.existsSync()) f.deleteSync();
+    }
+  }
+
   /// A new kitty OS window in [cwd] (a session of its own, like one opened by
   /// hand) running the login shell, which then starts omp if [omp]; returns
   /// the new window's key. kitty keeps its current focus.

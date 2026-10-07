@@ -6,6 +6,8 @@ import 'package:dzep/terminal.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:pasteboard/pasteboard.dart';
 
 // Line height 1.2: box-drawing characters still nearly join up.
 const _mono = TextStyle(fontFamily: 'Menlo', fontFamilyFallback: ['Courier'], fontSize: 11, height: 1.2);
@@ -197,6 +199,7 @@ class _TerminalPageState extends State<TerminalPage> {
   final _field = TextEditingController();
   bool _wrap = true;
   bool _sending = false;
+  bool _attaching = false;
 
   TerminalRemote get remote => widget.remote;
 
@@ -229,6 +232,51 @@ class _TerminalPageState extends State<TerminalPage> {
       if (mounted) _toast(context, e);
     }
     if (mounted) setState(() => _sending = false);
+  }
+
+  /// Pasted (the iPhone's clipboard) or picked from Photos, then attached to
+  /// the omp prompt on the Mac; type the message after it and send.
+  Future<void> _attach() async {
+    final from = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: C.bar,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The clipboard is read only on this tap: iOS asks about every read.
+            ListTile(
+              key: const ValueKey('image-paste'),
+              leading: const Icon(Icons.content_paste),
+              title: const Text('Paste image'),
+              onTap: () => Navigator.of(context).pop('paste'),
+            ),
+            ListTile(
+              key: const ValueKey('image-photos'),
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Photo library'),
+              onTap: () => Navigator.of(context).pop('photos'),
+            ),
+          ],
+        ),
+      ),
+    );
+    Uint8List? bytes;
+    if (from == 'paste') {
+      bytes = await Pasteboard.image;
+      if (bytes == null && mounted) _toast(context, 'There is no image on the clipboard.');
+    } else if (from == 'photos') {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2400, imageQuality: 85);
+      bytes = await picked?.readAsBytes();
+    }
+    if (bytes == null || !mounted) return;
+    setState(() => _attaching = true);
+    try {
+      await remote.sendImage(widget.window, bytes);
+    } on Object catch (e) {
+      if (mounted) _toast(context, e);
+    }
+    if (mounted) setState(() => _attaching = false);
   }
 
   Future<void> _press(String key) async {
@@ -354,7 +402,23 @@ class _TerminalPageState extends State<TerminalPage> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        const SizedBox(width: 6),
+                        if (w?.isOmp ?? false)
+                          TextFieldTapRegion(
+                            child: IconButton(
+                              key: const ValueKey('term-image'),
+                              tooltip: 'Attach an image',
+                              onPressed: online && !_attaching ? () => unawaited(_attach()) : null,
+                              icon: _attaching
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.add_photo_alternate_outlined, color: C.dim),
+                            ),
+                          )
+                        else
+                          const SizedBox(width: 6),
                         Expanded(
                           child: TextField(
                             key: const ValueKey('term-input'),

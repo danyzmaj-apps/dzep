@@ -17,8 +17,12 @@ import 'package:uuid/uuid.dart';
 //   Mac → iPhone  state  {windows, projects, home, error?}   on every hello and on changes
 //   Mac → iPhone  screen {window, text, colors?}   the watched windows' text (ANSI), on changes;
 //                 colors (kitty's palette, lib/ansi.dart) with a watch's first screen
-//   iPhone → Mac  run    {id, op: send|key|launch|close, window?, text?, enter?, key?, cwd?, omp?}
+//   iPhone → Mac  run    {id, op: send|key|launch|close|image, window?, text?, enter?, key?, cwd?, omp?, path?}
+//                 image: `path` in the private `terminal` bucket (<user id>/…), uploaded by the phone
 //   Mac → iPhone  ran    {id, error?, window?}
+
+/// The private Storage bucket images from the phone pass through.
+const imageBucket = 'terminal';
 
 /// Broadcast callbacks get the payload's fields at the top level, next to
 /// `event` and `type`.
@@ -109,6 +113,8 @@ class TerminalBridge {
           await _kitty.close(p['window'] as String);
         case 'launch':
           window = await _kitty.launch(p['cwd'] as String, omp: p['omp'] == true);
+        case 'image':
+          await _pasteImage(p['window'] as String, p['path'] as String);
         default:
           error = 'Unknown request.';
       }
@@ -119,6 +125,20 @@ class TerminalBridge {
     }
     _send('ran', {'id': id, 'error': ?error, 'window': ?window});
     unawaited(_poll());
+  }
+
+  /// Fetches the phone's upload, attaches it in [window], deletes it.
+  Future<void> _pasteImage(String window, String path) async {
+    if (!path.startsWith('$_userId/') || path.contains('..')) throw const KittyException('Bad image path.');
+    final bucket = _client.storage.from(imageBucket);
+    final file = File('${Directory.systemTemp.path}/dzep-${path.split('/').last}');
+    try {
+      await file.writeAsBytes(await bucket.download(path));
+      await _kitty.pasteImage(window, file);
+    } finally {
+      if (file.existsSync()) file.deleteSync();
+      unawaited(bucket.remove([path]).then((_) {}, onError: (Object e) => debugPrint('Džep: image cleanup: $e')));
+    }
   }
 
   Future<void> _poll() async {
@@ -310,14 +330,14 @@ class TerminalRemote extends ChangeNotifier {
 
   void _onRan(Map<String, dynamic> p) => _pending.remove(p['id'])?.complete(p);
 
-  Future<Map<String, dynamic>> _run(Map<String, dynamic> request) async {
+  Future<Map<String, dynamic>> _run(Map<String, dynamic> request, {Duration wait = const Duration(seconds: 10)}) async {
     if (link != TerminalLink.online) throw const TerminalException('The Mac is not answering.');
     final id = const Uuid().v4();
     final done = _pending[id] = Completer();
     await _ch!.sendBroadcastMessage(event: 'run', payload: {'id': id, ...request});
     final Map<String, dynamic> reply;
     try {
-      reply = await done.future.timeout(const Duration(seconds: 10));
+      reply = await done.future.timeout(wait);
     } on TimeoutException {
       _pending.remove(id);
       throw const TerminalException('The Mac did not answer.');
@@ -335,6 +355,19 @@ class TerminalRemote extends ChangeNotifier {
 
   /// Closes [window] on the Mac, with what runs in it.
   Future<void> close(String window) => _run({'op': 'close', 'window': window});
+
+  /// Attaches [bytes] (an image file: PNG, JPEG, HEIC) to the omp prompt in
+  /// [window], through the Mac's clipboard.
+  Future<void> sendImage(String window, Uint8List bytes) async {
+    if (link != TerminalLink.online) throw const TerminalException('The Mac is not answering.');
+    final path = '$_userId/${const Uuid().v4()}';
+    try {
+      await _client.storage.from(imageBucket).uploadBinary(path, bytes);
+    } on Object catch (e) {
+      throw TerminalException("The image didn't upload: $e");
+    }
+    await _run({'op': 'image', 'window': window, 'path': path}, wait: const Duration(seconds: 30));
+  }
 
   /// A new kitty window in [cwd], running omp if [omp]; its window key.
   Future<String> launch(String cwd, {required bool omp}) async =>
