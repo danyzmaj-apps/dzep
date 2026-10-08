@@ -9,6 +9,7 @@ import 'package:dzep/native.dart';
 import 'package:dzep/popup.dart';
 import 'package:dzep/remind.dart';
 import 'package:dzep/session.dart';
+import 'package:dzep/setup.dart';
 import 'package:dzep/store.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
@@ -46,7 +47,12 @@ class MainWindow extends StatelessWidget {
       color: C.win,
       child: Stack(
         children: [
-          if (store == null) SignInPage(session: app) else Library(app: app, store: store),
+          if (app.backend == null)
+            SetupPage(session: app)
+          else if (store == null)
+            SignInPage(session: app)
+          else
+            Library(app: app, store: store),
           const Positioned(top: 0, left: 80, right: 0, child: _TitleDrag()),
           if (store != null && app.settingsOpen) SettingsSheet(app: app),
         ],
@@ -98,6 +104,14 @@ class SignInPage extends StatelessWidget {
             session.authError ?? 'Required. Opens your browser once; you stay signed in after that.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: session.authError == null ? C.dim2 : const Color(0xFFFCA5A5)),
+          ),
+          const SizedBox(height: 20),
+          TextButton(
+            onPressed: () => unawaited(session.disconnect()),
+            child: Text(
+              'Syncing through ${session.backend?.host ?? '?'} · Use a different project',
+              style: const TextStyle(fontSize: 11, color: C.dim2),
+            ),
           ),
         ],
       ),
@@ -1124,6 +1138,28 @@ class _SettingsSheetState extends State<SettingsSheet> {
                         label: app.userName,
                         sub: 'Signed in with GitHub · ${app.store?.ideas.length ?? 0} ideas',
                         trailing: _button('Sign out', () => unawaited(app.signOut()), danger: true),
+                      ),
+                      _row(
+                        label: 'Supabase project',
+                        sub: '${app.backend?.host ?? ''} · Copy the setup link to connect your iPhone',
+                        trailing: _button('Copy setup link', () {
+                          final link = app.backend?.link;
+                          if (link == null) return;
+                          unawaited(Clipboard.setData(ClipboardData(text: link.toString())));
+                          Toaster.of(context).show('Setup link copied. Open it on your iPhone.');
+                        }),
+                      ),
+                      _row(
+                        label: 'Delete account',
+                        sub: 'Removes everything you saved, on every device',
+                        trailing: _button('Delete…', () async {
+                          if (!await confirmDeleteAccount(context)) return;
+                          try {
+                            await app.deleteAccount();
+                          } on Object catch (e) {
+                            if (context.mounted) Toaster.of(context).show('Account not deleted: $e');
+                          }
+                        }, danger: true),
                       ),
                     ]),
                     _group('GENERAL', [

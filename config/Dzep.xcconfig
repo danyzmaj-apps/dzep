@@ -1,0 +1,17 @@
+// Who signs Džep and which ids it uses, for every Xcode target (iOS and macOS
+// apps and their widgets). These are the upstream project's values. To build
+// under your own Apple developer account, copy Local.xcconfig.example to
+// Local.xcconfig (git-ignored) and set your own there; see docs/BUILDING.md.
+
+// Your Apple developer team id (Xcode → Settings → Accounts, or
+// developer.apple.com → Membership).
+DZEP_TEAM = 5SSZ6TYMF5
+
+// The app's bundle id; the widgets are <this>.DzepWidget.
+DZEP_BUNDLE_ID = com.danyzmaj.dzep
+
+// The App Group the app shares with its widget and Siri intents. Must start
+// with `group.` and be registered to your team.
+DZEP_APP_GROUP = group.com.danyzmaj.dzep
+
+#include? "Local.xcconfig"

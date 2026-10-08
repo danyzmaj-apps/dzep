@@ -2,3 +2,5 @@
 // CocoaPods settings, which link Flutter's plugin frameworks into every target.
 // The widget extension uses system frameworks only.
 OTHER_LDFLAGS =
+
+#include "../../config/Dzep.xcconfig"

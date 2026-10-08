@@ -53,6 +53,15 @@ import WidgetKit
         let pending = DzepShared.defaults.stringArray(forKey: "pending") ?? []
         DzepShared.defaults.removeObject(forKey: "pending")
         result(pending)
+      case "getBackend":
+        result(DzepShared.backend.map { ["url": $0.url, "key": $0.key] })
+      case "setBackend":
+        if let url = args["url"] as? String, let key = args["key"] as? String {
+          DzepShared.backend = DzepShared.Backend(url: url, key: key)
+        } else {
+          DzepShared.backend = nil
+        }
+        result(nil)
       case "setReminders":
         reminders.schedule(args["reminders"] as? [[String: Any]] ?? []) { result(nil) }
       case "takeTappedTodo":

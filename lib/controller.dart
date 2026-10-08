@@ -11,7 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// The Mac app: [Session] plus its two windows (the ⇧⌘Space popup panel and
 /// the main window, each its own Flutter view) and the hotkey.
 class AppController extends Session {
-  AppController(super.client, this._prefs, super.device);
+  AppController(this._prefs, super.device);
 
   final SharedPreferences _prefs;
 
@@ -66,11 +66,12 @@ class AppController extends Session {
     if (want) await (_bridge = TerminalBridge(client, user.id, kitty)).start();
   }
 
+  @override
   Future<void> start() async {
     Native.listen(_onNative);
     hotKeyRegistered = await Native.setHotKey(_hotKey);
-    await startAuth();
-    // Signed out: there's nothing to do but sign in, so say so.
+    await super.start();
+    // Not set up or signed out: there's nothing to do but that, so say so.
     if (user == null) await openMain();
   }
 

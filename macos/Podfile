@@ -30,6 +30,8 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
+  # Auto-updates for the DMG builds on GitHub Releases (tool/release.sh).
+  pod 'Sparkle', '~> 2.7'
   target 'RunnerTests' do
     inherit! :search_paths
   end

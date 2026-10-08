@@ -72,7 +72,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.danyzmaj.dzep</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>dzep</string>
@@ -85,5 +85,7 @@
 	     deep linking would also push them as a route, stacking a second home. -->
 	<key>FlutterDeepLinkingEnabled</key>
 	<false/>
+	<key>DzepAppGroup</key>
+	<string>$(DZEP_APP_GROUP)</string>
 </dict>
 </plist>

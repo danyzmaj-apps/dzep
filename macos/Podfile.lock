@@ -9,6 +9,7 @@ PODS:
   - shared_preferences_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
+  - Sparkle (2.9.6)
   - url_launcher_macos (0.0.1):
     - FlutterMacOS
 
@@ -18,7 +19,12 @@ DEPENDENCIES:
   - FlutterMacOS (from `Flutter/ephemeral`)
   - pasteboard (from `Flutter/ephemeral/.symlinks/plugins/pasteboard/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
+  - Sparkle (~> 2.7)
   - url_launcher_macos (from `Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos`)
+
+SPEC REPOS:
+  trunk:
+    - Sparkle
 
 EXTERNAL SOURCES:
   app_links:
@@ -40,8 +46,9 @@ SPEC CHECKSUMS:
   FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
   pasteboard: b594eaf838d930b276d7a35a44a32b4f489170cb
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
+  Sparkle: b8c9cf4ced217ffc708a1ca5f988a7ba877658db
   url_launcher_macos: f87a979182d112f911de6820aefddaf56ee9fbfd
 
-PODFILE CHECKSUM: 1e95c36afbfd1cb6423ceca4de7a8e1b256fb6ac
+PODFILE CHECKSUM: ef8109e2f61eaa36014206fbf215b70d9c35b09d
 
 COCOAPODS: 1.17.0

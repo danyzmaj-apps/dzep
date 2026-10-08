@@ -1,4 +1,5 @@
 import Carbon.HIToolbox
+import Sparkle
 import Cocoa
 import FlutterMacOS
 import ServiceManagement
@@ -161,6 +162,15 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       let pending = DzepShared.defaults.stringArray(forKey: "pending") ?? []
       DzepShared.defaults.removeObject(forKey: "pending")
       result(pending)
+    case "getBackend":
+      result(DzepShared.backend.map { ["url": $0.url, "key": $0.key] })
+    case "setBackend":
+      if let url = args["url"] as? String, let key = args["key"] as? String {
+        DzepShared.backend = DzepShared.Backend(url: url, key: key)
+      } else {
+        DzepShared.backend = nil
+      }
+      result(nil)
     case "setReminders":
       setReminders(args["reminders"] as? [[String: Any]] ?? []) { result(nil) }
     case "quit":
@@ -286,6 +296,10 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       menu.addItem(withTitle: "Quick capture", action: #selector(menuPopup), keyEquivalent: "").target = self
       menu.addItem(withTitle: "Open Džep", action: #selector(menuMain), keyEquivalent: "").target = self
       menu.addItem(withTitle: "Settings…", action: #selector(menuSettings), keyEquivalent: "").target = self
+      menu.addItem(
+        withTitle: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+        keyEquivalent: ""
+      ).target = AppDelegate.updater
       menu.addItem(.separator())
       menu.addItem(withTitle: "Quit Džep", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
       statusItem?.menu = menu

@@ -57,6 +57,19 @@ class Native {
       await _channel.invokeMethod<bool>('setHotKey', {'keyCode': key.keyCode, 'modifiers': key.carbonModifiers}) ??
       false;
 
+  /// The backend (lib/backend.dart) kept in the App Group, where the
+  /// widgets and Siri intents read it.
+  static Future<({String url, String key})?> getBackend() async {
+    final m = await _channel.invokeMapMethod<String, String>('getBackend');
+    final url = m?['url'];
+    final key = m?['key'];
+    return url == null || key == null ? null : (url: url, key: key);
+  }
+
+  /// Null for both forgets it.
+  static Future<void> setBackend({String? url, String? key}) =>
+      _channel.invokeMethod('setBackend', {'url': url, 'key': key});
+
   static Future<String> deviceName() async => await _channel.invokeMethod<String>('deviceName') ?? 'Mac';
   static Future<bool> launchAtLogin() async => await _channel.invokeMethod<bool>('launchAtLogin') ?? false;
   static Future<bool> setLaunchAtLogin({required bool enabled}) async =>

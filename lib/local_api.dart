@@ -14,7 +14,7 @@ import 'package:flutter/foundation.dart';
 ///   GET   /v1/ideas?project=NAME   → {"ideas": [...]}, oldest first
 ///   GET   /v1/ideas?kind=todo      → {"ideas": [...]}, open todos, oldest first
 ///   POST  /v1/ideas                {title, kind?, notes?, project?} → {"idea": {...}}
-///   PATCH /v1/ideas/ID             {status} (idea) or {done} (todo) → {"idea": {...}}
+///   PATCH /v1/ideas/ID             {done} (todos only) → {"idea": {...}}
 ///
 /// Writes go through the [IdeaStore], so they sync like any other edit.
 class LocalApi {
@@ -34,8 +34,13 @@ class LocalApi {
     _server = server;
     final f = file;
     await f.parent.create(recursive: true);
-    await f.writeAsString(jsonEncode({'port': server.port, 'token': _token, 'pid': pid}));
-    await Process.run('chmod', ['600', f.path]);
+    // Private before the token goes in, so it's never readable by others.
+    await Process.run('chmod', ['700', f.parent.path]);
+    final tmp = File('${f.path}.tmp');
+    await tmp.writeAsString('');
+    await Process.run('chmod', ['600', tmp.path]);
+    await tmp.writeAsString(jsonEncode({'port': server.port, 'token': _token, 'pid': pid}), flush: true);
+    await tmp.rename(f.path);
     server.listen((req) => unawaited(_handle(req)));
   }
 

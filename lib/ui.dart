@@ -41,6 +41,29 @@ ThemeData appTheme() {
 
 const plainInput = InputDecoration(border: InputBorder.none, isCollapsed: true, contentPadding: EdgeInsets.zero);
 
+/// Asks before deleting the account; true to go ahead.
+Future<bool> confirmDeleteAccount(BuildContext context) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        backgroundColor: C.bar,
+        title: const Text('Delete your account?'),
+        content: const Text(
+          'Every idea, todo and chat in it is deleted from your Supabase project and this device. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(dialog).pop(true),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFFCA5A5)),
+            child: const Text('Delete account'),
+          ),
+        ],
+      ),
+    ) ??
+    false;
+
 class Kbd extends StatelessWidget {
   const Kbd(this.label, {super.key});
   final String label;

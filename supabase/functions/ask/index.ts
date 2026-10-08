@@ -1,5 +1,12 @@
-// Quick questions from the Mac popup and the iPhone's Ask tab. The DeepSeek
-// key lives here (secret DEEPSEEK_API_KEY), never in the apps.
+// Quick questions from the Mac popup and the iPhone's Ask tab, answered by
+// any OpenAI-compatible chat API. The key lives here, never in the apps:
+//
+//   AI_API_KEY     required: the provider's API key
+//   AI_BASE_URL    default https://api.deepseek.com (OpenAI: https://api.openai.com/v1,
+//                  OpenRouter: https://openrouter.ai/api/v1, Ollama: http://<host>:11434/v1)
+//   AI_MODEL       default deepseek-flash
+//   AI_EXTRA_BODY  optional JSON merged into each request, e.g. {"temperature": 0.3};
+//                  defaults to {"thinking": {"type": "disabled"}} on DeepSeek
 //
 //   POST /functions/v1/ask  {"chat_id": uuid, "question": text}
 //   Authorization: Bearer <the user's Supabase access token>
@@ -16,9 +23,26 @@
 // auth.getUser, which works with the project's signing keys.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const MODEL = "deepseek-flash";
-const DEEPSEEK = "https://api.deepseek.com/chat/completions";
+const BASE_URL = (Deno.env.get("AI_BASE_URL") || "https://api.deepseek.com").replace(/\/+$/, "");
+const MODEL = Deno.env.get("AI_MODEL") || "deepseek-flash";
+const EXTRA_BODY = extraBody();
+const PROVIDER = new URL(BASE_URL).host;
+
+/// The longest question taken, and how much earlier conversation goes with
+/// it (newest turns first, up to both limits).
+const QUESTION_LIMIT = 16_000;
 const HISTORY_LIMIT = 40;
+const HISTORY_CHARS = 60_000;
+
+function extraBody(): Record<string, unknown> {
+  const raw = Deno.env.get("AI_EXTRA_BODY");
+  if (!raw) return BASE_URL.includes("deepseek.com") ? { thinking: { type: "disabled" } } : {};
+  const parsed = JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("AI_EXTRA_BODY must be a JSON object");
+  }
+  return parsed;
+}
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -37,9 +61,11 @@ function describe(status: number, body: string) {
   try {
     message = JSON.parse(body)?.error?.message ?? message;
   } catch { /* not JSON */ }
-  if (status === 401) return "DeepSeek rejected the server's API key.";
-  if (status === 402) return "DeepSeek: insufficient balance.";
-  return `DeepSeek error ${status}${message ? `: ${message}` : ""}`;
+  if (status === 401) return `${PROVIDER} rejected the server's API key (secret AI_API_KEY).`;
+  if (status === 402) return `${PROVIDER}: insufficient balance.`;
+  if (status === 404) return `${PROVIDER} doesn't know the model "${MODEL}" (secret AI_MODEL).`;
+  if (status === 429) return `${PROVIDER} is rate-limiting requests. Try again in a moment.`;
+  return `${PROVIDER} error ${status}${message ? `: ${message.slice(0, 300)}` : ""}`;
 }
 
 Deno.serve(async (req) => {
@@ -61,9 +87,12 @@ Deno.serve(async (req) => {
   const chatId = typeof body.chat_id === "string" && uuid.test(body.chat_id) ? body.chat_id : null;
   const question = typeof body.question === "string" ? body.question.trim() : "";
   if (!chatId || !question) return json(400, { error: "chat_id (uuid) and question are required" });
+  if (question.length > QUESTION_LIMIT) {
+    return json(400, { error: `That question is too long (over ${QUESTION_LIMIT.toLocaleString("en")} characters).` });
+  }
 
-  const key = Deno.env.get("DEEPSEEK_API_KEY");
-  if (!key) return json(500, { error: "The server has no DeepSeek key (secret DEEPSEEK_API_KEY)." });
+  const key = Deno.env.get("AI_API_KEY");
+  if (!key) return json(500, { error: "The server has no AI key yet (secret AI_API_KEY; see docs/SELF_HOSTING.md)." });
 
   // New chat, or one of this user's (RLS hides everyone else's: the insert
   // below then fails on the primary key or the policy).
@@ -84,7 +113,15 @@ Deno.serve(async (req) => {
     .neq("content", "")
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
-  const history = [{ role: "system", content: systemPrompt() }, ...(rows ?? []).reverse()];
+  // Newest turns first until either limit, then back in order.
+  const kept: { role: string; content: string }[] = [];
+  let chars = 0;
+  for (const row of rows ?? []) {
+    chars += row.content.length;
+    if (kept.length > 0 && chars > HISTORY_CHARS) break;
+    kept.push(row);
+  }
+  const history = [{ role: "system", content: systemPrompt() }, ...kept.reverse()];
 
   const encoder = new TextEncoder();
   let send: (event: unknown) => void = () => {};
@@ -118,11 +155,10 @@ Deno.serve(async (req) => {
     let answer = "";
     let error: string | null = null;
     try {
-      const res = await fetch(DEEPSEEK, {
+      const res = await fetch(`${BASE_URL}/chat/completions`, {
         method: "POST",
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-        // A quick answer, not a pondered one.
-        body: JSON.stringify({ model: MODEL, stream: true, thinking: { type: "disabled" }, messages: history }),
+        body: JSON.stringify({ ...EXTRA_BODY, model: MODEL, stream: true, messages: history }),
       });
       if (!res.ok || !res.body) throw new Error(describe(res.status, await res.text()));
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -145,7 +181,7 @@ Deno.serve(async (req) => {
           }
         }
       }
-      if (!answer) throw new Error("DeepSeek sent an empty answer.");
+      if (!answer) throw new Error(`${PROVIDER} sent an empty answer.`);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }

@@ -1,8 +1,20 @@
 import Cocoa
 import FlutterMacOS
+import Sparkle
 
 @main
 class AppDelegate: FlutterAppDelegate {
+  /// Sparkle, checking the GitHub releases' appcast (Info.plist SUFeedURL).
+  /// Not in debug builds: those aren't signed for updating.
+  static let updater: SPUStandardUpdaterController = {
+    #if DEBUG
+      let start = false
+    #else
+      let start = true
+    #endif
+    return SPUStandardUpdaterController(startingUpdater: start, updaterDelegate: nil, userDriverDelegate: nil)
+  }()
+
   // Menu-bar app until the main window opens (it switches to .regular then):
   // no Dock icon or menu bar at launch.
   override func applicationWillFinishLaunching(_ notification: Notification) {
@@ -19,10 +31,17 @@ class AppDelegate: FlutterAppDelegate {
     NSApp.mainMenu?.insertItem(file, at: 1)
     // Preferences… (⌘,) opens Džep's settings.
     let window = NSApp.windows.first { $0 is MainFlutterWindow } as? MainFlutterWindow
-    if let prefs = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.keyEquivalent == "," }) {
+    let appMenu = NSApp.mainMenu?.items.first?.submenu
+    if let prefs = appMenu?.items.first(where: { $0.keyEquivalent == "," }) {
       prefs.target = window
       prefs.action = #selector(MainFlutterWindow.openSettingsFromMenu)
     }
+    // Džep → Check for Updates…, right under About.
+    let updates = NSMenuItem(
+      title: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+      keyEquivalent: "")
+    updates.target = Self.updater
+    appMenu?.insertItem(updates, at: 1)
   }
 
   // Closing the main window never quits; Džep stays in the menu bar.

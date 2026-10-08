@@ -10,25 +10,18 @@ import 'package:dzep/popup.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-/// The Supabase project (publishable key: safe in the client, RLS guards
-/// the data).
-const supabaseUrl = 'https://tgqmhieundubwtyvsnih.supabase.co';
-const supabaseKey = 'sb_publishable_THRH7YNiM27mZTwXcWY7Rg_emvQ5ncw';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final supabase = await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
   final prefs = await SharedPreferences.getInstance();
   final device = await Native.deviceName();
   if (Platform.isIOS) {
-    final session = MobileSession(supabase.client, prefs, device);
+    final session = MobileSession(prefs, device);
     runApp(MobileApp(session: session));
-    await session.startAuth();
+    await session.start();
     return;
   }
-  final app = AppController(supabase.client, prefs, device);
+  final app = AppController(prefs, device);
   final api = LocalApi(() => app.store);
   try {
     await api.start();

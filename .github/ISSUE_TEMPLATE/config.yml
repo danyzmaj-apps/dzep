@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/danyzmaj-apps/dzep/security/advisories/new
+    about: Report it privately, please.
+  - name: Setting up your backend
+    url: https://github.com/danyzmaj-apps/dzep/blob/main/docs/SELF_HOSTING.md#troubleshooting
+    about: Most setup problems are covered in the troubleshooting table.

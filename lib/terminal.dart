@@ -367,7 +367,13 @@ class TerminalRemote extends ChangeNotifier {
     } on Object catch (e) {
       throw TerminalException("The image didn't upload: $e");
     }
-    await _run({'op': 'image', 'window': window, 'path': path}, wait: const Duration(seconds: 30));
+    try {
+      await _run({'op': 'image', 'window': window, 'path': path}, wait: const Duration(seconds: 30));
+    } on TerminalException {
+      // The Mac deletes it once pasted; unanswered, nobody would.
+      unawaited(_client.storage.from(imageBucket).remove([path]).then((_) {}, onError: (Object e) => debugPrint('$e')));
+      rethrow;
+    }
   }
 
   /// A new kitty window in [cwd], running omp if [omp]; its window key.

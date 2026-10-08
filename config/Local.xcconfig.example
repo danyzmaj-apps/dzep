@@ -1,0 +1,6 @@
+// Copy to config/Local.xcconfig (git-ignored) to build under your own Apple
+// developer account. Every value must be yours: bundle ids and App Groups are
+// unique across all of Apple's developers.
+DZEP_TEAM = ABCDE12345
+DZEP_BUNDLE_ID = com.example.dzep
+DZEP_APP_GROUP = group.com.example.dzep

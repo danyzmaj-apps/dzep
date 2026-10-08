@@ -12,6 +12,7 @@ import 'package:dzep/native.dart';
 import 'package:dzep/popup.dart' show parseTitle;
 import 'package:dzep/remind.dart';
 import 'package:dzep/session.dart';
+import 'package:dzep/setup.dart';
 import 'package:dzep/store.dart';
 import 'package:dzep/terminal.dart';
 import 'package:dzep/terminal_view.dart';
@@ -26,7 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// snapshot current, and replays what those queued while offline. All of it
 /// travels through the App Group (ios/Shared/DzepShared.swift).
 class MobileSession extends Session {
-  MobileSession(super.client, this._prefs, super.device);
+  MobileSession(this._prefs, super.device);
 
   final SharedPreferences _prefs;
 
@@ -99,7 +100,9 @@ class MobileApp extends StatelessWidget {
         final store = session.store;
         if (store == null) {
           return Scaffold(
-            body: SafeArea(child: SignInPage(session: session)),
+            body: SafeArea(
+              child: session.backend == null ? SetupPage(session: session) : SignInPage(session: session),
+            ),
           );
         }
         return HomePage(session: session, store: store);
@@ -704,6 +707,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 side: const BorderSide(color: C.line2),
               ),
               child: const Text('Sign out'),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (!await confirmDeleteAccount(sheet)) return;
+                if (sheet.mounted) Navigator.of(sheet).pop();
+                try {
+                  await widget.session.deleteAccount();
+                } on Object catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Account not deleted: $e')));
+                  }
+                }
+              },
+              style: TextButton.styleFrom(foregroundColor: C.dim2),
+              child: const Text('Delete account…'),
             ),
           ],
         ),

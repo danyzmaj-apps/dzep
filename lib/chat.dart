@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
+import 'package:dzep/store.dart' show fetchAll;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -300,13 +302,16 @@ class ChatStore extends ChangeNotifier {
     }
     _pulling = true;
     try {
-      final rows = [
-        ...await _client
+      final since = (_cursor ?? DateTime.utc(2000)).toIso8601String();
+      final rows = await fetchAll(
+        (from, to) => _client
             .from('chats')
             .select()
-            .gt('updated_at', (_cursor ?? DateTime.utc(2000)).toIso8601String())
-            .order('updated_at', ascending: true),
-      ];
+            .gt('updated_at', since)
+            .order('updated_at', ascending: true)
+            .order('id', ascending: true)
+            .range(from, to),
+      );
       if (refetch != null && !rows.any((r) => r['id'] == refetch)) {
         rows.addAll(await _client.from('chats').select().eq('id', refetch));
       }
@@ -314,14 +319,23 @@ class ChatStore extends ChangeNotifier {
         for (final r in rows)
           if (r['deleted_at'] == null) r['id'] as String,
       ];
-      final messages = ids.isEmpty
-          ? const <Map<String, dynamic>>[]
-          : await _client
+      // In chunks: the ids travel in the URL.
+      final messages = <Map<String, dynamic>>[];
+      for (var i = 0; i < ids.length; i += 100) {
+        final chunk = ids.sublist(i, min(i + 100, ids.length));
+        messages.addAll(
+          await fetchAll(
+            (from, to) => _client
                 .from('chat_messages')
                 .select('chat_id, role, content, error, created_at')
-                .inFilter('chat_id', ids)
+                .inFilter('chat_id', chunk)
                 // postgrest's order() is newest first unless told otherwise.
-                .order('created_at', ascending: true);
+                .order('created_at', ascending: true)
+                .order('id', ascending: true)
+                .range(from, to),
+          ),
+        );
+      }
       _merge(rows, messages);
     } on Object catch (e) {
       debugPrint('Džep: chats pull failed: $e');

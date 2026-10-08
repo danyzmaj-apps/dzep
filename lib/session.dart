@@ -1,22 +1,33 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:app_links/app_links.dart';
+import 'package:dzep/backend.dart';
 import 'package:dzep/chat.dart';
 import 'package:dzep/idea.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/remind.dart';
 import 'package:dzep/store.dart';
+import 'package:dzep/terminal.dart' show imageBucket;
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// GitHub sign-in and the signed-in user's [IdeaStore] and [ChatStore]: what
-/// the Mac and the iPhone app share.
+/// The connected [Backend], GitHub sign-in and the signed-in user's
+/// [IdeaStore] and [ChatStore]: what the Mac and the iPhone app share.
 class Session extends ChangeNotifier {
-  Session(this.client, this.device);
+  Session(this.device);
 
   static const _redirect = 'dzep://login-callback';
 
-  final SupabaseClient client;
+  /// The Supabase project this device syncs through; null until one is set
+  /// up (the setup screen shows then).
+  Backend? get backend => _backend;
+  Backend? _backend;
+
+  /// Only while [backend] is set.
+  SupabaseClient get client => Supabase.instance.client;
 
   /// This machine's name, stamped on the ideas it creates.
   final String device;
@@ -33,9 +44,69 @@ class Session extends ChangeNotifier {
 
   String? authError;
 
-  Future<void> startAuth() async {
-    _auth = client.auth.onAuthStateChange.listen((s) => unawaited(_setUser(s.session?.user)));
+  /// Launch: opens the backend this device was set up with, if any, and
+  /// listens for setup links (`dzep://setup?url=…&key=…`).
+  Future<void> start() async {
+    _links = AppLinks().uriLinkStream.listen((uri) => unawaited(_onSetupLink(uri)));
+    final saved = await Backend.load();
+    if (saved != null) await connect(saved);
+  }
+
+  StreamSubscription<Uri>? _links;
+
+  Future<void> _onSetupLink(Uri uri) async {
+    final backend = Backend.fromLink(uri);
+    if (backend == null || backend == _backend) return;
+    if (_user != null) {
+      authError = 'Sign out before switching to ${backend.host}.';
+      notifyListeners();
+      return;
+    }
+    final problem = await backend.check();
+    if (problem != null) {
+      authError = problem;
+      notifyListeners();
+      return;
+    }
+    await connect(backend);
+  }
+
+  /// Opens [backend] (and remembers it): the one saved at launch, the setup
+  /// screen's, or a setup link's. Switching needs the user signed out.
+  Future<void> connect(Backend backend) async {
+    if (_user != null) throw StateError('Sign out before switching projects.');
+    await _close();
+    await Supabase.initialize(url: backend.url, publishableKey: backend.key);
+    await backend.save();
+    _backend = backend;
+    authError = null;
+    notifyListeners();
+    _auth = client.auth.onAuthStateChange.listen(
+      (s) => unawaited(_setUser(s.session?.user)),
+      // A failed OAuth callback (expired code, sign-up refused) lands here.
+      onError: (Object e) {
+        authError = e is AuthException ? e.message : 'Sign-in failed: $e';
+        notifyListeners();
+      },
+    );
     await _setUser(client.auth.currentUser);
+  }
+
+  /// Signs out and forgets the backend: the setup screen shows again.
+  Future<void> disconnect() async {
+    if (_user != null) await signOut();
+    await _close();
+    await Backend.clear();
+    _backend = null;
+    authError = null;
+    notifyListeners();
+  }
+
+  Future<void> _close() async {
+    if (_backend == null) return;
+    await _auth?.cancel();
+    _auth = null;
+    await Supabase.instance.dispose();
   }
 
   /// Runs once a user's store is open (sign-in, or launch while signed in).
@@ -59,8 +130,8 @@ class Session extends ChangeNotifier {
         if (j['action'] == 'done') {
           final todo = store.byId(j['id'] as String? ?? '');
           if (todo != null && todo.isTodo) store.update(todo, done: true);
-        } else {
-          store.add(title: j['title'] as String? ?? '', kind: j['kind'] == 'todo' ? Kind.todo : Kind.idea);
+        } else if ((j['title'] as String? ?? '').trim().isNotEmpty) {
+          store.add(title: j['title'] as String, kind: j['kind'] == 'todo' ? Kind.todo : Kind.idea);
         }
       } on Object catch (e) {
         debugPrint('Džep: dropped unreadable queued action: $e');
@@ -69,8 +140,8 @@ class Session extends ChangeNotifier {
   }
 
   /// User changes apply one at a time: the auth stream's initial event and
-  /// [startAuth] both arrive at launch, and two overlapping switches would
-  /// each open a store (and register a device token).
+  /// [connect]'s own check both arrive at launch, and two overlapping
+  /// switches would each open a store (and register a device token).
   Future<void> _switching = Future.value();
 
   Future<void> _setUser(User? user) => _switching = _switching.then((_) => _applyUser(user));
@@ -153,6 +224,29 @@ class Session extends ChangeNotifier {
     await _setUser(null);
   }
 
+  /// Deletes the account on the server with everything in it (ideas, todos,
+  /// chats, device tokens), then this device's copy, and signs out.
+  Future<void> deleteAccount() async {
+    final id = _user?.id;
+    if (id == null) return;
+    // Storage objects aren't tied to the user by a foreign key.
+    try {
+      final images = await client.storage.from(imageBucket).list(path: id);
+      if (images.isNotEmpty) {
+        await client.storage.from(imageBucket).remove([for (final f in images) '$id/${f.name}']);
+      }
+    } on Object catch (e) {
+      debugPrint('Džep: terminal images not removed: $e');
+    }
+    await client.rpc<void>('delete_my_account');
+    await signOut();
+    final dir = await getApplicationSupportDirectory();
+    for (final name in ['ideas-$id.json', 'chats-$id.json']) {
+      final f = File('${dir.path}/$name');
+      if (f.existsSync()) await f.delete();
+    }
+  }
+
   String get userName {
     final meta = _user?.userMetadata ?? const {};
     return (meta['user_name'] ?? meta['preferred_username'] ?? meta['name'] ?? _user?.email ?? 'you') as String;
@@ -163,6 +257,7 @@ class Session extends ChangeNotifier {
   @override
   void dispose() {
     unawaited(_auth?.cancel());
+    unawaited(_links?.cancel());
     unawaited(_store?.close());
     unawaited(_chats?.close());
     super.dispose();

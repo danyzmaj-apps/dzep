@@ -8,6 +8,22 @@ import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+/// Every row of a query, a page at a time: the API returns at most
+/// `max_rows` (1000) per request, so a first sync of a big account would
+/// otherwise stop there. [page] fetches rows `from`..`to` (inclusive) of a
+/// stable order.
+Future<List<Map<String, dynamic>>> fetchAll(
+  Future<List<Map<String, dynamic>>> Function(int from, int to) page, {
+  int size = 1000,
+}) async {
+  final all = <Map<String, dynamic>>[];
+  while (true) {
+    final rows = await page(all.length, all.length + size - 1);
+    all.addAll(rows);
+    if (rows.length < size) return all;
+  }
+}
+
 enum SyncState { synced, syncing, offline }
 
 /// The signed-in user's ideas: a JSON file on this Mac that every edit lands
@@ -182,11 +198,16 @@ class IdeaStore extends ChangeNotifier {
 
   Future<void> _pull() async {
     try {
-      final rows = await _client
-          .from('ideas')
-          .select()
-          .gt('updated_at', (_cursor ?? DateTime.utc(2000)).toIso8601String())
-          .order('updated_at');
+      final since = (_cursor ?? DateTime.utc(2000)).toIso8601String();
+      final rows = await fetchAll(
+        (from, to) => _client
+            .from('ideas')
+            .select()
+            .gt('updated_at', since)
+            .order('updated_at', ascending: true)
+            .order('id', ascending: true)
+            .range(from, to),
+      );
       _merge(rows);
       if (!_ideas.values.any((i) => i.dirty)) _setSync(SyncState.synced);
     } on Object catch (e) {

@@ -51,3 +51,8 @@ app.*.map.json
 .fvm/
 # Supabase CLI state
 supabase/.temp/
+# Secrets for the CLI and local functions (tool/setup-backend.sh, docs/BUILDING.md)
+supabase/.env
+supabase/.env.local
+# Your own signing identity (config/Local.xcconfig.example)
+config/Local.xcconfig

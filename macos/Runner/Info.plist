@@ -34,12 +34,24 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.danyzmaj.dzep</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>dzep</string>
 			</array>
 		</dict>
 	</array>
+	<key>DzepAppGroup</key>
+	<string>$(DZEP_APP_GROUP)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<!-- Sparkle: updates come from the latest GitHub release's appcast, signed
+	     with the key whose private half signs releases (tool/release.sh). -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/danyzmaj-apps/dzep/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>m+Jxk0qGADjZgRI1joMYj+9tVkuIFe+dzVsYTKNdpZ8=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>
