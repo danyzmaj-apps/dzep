@@ -89,7 +89,26 @@ class Session extends ChangeNotifier {
         notifyListeners();
       },
     );
+    await _freshSession();
     await _setUser(client.auth.currentUser);
+  }
+
+  /// Makes the restored session good for Realtime before anything joins a
+  /// channel (the stores' live updates, the terminal bridge's private
+  /// topic). supabase_flutter hands the token to Realtime only after
+  /// `initialize` returns, and not at all when it expired while the app was
+  /// closed; a channel joined before that joins as nobody, and a private one
+  /// then never hears a thing (the iPhone's Terminal tab spun forever).
+  Future<void> _freshSession() async {
+    final session = client.auth.currentSession;
+    if (session == null) return;
+    try {
+      if (session.isExpired) await client.auth.refreshSession();
+      await client.realtime.setAuth(client.auth.currentSession?.accessToken);
+    } on Object catch (e) {
+      // Offline: the stores still work from their caches and catch up.
+      debugPrint('Džep: session not refreshed: $e');
+    }
   }
 
   /// Signs out and forgets the backend: the setup screen shows again.
