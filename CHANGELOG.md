@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Quick questions take images: paste with ⌘V or attach with 📎 in the Mac popup and main window, paste or pick from Photos on the iPhone. Up to 4 per question, scaled to 2048 px at most; they show in the chat history on every device.
+
+**Backend:** run `tool/setup-backend.sh` (new migration: `chat_messages.images` and the private `chat` bucket; `ask` redeployed). The model must accept images; `deepseek-flash` (V4.1) does.
+
 ## 0.1.0
 
 First public release.

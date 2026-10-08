@@ -122,8 +122,9 @@ class AppController extends Session {
         settingsOpen = true;
         unawaited(openMain());
       case 'blur':
-        // Clicking elsewhere dismisses the popup, like Spotlight.
-        if (_popupOpen) unawaited(closePopup());
+        // Clicking elsewhere dismisses the popup, like Spotlight; a file
+        // dialog the popup opened doesn't.
+        if (_popupOpen && !_holdPopup) unawaited(closePopup());
       case 'mainClosed':
         _mainOpen = false;
         notifyListeners();
@@ -133,6 +134,20 @@ class AppController extends Session {
       case 'pending':
         // Ticks from outside Dart (the desktop widget) wait in the App Group.
         unawaited(drainPending());
+    }
+  }
+
+  bool _holdPopup = false;
+
+  /// Runs [pick] (a file dialog) from the popup: it takes the focus, which
+  /// would otherwise close the popup; the popup takes it back after.
+  Future<void> pickFromPopup(Future<void> Function() pick) async {
+    _holdPopup = true;
+    try {
+      await pick();
+    } finally {
+      _holdPopup = false;
+      if (_popupOpen) await Native.showPopup();
     }
   }
 

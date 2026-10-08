@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:app_links/app_links.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dzep/chat.dart';
+import 'package:dzep/chat_images.dart';
 import 'package:dzep/chat_view.dart';
 import 'package:dzep/idea.dart';
 import 'package:dzep/main_window.dart' show Avatar, SignInPage;
@@ -1126,6 +1127,7 @@ class _ChatPageState extends State<ChatPage> {
   late Conversation? _c = widget.conversation;
   final _field = TextEditingController();
   final _focus = FocusNode();
+  final _attachments = ChatAttachments();
 
   ChatStore get chats => widget.chats;
 
@@ -1133,6 +1135,7 @@ class _ChatPageState extends State<ChatPage> {
   void initState() {
     super.initState();
     _field.addListener(() => setState(() {}));
+    _attachments.addListener(() => setState(() {}));
     if (_c == null) _focus.requestFocus();
   }
 
@@ -1140,16 +1143,26 @@ class _ChatPageState extends State<ChatPage> {
   void dispose() {
     _field.dispose();
     _focus.dispose();
+    _attachments.dispose();
     super.dispose();
   }
 
   void _send() {
     final text = _field.text;
-    if (text.trim().isEmpty || chats.busy) return;
+    if ((text.trim().isEmpty && _attachments.isEmpty) || chats.busy) return;
     _field.clear();
-    unawaited(chats.send(text, into: _c));
+    unawaited(chats.send(text, into: _c, images: _attachments.take()));
     // A new chat exists from here on.
     setState(() => _c = chats.current);
+  }
+
+  Future<void> _attach(String from) async {
+    if (from == 'photos') return await _attachments.pick();
+    if (!await _attachments.paste() && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('There is no image on the clipboard.')));
+    }
   }
 
   @override
@@ -1163,7 +1176,7 @@ class _ChatPageState extends State<ChatPage> {
           if (mounted) Navigator.of(context).maybePop();
         });
       }
-      final canSend = _field.text.trim().isNotEmpty && !chats.busy;
+      final canSend = (_field.text.trim().isNotEmpty || !_attachments.isEmpty) && !chats.busy;
       return Scaffold(
         appBar: AppBar(
           backgroundColor: C.win,
@@ -1194,35 +1207,65 @@ class _ChatPageState extends State<ChatPage> {
               padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
               child: SafeArea(
                 top: false,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        onTapOutside: dismissKeyboard,
-                        controller: _field,
-                        focusNode: _focus,
-                        minLines: 1,
-                        maxLines: 6,
-                        textCapitalization: TextCapitalization.sentences,
-                        style: const TextStyle(fontSize: 16, height: 1.4),
-                        decoration: plainInput.copyWith(
-                          hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
-                          hintStyle: const TextStyle(color: C.dim2),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6, right: 8),
+                      child: AttachmentStrip(attachments: _attachments),
                     ),
-                    // Part of the field for tap-outside: sending keeps the
-                    // keyboard up for the next question.
-                    TextFieldTapRegion(
-                      child: IconButton(
-                        tooltip: 'Send',
-                        onPressed: canSend ? _send : null,
-                        icon: chats.busy
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                            : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        TextFieldTapRegion(
+                          child: PopupMenuButton<String>(
+                            tooltip: 'Attach images',
+                            enabled: _attachments.room > 0,
+                            icon: Icon(
+                              Icons.add_photo_alternate_outlined,
+                              color: _attachments.room > 0 ? C.dim : C.dim2,
+                            ),
+                            color: C.bar,
+                            onSelected: (from) => unawaited(_attach(from)),
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(value: 'paste', child: Text('Paste image')),
+                              PopupMenuItem(value: 'photos', child: Text('Choose from Photos')),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            onTapOutside: dismissKeyboard,
+                            controller: _field,
+                            focusNode: _focus,
+                            minLines: 1,
+                            maxLines: 6,
+                            textCapitalization: TextCapitalization.sentences,
+                            style: const TextStyle(fontSize: 16, height: 1.4),
+                            decoration: plainInput.copyWith(
+                              hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
+                              hintStyle: const TextStyle(color: C.dim2),
+                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                          ),
+                        ),
+                        // Part of the field for tap-outside: sending keeps the
+                        // keyboard up for the next question.
+                        TextFieldTapRegion(
+                          child: IconButton(
+                            tooltip: 'Send',
+                            onPressed: canSend ? _send : null,
+                            icon: chats.busy
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

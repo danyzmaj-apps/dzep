@@ -225,18 +225,24 @@ class Session extends ChangeNotifier {
   }
 
   /// Deletes the account on the server with everything in it (ideas, todos,
-  /// chats, device tokens), then this device's copy, and signs out.
+  /// chats and their images, device tokens), then this device's copy, and
+  /// signs out.
   Future<void> deleteAccount() async {
     final id = _user?.id;
     if (id == null) return;
     // Storage objects aren't tied to the user by a foreign key.
-    try {
-      final images = await client.storage.from(imageBucket).list(path: id);
-      if (images.isNotEmpty) {
-        await client.storage.from(imageBucket).remove([for (final f in images) '$id/${f.name}']);
+    for (final bucket in [imageBucket, chatImageBucket]) {
+      try {
+        while (true) {
+          final files = await client.storage
+              .from(bucket)
+              .list(path: id, searchOptions: const SearchOptions(limit: 1000));
+          if (files.isEmpty) break;
+          await client.storage.from(bucket).remove([for (final f in files) '$id/${f.name}']);
+        }
+      } on Object catch (e) {
+        debugPrint('Džep: $bucket images not removed: $e');
       }
-    } on Object catch (e) {
-      debugPrint('Džep: terminal images not removed: $e');
     }
     await client.rpc<void>('delete_my_account');
     await signOut();

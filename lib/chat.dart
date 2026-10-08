@@ -9,17 +9,23 @@ import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
-/// One turn of a conversation; an answer grows while it streams.
+/// One turn of a conversation; an answer grows while it streams. A question
+/// may carry images: their paths in the private `chat` bucket.
 class ChatMessage {
-  ChatMessage({required this.fromUser, this.text = '', this.error});
+  ChatMessage({required this.fromUser, this.text = '', this.error, this.images = const []});
 
-  factory ChatMessage.fromJson(Map<String, dynamic> j) =>
-      ChatMessage(fromUser: j['user'] == true, text: j['text'] as String? ?? '', error: j['error'] as String?);
+  factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
+    fromUser: j['user'] == true,
+    text: j['text'] as String? ?? '',
+    error: j['error'] as String?,
+    images: [for (final p in j['images'] as List? ?? const []) p as String],
+  );
 
   factory ChatMessage.fromServer(Map<String, dynamic> row) => ChatMessage(
     fromUser: row['role'] == 'user',
     text: row['content'] as String? ?? '',
     error: row['error'] as String?,
+    images: [for (final p in row['images'] as List? ?? const []) p as String],
   );
 
   final bool fromUser;
@@ -28,7 +34,33 @@ class ChatMessage {
   /// Set when the answer failed.
   String? error;
 
-  Map<String, dynamic> toJson() => {'user': fromUser, 'text': text, 'error': ?error};
+  final List<String> images;
+
+  Map<String, dynamic> toJson() => {
+    'user': fromUser,
+    'text': text,
+    'error': ?error,
+    if (images.isNotEmpty) 'images': images,
+  };
+}
+
+/// The private Storage bucket chat images live in (`<user id>/<uuid>.<ext>`).
+const chatImageBucket = 'chat';
+
+/// An image about to be asked about: its bytes and their type.
+class ChatImage {
+  const ChatImage(this.bytes, this.mime);
+  final Uint8List bytes;
+
+  /// image/png, image/jpeg, image/gif or image/webp.
+  final String mime;
+
+  String get extension => switch (mime) {
+    'image/jpeg' => 'jpg',
+    'image/gif' => 'gif',
+    'image/webp' => 'webp',
+    _ => 'png',
+  };
 }
 
 /// A quick-question chat (rows of `chats` + `chat_messages`).
@@ -52,9 +84,10 @@ class Conversation {
 
   /// The first question's first line.
   String get title {
-    final first = messages.where((m) => m.fromUser).firstOrNull?.text ?? '';
-    final line = first.split('\n').first.trim();
-    return line.isEmpty ? 'New chat' : line;
+    final first = messages.where((m) => m.fromUser).firstOrNull;
+    final line = (first?.text ?? '').split('\n').first.trim();
+    if (line.isEmpty) return first != null && first.images.isNotEmpty ? 'Image' : 'New chat';
+    return line;
   }
 
   /// The last answer that came through.
@@ -148,28 +181,52 @@ class ChatStore extends ChangeNotifier {
     unawaited(_pushDeletes());
   }
 
-  /// Asks [text] in [into] (default: the current conversation, or a new
-  /// one), which becomes the current conversation.
-  Future<void> send(String text, {Conversation? into}) async {
+  /// Asks [text] (and [images]) in [into] (default: the current
+  /// conversation, or a new one), which becomes the current conversation.
+  Future<void> send(String text, {Conversation? into, List<ChatImage> images = const []}) async {
     final question = text.trim();
-    if (busy || question.isEmpty || _closed) return;
+    if (busy || (question.isEmpty && images.isEmpty) || _closed) return;
     final now = DateTime.now().toUtc();
     final c = into ?? _current ?? Conversation(id: const Uuid().v4(), createdAt: now, updatedAt: now);
     _chats[c.id] = c;
     _deletes.remove(c.id);
     _current = c;
+    final paths = [for (final i in images) '$userId/${const Uuid().v4()}.${i.extension}'];
+    // Shown from memory at once; the upload below makes them real.
+    for (final (k, path) in paths.indexed) {
+      _images[path] = Future.value(images[k].bytes);
+    }
     c
-      ..messages.add(ChatMessage(fromUser: true, text: question))
+      ..messages.add(ChatMessage(fromUser: true, text: question, images: paths))
       ..updatedAt = now;
     final reply = ChatMessage(fromUser: false);
     c.messages.add(reply);
     final abort = _abort = Completer<void>();
     _streaming = c;
     notifyListeners();
+    // Only once the server has the question may a refetch replace these turns.
+    var asked = false;
     try {
+      try {
+        await Future.wait([
+          for (final (k, path) in paths.indexed)
+            _client.storage
+                .from(chatImageBucket)
+                .uploadBinary(path, images[k].bytes, fileOptions: FileOptions(contentType: images[k].mime)),
+        ]);
+      } on Object catch (e) {
+        if (_abort != abort) return;
+        reply.error = switch (e) {
+          StorageException(:final message) => 'The image didn’t upload: $message',
+          _ => 'The image didn’t upload. Check your connection.',
+        };
+        return;
+      }
+      if (_abort != abort) return;
+      asked = true;
       final res = await _client.functions.invoke(
         'ask',
-        body: {'chat_id': c.id, 'question': question},
+        body: {'chat_id': c.id, 'question': question, if (paths.isNotEmpty) 'images': paths},
         abortSignal: abort.future,
       );
       final stream = res.data as Stream<List<int>>;
@@ -200,7 +257,7 @@ class ChatStore extends ChangeNotifier {
         notifyListeners();
         _scheduleSave();
         // Swap the streamed turns for the saved ones.
-        unawaited(_pull(refetch: c.id));
+        if (asked) unawaited(_pull(refetch: c.id));
       }
     }
   }
@@ -213,6 +270,20 @@ class ChatStore extends ChangeNotifier {
     _streaming = null;
     if (abort != null && !abort.isCompleted) abort.complete();
   }
+
+  /// Image bytes by bucket path, fetched once per run (with the user's
+  /// session: the bucket is private).
+  final Map<String, Future<Uint8List>> _images = {};
+
+  Future<Uint8List> image(String path) => _images.putIfAbsent(path, () async {
+    try {
+      return await _client.storage.from(chatImageBucket).download(path);
+    } on Object {
+      // A failed load may work later (offline now); don't keep the failure.
+      unawaited(_images.remove(path));
+      rethrow;
+    }
+  });
 
   // ---------------------------------------------------------------- disk
 
@@ -327,7 +398,7 @@ class ChatStore extends ChangeNotifier {
           await fetchAll(
             (from, to) => _client
                 .from('chat_messages')
-                .select('chat_id, role, content, error, created_at')
+                .select('chat_id, role, content, error, images, created_at')
                 .inFilter('chat_id', chunk)
                 // postgrest's order() is newest first unless told otherwise.
                 .order('created_at', ascending: true)

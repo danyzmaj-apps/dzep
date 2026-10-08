@@ -21,7 +21,8 @@
 // The answer is saved even if the app goes away mid-stream (waitUntil).
 // Deployed with --no-verify-jwt: the token is checked here with
 // auth.getUser, which works with the project's signing keys.
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
 const BASE_URL = (Deno.env.get("AI_BASE_URL") || "https://api.deepseek.com").replace(/\/+$/, "");
 const MODEL = Deno.env.get("AI_MODEL") || "deepseek-flash";
@@ -33,6 +34,46 @@ const PROVIDER = new URL(BASE_URL).host;
 const QUESTION_LIMIT = 16_000;
 const HISTORY_LIMIT = 40;
 const HISTORY_CHARS = 60_000;
+const IMAGES_PER_QUESTION = 4;
+/// Images sent with a request, newest first: older ones in a long chat stay
+/// as "[image]" so the request doesn't grow without end.
+const IMAGES_IN_HISTORY = 8;
+
+type Turn = { role: string; content: string; images?: string[] };
+type Part = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
+/// The turns as the model takes them: a user turn with images becomes text
+/// plus `image_url` parts (base64 data URLs, read with the user's token).
+async function withImages(db: SupabaseClient, turns: Turn[]) {
+  let budget = IMAGES_IN_HISTORY;
+  const out: { role: string; content: string | Part[] }[] = [];
+  for (const turn of [...turns].reverse()) {
+    const paths = turn.role === "user" ? turn.images ?? [] : [];
+    if (paths.length === 0) {
+      out.push({ role: turn.role, content: turn.content });
+      continue;
+    }
+    const parts: Part[] = [];
+    for (const path of paths) {
+      const url = budget > 0 ? await dataUrl(db, path) : null;
+      if (url) {
+        budget--;
+        parts.push({ type: "image_url", image_url: { url } });
+      } else {
+        parts.push({ type: "text", text: "[an earlier image, no longer attached]" });
+      }
+    }
+    if (turn.content) parts.push({ type: "text", text: turn.content });
+    out.push({ role: "user", content: parts });
+  }
+  return out.reverse();
+}
+
+async function dataUrl(db: SupabaseClient, path: string): Promise<string | null> {
+  const { data } = await db.storage.from("chat").download(path);
+  if (!data) return null;
+  return `data:${data.type || "image/png"};base64,${encodeBase64(new Uint8Array(await data.arrayBuffer()))}`;
+}
 
 function extraBody(): Record<string, unknown> {
   const raw = Deno.env.get("AI_EXTRA_BODY");
@@ -86,9 +127,20 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const chatId = typeof body.chat_id === "string" && uuid.test(body.chat_id) ? body.chat_id : null;
   const question = typeof body.question === "string" ? body.question.trim() : "";
-  if (!chatId || !question) return json(400, { error: "chat_id (uuid) and question are required" });
+  // Images the app uploaded to the `chat` bucket: only from the user's own folder.
+  const images: string[] = Array.isArray(body.images)
+    ? body.images.filter((p: unknown): p is string =>
+      typeof p === "string" && p.startsWith(`${user.id}/`) && !p.includes("..")
+    )
+    : [];
+  if (!chatId || (!question && images.length === 0)) {
+    return json(400, { error: "chat_id (uuid) and a question or images are required" });
+  }
   if (question.length > QUESTION_LIMIT) {
     return json(400, { error: `That question is too long (over ${QUESTION_LIMIT.toLocaleString("en")} characters).` });
+  }
+  if (images.length > IMAGES_PER_QUESTION) {
+    return json(400, { error: `Attach at most ${IMAGES_PER_QUESTION} images.` });
   }
 
   const key = Deno.env.get("AI_API_KEY");
@@ -102,26 +154,28 @@ Deno.serve(async (req) => {
   if (!chat) return json(404, { error: "No such chat" });
   if (chat.deleted_at) await db.from("chats").update({ deleted_at: null }).eq("id", chatId);
 
-  const { error: questionError } = await db.from("chat_messages").insert({ chat_id: chatId, role: "user", content: question });
+  const { error: questionError } = await db
+    .from("chat_messages")
+    .insert({ chat_id: chatId, role: "user", content: question, images });
   if (questionError) return json(400, { error: questionError.message });
 
   const { data: rows } = await db
     .from("chat_messages")
-    .select("role, content")
+    .select("role, content, images")
     .eq("chat_id", chatId)
     .is("error", null)
-    .neq("content", "")
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
   // Newest turns first until either limit, then back in order.
-  const kept: { role: string; content: string }[] = [];
+  const kept: Turn[] = [];
   let chars = 0;
   for (const row of rows ?? []) {
+    if (!row.content && !row.images?.length) continue;
     chars += row.content.length;
     if (kept.length > 0 && chars > HISTORY_CHARS) break;
     kept.push(row);
   }
-  const history = [{ role: "system", content: systemPrompt() }, ...kept.reverse()];
+  kept.reverse();
 
   const encoder = new TextEncoder();
   let send: (event: unknown) => void = () => {};
@@ -155,6 +209,7 @@ Deno.serve(async (req) => {
     let answer = "";
     let error: string | null = null;
     try {
+      const history = [{ role: "system", content: systemPrompt() }, ...await withImages(db, kept)];
       const res = await fetch(`${BASE_URL}/chat/completions`, {
         method: "POST",
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },

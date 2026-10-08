@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dzep/chat.dart';
+import 'package:dzep/chat_images.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -51,7 +52,10 @@ class ChatTranscript extends StatelessWidget {
         padding: padding,
         children: [
           for (final m in conversation.messages.reversed)
-            if (m.fromUser) _Question(m) else _Answer(m, streaming: chat.streaming == conversation && m == last),
+            if (m.fromUser)
+              _Question(m, chat: chat)
+            else
+              _Answer(m, streaming: chat.streaming == conversation && m == last),
         ],
       ),
     );
@@ -59,13 +63,21 @@ class ChatTranscript extends StatelessWidget {
 }
 
 class _Question extends StatelessWidget {
-  const _Question(this.m);
+  const _Question(this.m, {required this.chat});
   final ChatMessage m;
+  final ChatStore chat;
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(top: 14, bottom: 6),
-    child: Text(m.text, style: const TextStyle(fontSize: 13, height: 1.45, color: C.dim)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (m.images.isNotEmpty) MessageImages(chat: chat, paths: m.images),
+        if (m.images.isNotEmpty && m.text.isNotEmpty) const SizedBox(height: 8),
+        if (m.text.isNotEmpty) Text(m.text, style: const TextStyle(fontSize: 13, height: 1.45, color: C.dim)),
+      ],
+    ),
   );
 }
 
@@ -245,6 +257,7 @@ class ChatThread extends StatefulWidget {
 class _ChatThreadState extends State<ChatThread> {
   final _field = TextEditingController();
   late final _focus = FocusNode(onKeyEvent: _onKey);
+  final _attachments = ChatAttachments();
 
   @override
   void initState() {
@@ -256,6 +269,7 @@ class _ChatThreadState extends State<ChatThread> {
   void dispose() {
     _field.dispose();
     _focus.dispose();
+    _attachments.dispose();
     super.dispose();
   }
 
@@ -266,9 +280,9 @@ class _ChatThreadState extends State<ChatThread> {
     if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && !keys.isShiftPressed) {
       final text = _field.text;
       final chat = widget.chat;
-      if (text.trim().isNotEmpty && !chat.busy) {
+      if ((text.trim().isNotEmpty || !_attachments.isEmpty) && !chat.busy) {
         _field.clear();
-        unawaited(chat.send(text, into: widget.conversation));
+        unawaited(chat.send(text, into: widget.conversation, images: _attachments.take()));
         widget.onSent(chat.current!);
       }
       return KeyEventResult.handled;
@@ -277,6 +291,8 @@ class _ChatThreadState extends State<ChatThread> {
       copyAnswer(context, widget.conversation?.lastAnswer);
       return KeyEventResult.handled;
     }
+    // An image on the clipboard is attached; text still pastes as usual.
+    if (isPasteKey(e)) unawaited(_attachments.paste());
     return KeyEventResult.ignored;
   }
 
@@ -335,26 +351,33 @@ class _ChatThreadState extends State<ChatThread> {
           decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: C.line)),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 2),
-                child: Icon(Icons.auto_awesome, size: 16, color: C.accent),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _field,
-                  focusNode: _focus,
-                  minLines: 1,
-                  maxLines: 8,
-                  style: const TextStyle(fontSize: 14, height: 1.45),
-                  decoration: plainInput.copyWith(
-                    hintText: c == null ? 'Ask a quick question…  ↵' : 'Follow up…  ↵',
-                    hintStyle: const TextStyle(color: C.dim2),
+              AttachmentStrip(attachments: _attachments),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Icon(Icons.auto_awesome, size: 16, color: C.accent),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _field,
+                      focusNode: _focus,
+                      minLines: 1,
+                      maxLines: 8,
+                      style: const TextStyle(fontSize: 14, height: 1.45),
+                      decoration: plainInput.copyWith(
+                        hintText: c == null ? 'Ask a quick question…  ↵' : 'Follow up…  ↵',
+                        hintStyle: const TextStyle(color: C.dim2),
+                      ),
+                    ),
+                  ),
+                  AttachButton(attachments: _attachments, size: 16),
+                ],
               ),
             ],
           ),

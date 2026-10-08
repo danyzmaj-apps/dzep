@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dzep/chat.dart';
+import 'package:dzep/chat_images.dart';
 import 'package:dzep/chat_view.dart';
 import 'package:dzep/controller.dart';
 import 'package:dzep/idea.dart';
@@ -38,6 +39,7 @@ class _PopupState extends State<Popup> {
 
   final _question = TextEditingController();
   late final FocusNode _questionFocus = FocusNode(onKeyEvent: _onQuestionKey);
+  final _attachments = ChatAttachments();
 
   /// Every open starts by choosing: 1 idea, 2 todo, 3 ask, 4 open the app.
   bool _choosing = true;
@@ -74,6 +76,7 @@ class _PopupState extends State<Popup> {
     _notesFocus.dispose();
     _question.dispose();
     _questionFocus.dispose();
+    _attachments.dispose();
     super.dispose();
   }
 
@@ -133,11 +136,16 @@ class _PopupState extends State<Popup> {
       } else if (k == LogicalKeyboardKey.keyN && _cmd) {
         chat.newChat();
         _question.clear();
+        _attachments.take();
         _questionFocus.requestFocus();
       } else if (k == LogicalKeyboardKey.keyO && _cmd) {
         unawaited(app.openMain(conversation: chat.current));
       } else if (k == LogicalKeyboardKey.keyC && _cmd && _shift) {
         copyAnswer(context, chat.current?.lastAnswer);
+      } else if (isPasteKey(e)) {
+        // An image on the clipboard is attached; text still pastes as usual.
+        unawaited(_attachments.paste());
+        return false;
       } else {
         return false;
       }
@@ -257,9 +265,9 @@ class _PopupState extends State<Popup> {
     if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && !_shift) {
       final text = _question.text;
       final chat = app.chats;
-      if (chat != null && text.trim().isNotEmpty && !chat.busy) {
+      if (chat != null && (text.trim().isNotEmpty || !_attachments.isEmpty) && !chat.busy) {
         _question.clear();
-        unawaited(chat.send(text));
+        unawaited(chat.send(text, images: _attachments.take()));
       }
       return KeyEventResult.handled;
     }
@@ -351,34 +359,38 @@ class _PopupState extends State<Popup> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      // Stack the outgoing and incoming stages at the top, so
-                      // the size animation is the only thing that moves.
-                      layoutBuilder: (current, previous) =>
-                          Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
-                      transitionBuilder: (child, animation) => FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: Tween(begin: const Offset(0, .04), end: Offset.zero).animate(animation),
-                          child: child,
+                    // Flexible: the panel is a fixed size, so a long chat
+                    // gives up room to the composer (images, a long question).
+                    Flexible(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        // Stack the outgoing and incoming stages at the top, so
+                        // the size animation is the only thing that moves.
+                        layoutBuilder: (current, previous) =>
+                            Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween(begin: const Offset(0, .04), end: Offset.zero).animate(animation),
+                            child: child,
+                          ),
                         ),
-                      ),
-                      child: KeyedSubtree(
-                        key: ValueKey(stage),
-                        child: s == null
-                            ? _locked()
-                            : _choosing
-                            ? _chooser(s)
-                            : _asking
-                            ? _askPane(app.chats!)
-                            : Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: _capture(s),
-                              ),
+                        child: KeyedSubtree(
+                          key: ValueKey(stage),
+                          child: s == null
+                              ? _locked()
+                              : _choosing
+                              ? _chooser(s)
+                              : _asking
+                              ? _askPane(app.chats!)
+                              : Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: _capture(s),
+                                ),
+                        ),
                       ),
                     ),
                     _bar(s),
@@ -665,35 +677,44 @@ class _PopupState extends State<Popup> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (c != null && c.messages.isNotEmpty)
-            Container(
-              constraints: const BoxConstraints(maxHeight: 440),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: C.line)),
+            Flexible(
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 440),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: C.line)),
+                ),
+                child: ChatTranscript(chat: chat, conversation: c, shrinkWrap: true),
               ),
-              child: ChatTranscript(chat: chat, conversation: c, shrinkWrap: true),
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 3),
-                  child: Icon(Icons.auto_awesome, size: 20, color: C.accent),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _question,
-                    focusNode: _questionFocus,
-                    minLines: 1,
-                    maxLines: 6,
-                    style: const TextStyle(fontSize: 18, height: 1.4),
-                    decoration: plainInput.copyWith(
-                      hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
-                      hintStyle: const TextStyle(color: C.dim2),
+                AttachmentStrip(attachments: _attachments),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 3),
+                      child: Icon(Icons.auto_awesome, size: 20, color: C.accent),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _question,
+                        focusNode: _questionFocus,
+                        minLines: 1,
+                        maxLines: 6,
+                        style: const TextStyle(fontSize: 18, height: 1.4),
+                        decoration: plainInput.copyWith(
+                          hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
+                          hintStyle: const TextStyle(color: C.dim2),
+                        ),
+                      ),
+                    ),
+                    AttachButton(attachments: _attachments, size: 20, around: app.pickFromPopup),
+                  ],
                 ),
               ],
             ),
