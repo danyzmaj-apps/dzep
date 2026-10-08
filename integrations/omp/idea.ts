@@ -3,10 +3,10 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
-// /idea and /todo talk to the Džep menu-bar app (github.com/danyzmaj-apps/dzep)
+// /idea, /todo and /note talk to the Džep menu-bar app (github.com/danyzmaj-apps/dzep)
 // over its localhost API. Ideas land under the current repo's name as their
 // @project, so they show up in the app's sidebar next to the popup ones.
-// Todos are one global work list (no project).
+// Todos are one global work list (no project); notes are free text.
 //
 // Install: copy this file to ~/.omp/agent/extensions/idea.ts and restart omp.
 
@@ -193,6 +193,24 @@ export default function ideaExtension(pi: ExtensionAPI) {
 				const text = raw.replace(/\s+/g, " ").trim();
 				await call("POST", "/v1/ideas", { title: text, kind: "todo" });
 				ctx.ui.notify("Todo added to Džep", "info");
+			} catch (e) {
+				if (!(e instanceof DzepError)) throw e;
+				ctx.ui.notify(e.message, "warning");
+			}
+		},
+	});
+
+	pi.registerCommand("note", {
+		description: "Write a quick note into Džep without interrupting the agent",
+		handler: async (args, ctx) => {
+			const text = (args ?? "").trim();
+			if (!text) {
+				ctx.ui.notify("Usage: /note <text>", "info");
+				return;
+			}
+			try {
+				await call("POST", "/v1/ideas", { title: text, kind: "note" });
+				ctx.ui.notify("Note saved to Džep", "info");
 			} catch (e) {
 				if (!(e instanceof DzepError)) throw e;
 				ctx.ui.notify(e.message, "warning");

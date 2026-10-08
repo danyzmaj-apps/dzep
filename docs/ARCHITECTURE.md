@@ -17,7 +17,7 @@ The first design mockup is `design/mockup.html`.
 | `lib/chat.dart`, `chat_view.dart` | Quick questions: `ChatStore` (synced chats, streaming from `ask`) and the transcript/list/thread widgets (Mac and iPhone) |
 | `lib/kitty.dart` | Mac: kitty's remote control through `kitten @` (windows, screen text, typing, keys, new windows) |
 | `lib/terminal.dart`, `terminal_view.dart` | Terminal from iPhone: the protocol, `TerminalBridge` (Mac), `TerminalRemote` and its screens (iPhone) |
-| `lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea` and `/todo` |
+| `lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea`, `/todo` and `/note` |
 | `lib/mobile.dart` | iPhone app |
 | `macos/Runner/MainFlutterWindow.swift`, `AppDelegate.swift` | Popup panel + main window on one multi-view engine, menu-bar icon, Carbon hotkey, activation policy, launch at login, reminder notifications |
 | `ios/Runner/AppDelegate.swift` | The iPhone half of `native.dart`: App Group, reminder notifications |
@@ -29,15 +29,17 @@ The first design mockup is `design/mockup.html`.
 | `maestro/` | Simulator flows |
 | `config/Dzep.xcconfig` | Team, bundle id and App Group for every Xcode target (`Local.xcconfig` overrides them) |
 | `tool/setup-backend.sh`, `release.sh` | Self-hosting setup; Mac release (DMG, notarization, Sparkle appcast) |
-| `integrations/omp/idea.ts` | omp extension for `/idea` and `/todo` |
+| `integrations/omp/idea.ts` | omp extension for `/idea`, `/todo` and `/note` |
+| `lib/chat_images.dart` | Images in quick questions: preparing (downscale, PNG), paste and pick, the composer strip and transcript thumbnails |
 
 ## Backend
 
 Every user runs their own Supabase project ([SELF_HOSTING.md](SELF_HOSTING.md)), built from `supabase/migrations` and `supabase/config.toml`; nothing is shared between users. The apps learn which project on first launch, on the setup screen or from a setup link (`dzep://setup?url=…&key=…`); `lib/backend.dart` checks it against `/auth/v1/settings` (reachable, key accepted, GitHub on) and keeps it in the App Group, where the widgets and Siri intents read it too (`DzepShared.backend`). Switching projects needs signing out (`Session.disconnect`); `Supabase.initialize` then runs again for the new one, and sessions are stored per project host.
 
-- `ideas`: ideas and todos (`kind`); a todo is open or done (`done_at`) and may have a reminder (`remind_at`, null for none; clients that predate the column don't send it, so their upserts leave it alone). Ids are client-generated so capture works offline; deletes are soft (`deleted_at`) so other devices learn about them; `updated_at` is set by a trigger (the sync cursor). RLS: own rows only.
+- `ideas`: ideas, todos and notes (`kind`); a todo is open or done (`done_at`) and may have a reminder (`remind_at`, null for none; clients that predate the column don't send it, so their upserts leave it alone). A note keeps its whole text in `notes` and its first line in `title` (`noteTitle`), so lists, search and apps that predate notes (which read an unknown kind as an idea) show something sensible. Ids are client-generated so capture works offline; deletes are soft (`deleted_at`) so other devices learn about them; `updated_at` is set by a trigger (the sync cursor). RLS: own rows only.
 - `device_tokens`: SHA-256 of per-iPhone tokens. Siri and the widget can't reach the app's session, so they call `functions/v1/device` (`{action: add | done}`) with `x-dzep-token`; the function maps the token to the user. Deployed with `--no-verify-jwt`.
 - `chats` + `chat_messages`: quick-question chats. The app picks a chat's id; only the `ask` function writes messages. A new message moves its chat's `updated_at` (trigger), so devices pull changed chats by that cursor (and realtime on `chats`) and refetch their messages. Deletes are soft (`chats.deleted_at`). RLS: own rows only, and messages only into one's own chats.
+- Images in quick questions: the app downscales them (2048 px at most, PNG unless already a small PNG/JPEG/GIF/WebP), uploads each to the private `chat` bucket as `<user id>/<uuid>.<ext>` (own folder only, 10 MB, image types) and sends the paths with the question (`chat_messages.images`). `ask` reads them with the user's token and sends them as `image_url` parts; a follow-up carries the newest 8 images of the chat along.
 - `functions/v1/ask` (`{chat_id, question}`, the user's token): creates the chat if new, saves the question, streams the answer from any OpenAI-compatible API (`AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY`, optional `AI_EXTRA_BODY`; DeepSeek by default, with thinking off) back as server-sent events (`{delta}` … `{done}` or `{error}`) and saves it, even if the app goes away mid-answer (`EdgeRuntime.waitUntil`). Questions are capped at 16,000 characters; the history sent along is the newest 40 turns or 60,000 characters, whichever is less. Deployed with `--no-verify-jwt`: the token is checked in the function with `auth.getUser`.
 - Terminal from iPhone: private Realtime broadcast on `terminal:<user id>`, nothing stored. RLS on `realtime.messages` lets only that user join, to receive or to send (a public channel of the same name is a separate room the apps never join). While its Terminal screens are open the iPhone says `hello` every 4 s; the Mac answers each with `state` (windows, projects) and, while some phone has said hello in the last 12 s, polls kitty every second and sends a watched window's `screen` (with its newest ~64 KB of scrollback; Realtime drops messages past ~100 KB) when it changes. `run` (`send`, `key`, `launch`, `close`, `image`) is answered with `ran`. The iPhone calls the Mac offline after 10 s without word. Window keys are `<socket>/<window id>`; keys are a fixed list, and nothing the phone sends reaches a shell except as typed text.
 - Auth: GitHub only, through each owner's OAuth app (`[auth.external.github]`, secrets in the git-ignored `supabase/.env`); redirect `dzep://login-callback`. The `before_user_created` auth hook lets the first account in and then only emails listed in `public.allowed_signups`, so a stranger who learns the URL can't sign up and spend the owner's AI key. `delete_my_account()` deletes the caller from `auth.users`, which cascades to all their rows; the app empties their Storage folder first.
@@ -72,7 +74,8 @@ On launch the Mac app listens on a random 127.0.0.1 port and writes `{port, toke
 ```
 GET   /v1/ideas?project=NAME     → {"ideas": [...]}  ideas, oldest first
 GET   /v1/ideas?kind=todo        → {"ideas": [...]}  open todos, oldest first
-POST  /v1/ideas                  {title, kind?, notes?, project?}
+GET   /v1/ideas?kind=note        → {"ideas": [...]}  notes, oldest first
+POST  /v1/ideas                  {title, kind?, notes?, project?}   (a note: its text in title, or title + notes)
 PATCH /v1/ideas/ID               {done} (todos only)
 Authorization: Bearer <token>
 ```

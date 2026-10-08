@@ -131,7 +131,13 @@ class Session extends ChangeNotifier {
           final todo = store.byId(j['id'] as String? ?? '');
           if (todo != null && todo.isTodo) store.update(todo, done: true);
         } else if ((j['title'] as String? ?? '').trim().isNotEmpty) {
-          store.add(title: j['title'] as String, kind: j['kind'] == 'todo' ? Kind.todo : Kind.idea);
+          final title = j['title'] as String;
+          switch (Kind.parse(j['kind'])) {
+            case Kind.note:
+              store.addNote(title);
+            case final kind:
+              store.add(title: title, kind: kind);
+          }
         }
       } on Object catch (e) {
         debugPrint('Džep: dropped unreadable queued action: $e');

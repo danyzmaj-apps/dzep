@@ -7,13 +7,15 @@ import 'package:dzep/idea.dart';
 import 'package:dzep/store.dart';
 import 'package:flutter/foundation.dart';
 
-/// The terminal's way in (omp's `/idea` and `/todo`): HTTP on 127.0.0.1 at
-/// a random port, guarded by a random token. Both are written to
+/// The terminal's way in (omp's `/idea`, `/todo` and `/note`): HTTP on
+/// 127.0.0.1 at a random port, guarded by a random token. Both are written to
 /// `~/.config/dzep/cli.json` (mode 600) for the client to read.
 ///
 ///   GET   /v1/ideas?project=NAME   → {"ideas": [...]}, oldest first
 ///   GET   /v1/ideas?kind=todo      → {"ideas": [...]}, open todos, oldest first
+///   GET   /v1/ideas?kind=note      → {"ideas": [...]}, notes, oldest first
 ///   POST  /v1/ideas                {title, kind?, notes?, project?} → {"idea": {...}}
+///                                  (a note: its text in title, or title + notes)
 ///   PATCH /v1/ideas/ID             {done} (todos only) → {"idea": {...}}
 ///
 /// Writes go through the [IdeaStore], so they sync like any other edit.
@@ -76,9 +78,11 @@ class LocalApi {
       final query = req.uri.queryParameters;
       final project = query['project'];
       final ideas =
-          (query['kind'] == 'todo' ? store.openTodos : store.ideas)
-              .where((i) => project == null || i.project == project)
-              .toList()
+          (switch (query['kind']) {
+              'todo' => store.openTodos,
+              'note' => store.notes,
+              _ => store.ideas,
+            }).where((i) => project == null || i.project == project).toList()
             ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       return (
         200,
@@ -93,20 +97,18 @@ class LocalApi {
     if (req.method == 'POST' && path.length == 2) {
       final title = (body['title'] as String? ?? '').trim();
       if (title.isEmpty) return (400, {'error': 'title is required.'});
-      final kind = body['kind'] == 'todo' ? Kind.todo : Kind.idea;
-      final idea = store.add(
-        title: title,
-        kind: kind,
-        notes: body['notes'] as String? ?? '',
-        project: body['project'] as String? ?? '',
-      );
+      final notes = (body['notes'] as String? ?? '').trim();
+      final idea = switch (Kind.parse(body['kind'])) {
+        Kind.note => store.addNote(notes.isEmpty ? title : '$title\n$notes'),
+        final kind => store.add(title: title, kind: kind, notes: notes, project: body['project'] as String? ?? ''),
+      };
       return (201, {'idea': idea.toApi()});
     }
 
     if (req.method == 'PATCH' && path.length == 3) {
       final idea = store.byId(path[2]);
       if (idea == null) return (404, {'error': 'No such item.'});
-      if (!idea.isTodo) return (400, {'error': 'Ideas have no status; only todos can be marked done.'});
+      if (!idea.isTodo) return (400, {'error': 'Only todos can be marked done.'});
       final done = body['done'];
       if (done is! bool) return (400, {'error': 'done (true/false) is required.'});
       store.update(idea, done: done);

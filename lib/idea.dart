@@ -1,11 +1,28 @@
-/// An idea (optionally under a project) or a todo, which is open or done
-/// ([Idea.doneAt]) and may carry a reminder ([Idea.remindAt]).
-enum Kind { idea, todo }
+/// An idea (optionally under a project), a todo, which is open or done
+/// ([Idea.doneAt]) and may carry a reminder ([Idea.remindAt]), or a note:
+/// free text, kept whole in [Idea.notes] with its first line as the title.
+enum Kind {
+  idea,
+  todo,
+  note;
 
-/// One row of the `ideas` table: an idea or a todo ([kind]). [updatedAt] is
-/// the server's clock once synced; [dirty] marks local changes the server
-/// hasn't seen, [rev] tells a push whether the row changed again while it
-/// was in flight.
+  static Kind parse(Object? name) => switch (name) {
+    'todo' => Kind.todo,
+    'note' => Kind.note,
+    _ => Kind.idea,
+  };
+}
+
+/// A note's title: its first non-empty line, without Markdown heading marks.
+String noteTitle(String text) {
+  final line = text.split('\n').map((l) => l.trim()).firstWhere((l) => l.isNotEmpty, orElse: () => '');
+  return line.replaceFirst(RegExp(r'^#+\s*'), '');
+}
+
+/// One row of the `ideas` table: an idea, a todo or a note ([kind]).
+/// [updatedAt] is the server's clock once synced; [dirty] marks local changes
+/// the server hasn't seen, [rev] tells a push whether the row changed again
+/// while it was in flight.
 class Idea {
   Idea({
     required this.id,
@@ -25,7 +42,7 @@ class Idea {
 
   factory Idea.fromServer(Map<String, dynamic> row) => Idea(
     id: row['id'] as String,
-    kind: row['kind'] == 'todo' ? Kind.todo : Kind.idea,
+    kind: Kind.parse(row['kind']),
     title: row['title'] as String? ?? '',
     notes: row['notes'] as String? ?? '',
     project: row['project'] as String? ?? '',
@@ -61,6 +78,7 @@ class Idea {
 
   bool get deleted => deletedAt != null;
   bool get isTodo => kind == Kind.todo;
+  bool get isNote => kind == Kind.note;
   bool get done => doneAt != null;
 
   /// Takes the server's copy of this row (same id).

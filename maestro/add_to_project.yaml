@@ -23,12 +23,18 @@ appId: com.danyzmaj.dzep
 - tapOn: "project"
 - inputText: "maestro${TS}"
 - tapOn: "Back"
-# Project chips sit in a horizontal row, sorted; earlier runs' projects may
-# push this one off-screen.
-- scrollUntilVisible:
-    element: "@maestro${TS}"
-    direction: RIGHT
-    centerElement: true
+# Project chips sit in a horizontal row, sorted; earlier runs' projects push
+# this one off-screen. Swipe that row itself (scrollUntilVisible swipes the
+# middle of the screen, which is the list).
+- repeat:
+    while:
+      notVisible: "@maestro${TS}"
+    times: 15
+    commands:
+      - swipe:
+          start: 85%, 24%
+          end: 15%, 24%
+          duration: 300
 - tapOn: "@maestro${TS}"
 - assertVisible: "Maestro idea ${TS}.*"
 - assertVisible: "\\d\\d:\\d\\d"

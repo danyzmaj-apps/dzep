@@ -131,7 +131,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
-  /// 0: Todos (the app opens here), 1: Ideas, 2: Ask, 3: Terminal.
+  /// 0: Todos (the app opens here), 1: Ideas, 2: Notes, 3: Ask, 4: Terminal.
   int _tab = 0;
   bool _showDone = false;
   _Filter _filter = (project: false, id: 'all');
@@ -151,6 +151,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _openChat(Conversation? c) => Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => ChatPage(chats: chats, conversation: c),
+    ),
+  );
+
+  /// An existing note, or a new one (null), in the full-screen editor.
+  void _openNote(Idea? note) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => NotePage(store: store, note: note),
     ),
   );
 
@@ -233,9 +240,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (uri.host == 'todos') {
       setState(() => _tab = 0);
     } else if (uri.host == 'add') {
-      final kind = uri.queryParameters['kind'] == 'todo' ? Kind.todo : Kind.idea;
-      setState(() => _tab = kind == Kind.todo ? 0 : 1);
-      WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_openAdd(kind)));
+      final kind = Kind.parse(uri.queryParameters['kind']);
+      setState(
+        () => _tab = switch (kind) {
+          Kind.todo => 0,
+          Kind.idea => 1,
+          Kind.note => 2,
+        },
+      );
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => kind == Kind.note ? _openNote(null) : unawaited(_openAdd(kind)),
+      );
     }
   }
 
@@ -286,7 +301,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(i.isTodo ? 'Todo deleted' : 'Idea deleted'),
+          content: Text(switch (i.kind) {
+            Kind.todo => 'Todo deleted',
+            Kind.note => 'Note deleted',
+            Kind.idea => 'Idea deleted',
+          }),
           action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(i)),
         ),
       );
@@ -301,17 +320,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         tooltip: switch (_tab) {
           0 => 'New todo',
           1 => 'New idea',
-          2 => 'New chat',
+          2 => 'New note',
+          3 => 'New chat',
           _ => 'New session',
         },
         backgroundColor: C.accent,
         foregroundColor: const Color(0xFF0E0F12),
         onPressed: () => switch (_tab) {
-          2 => _openChat(null),
-          3 => unawaited(_openNewSession()),
+          2 => _openNote(null),
+          3 => _openChat(null),
+          4 => unawaited(_openNewSession()),
           _ => unawaited(_openAdd(_tab == 0 ? Kind.todo : Kind.idea)),
         },
-        child: Icon(_tab == 2 ? Icons.edit_outlined : Icons.add, size: 28),
+        child: Icon(_tab == 2 || _tab == 3 ? Icons.edit_outlined : Icons.add, size: 28),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
@@ -329,6 +350,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             label: 'Todos',
           ),
           const NavigationDestination(icon: Icon(Icons.lightbulb_outline), label: 'Ideas'),
+          const NavigationDestination(icon: Icon(Icons.sticky_note_2_outlined), label: 'Notes'),
           const NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), label: 'Ask'),
           const NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
         ],
@@ -345,7 +367,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   Text(switch (_tab) {
                     0 => 'Todos',
                     1 => 'Ideas',
-                    2 => 'Ask',
+                    2 => 'Notes',
+                    3 => 'Ask',
                     _ => 'Terminal',
                   }, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
                   const Spacer(),
@@ -358,7 +381,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ],
               ),
             ),
-            if (_tab < 2)
+            if (_tab < 3)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
                 child: TextField(
@@ -381,8 +404,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             const Divider(height: 1, color: C.line),
             Expanded(
               child: switch (_tab) {
-                3 => TerminalList(remote: _terminal, onOpen: _openTerminal),
-                2 => RefreshIndicator(onRefresh: chats.syncNow, child: _chatsList()),
+                4 => TerminalList(remote: _terminal, onOpen: _openTerminal),
+                3 => RefreshIndicator(onRefresh: chats.syncNow, child: _chatsList()),
+                2 => RefreshIndicator(onRefresh: store.syncNow, child: _notesList()),
                 _ => RefreshIndicator(onRefresh: store.syncNow, child: _tab == 0 ? _todosList() : _ideasList()),
               },
             ),
@@ -464,6 +488,75 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       padding: const EdgeInsets.only(bottom: 170),
       itemCount: ideas.length,
       itemBuilder: (context, k) => _row(ideas[k]),
+    );
+  }
+
+  Widget _notesList() {
+    final notes = store.notes.where(_searchHit).toList();
+    if (notes.isEmpty) {
+      return _empty(_query.isNotEmpty ? 'No matches.' : 'No notes yet.\nTap ✎ or say “Hey Siri, add a note to Džep”.');
+    }
+    return ListView.builder(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.only(bottom: 170),
+      itemCount: notes.length,
+      itemBuilder: (context, k) {
+        final n = notes[k];
+        final preview = n.notes.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).skip(1).firstOrNull;
+        return Dismissible(
+          key: ValueKey(n.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            color: const Color(0xFF7F1D1D),
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 24),
+            child: const Icon(Icons.delete_outline, color: Colors.white),
+          ),
+          onDismissed: (_) => _delete(n),
+          child: InkWell(
+            onTap: () => _openNote(n),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFF1D1F25))),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text.rich(
+                          highlight(
+                            n.title.isEmpty ? 'Empty note' : n.title,
+                            _query,
+                            const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: C.text),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (preview != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              preview,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13, color: C.dim, height: 1.35),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(stamp(n.updatedAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1276,4 +1369,123 @@ class _ChatPageState extends State<ChatPage> {
       );
     },
   );
+}
+
+// ==================================================================== notes
+
+/// A note, full screen: one text, saved as it's typed (the first line is the
+/// title). A new one ([note] null) exists once something is written.
+class NotePage extends StatefulWidget {
+  const NotePage({required this.store, required this.note, super.key});
+  final IdeaStore store;
+  final Idea? note;
+
+  @override
+  State<NotePage> createState() => _NotePageState();
+}
+
+class _NotePageState extends State<NotePage> {
+  late Idea? _note = widget.note;
+  late final _text = TextEditingController(text: widget.note?.notes ?? '');
+  final _focus = FocusNode();
+
+  IdeaStore get store => widget.store;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_note == null) _focus.requestFocus();
+    store.addListener(_onStore);
+  }
+
+  @override
+  void dispose() {
+    store.removeListener(_onStore);
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  /// Edited on another device: show it unless it's being typed in here;
+  /// deleted there: close.
+  void _onStore() {
+    final note = _note;
+    if (note == null || !mounted) return;
+    if (store.byId(note.id) == null) {
+      Navigator.of(context).maybePop();
+    } else if (!_focus.hasFocus && _text.text != note.notes) {
+      _text.text = note.notes;
+    }
+  }
+
+  void _changed(String text) {
+    final note = _note;
+    if (note != null) {
+      store.editNote(note, text);
+    } else if (text.trim().isNotEmpty) {
+      setState(() => _note = store.addNote(text));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final note = _note;
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: C.win,
+        title: Text(note == null ? 'New note' : stamp(note.updatedAt), style: const TextStyle(fontSize: 15)),
+        actions: [
+          if (note != null) ...[
+            IconButton(
+              tooltip: 'Copy',
+              icon: const Icon(Icons.content_copy, size: 20),
+              onPressed: () => copyAnswer(context, note.notes.trim()),
+            ),
+            IconButton(
+              tooltip: 'Delete',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () {
+                // This page closes itself; the listener would close it twice.
+                store
+                  ..removeListener(_onStore)
+                  ..delete(note);
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(
+                    SnackBar(
+                      content: const Text('Note deleted'),
+                      action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(note)),
+                    ),
+                  );
+              },
+            ),
+          ],
+        ],
+      ),
+      body: GestureDetector(
+        // A tap below the text still lands in the editor.
+        behavior: HitTestBehavior.translucent,
+        onTap: _focus.requestFocus,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: TextField(
+            key: const ValueKey('note-text'),
+            controller: _text,
+            focusNode: _focus,
+            maxLines: null,
+            keyboardType: TextInputType.multiline,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontSize: 17, height: 1.5),
+            decoration: plainInput.copyWith(
+              hintText: 'Write anything. The first line is the title.',
+              hintStyle: const TextStyle(color: C.dim2),
+            ),
+            onChanged: _changed,
+          ),
+        ),
+      ),
+    );
+  }
 }

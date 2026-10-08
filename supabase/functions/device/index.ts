@@ -2,7 +2,8 @@
 // intents, the interactive Todos widget), authorised by a device token
 // (see device_tokens) in the x-dzep-token header. Deployed --no-verify-jwt.
 //
-//   POST /functions/v1/device  {"action": "add", "kind": "idea"|"todo", "title", "notes"?, "created_at"?}
+//   POST /functions/v1/device  {"action": "add", "kind": "idea"|"todo"|"note", "title", "notes"?, "created_at"?}
+//                              (a note keeps its whole text in notes, its first line as the title)
 //   POST /functions/v1/device  {"action": "done", "id"}   → marks a todo done
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -29,7 +30,8 @@ Deno.serve(async (req) => {
   if (body.action === "add") {
     const title = typeof body.title === "string" ? body.title.trim() : "";
     if (!title) return json(400, { error: "title is required" });
-    const kind = body.kind === "todo" ? "todo" : "idea";
+    const kind = body.kind === "todo" || body.kind === "note" ? body.kind : "idea";
+    const notes = typeof body.notes === "string" ? body.notes.trim() : "";
     const { data: item, error } = await admin
       .from("ideas")
       .insert({
@@ -37,7 +39,7 @@ Deno.serve(async (req) => {
         user_id: device.user_id,
         kind,
         title,
-        notes: typeof body.notes === "string" ? body.notes.trim() : "",
+        notes: kind === "note" ? (notes ? `${title}\n${notes}` : title) : notes,
         device: device.label,
         ...(typeof body.created_at === "string" ? { created_at: body.created_at } : {}),
       })

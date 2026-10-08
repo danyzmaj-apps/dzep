@@ -20,8 +20,9 @@ final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
   return (title: title, project: m?.group(2) ?? '');
 }
 
-/// The ⇧⌘Space panel: title field focused, ↵ saves and gets out of
-/// the way. Tab adds a description; the list shows recent or similar ideas.
+/// The ⇧⌘Space panel. It opens straight into the mode it was last used in,
+/// field focused: an idea, a todo, a note or a quick question (⌘1–⌘4 or the
+/// strip at the top switch). ↵ saves and gets out of the way.
 class Popup extends StatefulWidget {
   const Popup({required this.app, super.key});
   final AppController app;
@@ -41,14 +42,14 @@ class _PopupState extends State<Popup> {
   late final FocusNode _questionFocus = FocusNode(onKeyEvent: _onQuestionKey);
   final _attachments = ChatAttachments();
 
-  /// Every open starts by choosing: 1 idea, 2 todo, 3 ask, 4 open the app.
-  bool _choosing = true;
+  final _note = TextEditingController();
+  late final FocusNode _noteFocus = FocusNode(onKeyEvent: _onNoteKey);
 
-  /// Picked 3: the quick-question chat instead of capture.
-  bool _asking = false;
+  PopupMode _mode = PopupMode.idea;
+  bool get _asking => _mode == PopupMode.ask;
 
-  /// What ↵ saves, picked in the chooser.
-  Kind _kind = Kind.idea;
+  /// What ↵ saves in the idea and todo modes.
+  Kind get _kind => _mode == PopupMode.todo ? Kind.todo : Kind.idea;
   int _sel = -1;
   List<Idea> _shown = const [];
   int _session = -1;
@@ -76,56 +77,68 @@ class _PopupState extends State<Popup> {
     _notesFocus.dispose();
     _question.dispose();
     _questionFocus.dispose();
+    _note.dispose();
+    _noteFocus.dispose();
     _attachments.dispose();
     super.dispose();
   }
 
-  /// A new open resets to the chooser right away (not on the next frame), so
-  /// a quick ⇧⌘Space-then-1 never lands on a stale screen.
+  /// A new open resets right away (not on the next frame), so a quick
+  /// ⇧⌘Space-then-typing never lands on a stale screen.
   void _onApp() {
     if (_session == app.popupSession) return;
     _session = app.popupSession;
     _sel = -1;
-    _choosing = !app.askNext;
-    _asking = app.askNext;
-    if (app.askNext) {
-      app.askNext = false;
-      _focusSoon(_question, _questionFocus);
-    }
+    _mode = app.askNext ? PopupMode.ask : app.popupMode;
+    app.askNext = false;
     _titleFocus.unfocus();
     _notesFocus.unfocus();
     _questionFocus.unfocus();
+    _noteFocus.unfocus();
+    if (app.popupOpen) _focusMode();
     if (mounted) setState(() {});
   }
+
+  void _setMode(PopupMode mode) {
+    if (mode == _mode) return;
+    // The text stays: an idea typed in the todo mode is one ⌘1 away.
+    setState(() {
+      _mode = mode;
+      _sel = -1;
+    });
+    app.setPopupMode(mode);
+    _focusMode();
+  }
+
+  void _focusMode() => switch (_mode) {
+    PopupMode.ask => _focusSoon(_question, _questionFocus),
+    PopupMode.note => _focusSoon(_note, _noteFocus),
+    _ => _focusSoon(_title, _titleFocus),
+  };
 
   // ---------------------------------------------------------------- keys
 
   bool get _cmd => HardwareKeyboard.instance.isMetaPressed;
   bool get _shift => HardwareKeyboard.instance.isShiftPressed;
 
-  /// The field a pick is about to focus: characters typed before it has
+  /// The field the popup is about to focus: characters typed before it has
   /// focus go into it.
   TextEditingController? _awaiting;
 
-  /// Sees every key, whatever has focus: the chooser has no field to focus,
-  /// and the window can take keys a frame before Flutter has rebuilt it.
+  static final Map<LogicalKeyboardKey, PopupMode> _modeKeys = {
+    LogicalKeyboardKey.digit1: PopupMode.idea,
+    LogicalKeyboardKey.digit2: PopupMode.todo,
+    LogicalKeyboardKey.digit3: PopupMode.note,
+    LogicalKeyboardKey.digit4: PopupMode.ask,
+  };
+
+  /// Sees every key, whatever has focus: the window can take keys a frame
+  /// before Flutter has rebuilt it.
   bool _onAnyKey(KeyEvent e) {
     if (!app.popupOpen || e is KeyUpEvent) return false;
     final k = e.logicalKey;
-    if (_choosing) {
-      if (k == LogicalKeyboardKey.digit1 || k == LogicalKeyboardKey.numpad1) {
-        _pick(Kind.idea);
-      } else if (k == LogicalKeyboardKey.digit2 || k == LogicalKeyboardKey.numpad2) {
-        _pick(Kind.todo);
-      } else if (k == LogicalKeyboardKey.digit3 || k == LogicalKeyboardKey.numpad3) {
-        _ask();
-      } else if (k == LogicalKeyboardKey.digit4 || k == LogicalKeyboardKey.numpad4) {
-        unawaited(app.openMain());
-      } else if (k == LogicalKeyboardKey.escape) {
-        unawaited(app.closePopup());
-      } else {
-        return false;
-      }
+    if (_cmd && !_shift && _modeKeys[k] != null) {
+      _setMode(_modeKeys[k]!);
       return true;
     }
     // The chat's keys work whether the field or the transcript has focus.
@@ -153,36 +166,11 @@ class _PopupState extends State<Popup> {
     }
     final ch = e.character;
     final target = _awaiting;
-    if (target != null && ch != null && ch.runes.every((r) => r >= 0x20)) {
+    if (target != null && !_cmd && ch != null && ch.runes.every((r) => r >= 0x20)) {
       target.text += ch;
       return true;
     }
     return false;
-  }
-
-  void _pick(Kind kind) {
-    setState(() {
-      if (kind != _kind) {
-        // A half-typed idea isn't a todo draft.
-        _title.clear();
-        _notes.clear();
-        _withNotes = false;
-      }
-      _kind = kind;
-      _choosing = false;
-      _asking = false;
-      _sel = -1;
-    });
-    _focusSoon(_title, _titleFocus);
-  }
-
-  /// Opens the chat where it was left; ⌘N starts a new one.
-  void _ask() {
-    setState(() {
-      _choosing = false;
-      _asking = true;
-    });
-    _focusSoon(_question, _questionFocus);
   }
 
   void _focusSoon(TextEditingController text, FocusNode focus) {
@@ -274,6 +262,34 @@ class _PopupState extends State<Popup> {
     return KeyEventResult.ignored;
   }
 
+  KeyEventResult _onNoteKey(FocusNode _, KeyEvent e) {
+    if (e is KeyUpEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && _cmd) {
+      _saveNote();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.keyO && _cmd) {
+      unawaited(app.openMain(notes: true));
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.escape) {
+      unawaited(app.closePopup());
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _saveNote() {
+    final s = store;
+    final text = _note.text.trim();
+    if (s == null || text.isEmpty) return;
+    s.addNote(text);
+    _note.clear();
+    Toaster.of(context).show('Note saved ✓');
+    unawaited(app.closePopup());
+  }
+
   /// Tab right after `@pro` completes it to a known project.
   bool _completeProject() {
     final m = RegExp(r'@([\w.-]*)$').firstMatch(_title.text);
@@ -328,7 +344,7 @@ class _PopupState extends State<Popup> {
   @override
   Widget build(BuildContext context) {
     final s = store;
-    final stage = s == null ? 'locked' : (_choosing ? 'choose' : (_asking ? 'ask' : _kind.name));
+    final stage = s == null ? 'locked' : _mode.name;
     // The window is a fixed, transparent 720×660 (no resizes, see
     // MainFlutterWindow.swift); the panel sits at its top and animates its
     // height between stages. A click on the empty area closes the popup,
@@ -359,6 +375,7 @@ class _PopupState extends State<Popup> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (s != null) _modes(),
                     // Flexible: the panel is a fixed size, so a long chat
                     // gives up room to the composer (images, a long question).
                     Flexible(
@@ -381,15 +398,19 @@ class _PopupState extends State<Popup> {
                           key: ValueKey(stage),
                           child: s == null
                               ? _locked()
-                              : _choosing
-                              ? _chooser(s)
-                              : _asking
-                              ? _askPane(app.chats!)
-                              : Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: _capture(s),
-                                ),
+                              : switch (_mode) {
+                                  PopupMode.ask => _askPane(app.chats!),
+                                  PopupMode.note => Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: _notePane(s),
+                                  ),
+                                  _ => Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: _capture(s),
+                                  ),
+                                },
                         ),
                       ),
                     ),
@@ -427,84 +448,130 @@ class _PopupState extends State<Popup> {
     ),
   );
 
-  Widget _chooser(IdeaStore s) {
-    Widget tile(String key, Widget icon, String label, VoidCallback onTap) => Expanded(
-      child: Hoverable(
-        onTap: onTap,
+  /// The strip on top: which mode ↵ saves in (⌘1–⌘4), and the way to the app.
+  Widget _modes() {
+    Widget tab(PopupMode mode, IconData icon, String label, int n) {
+      final on = _mode == mode;
+      return Hoverable(
+        onTap: () => _setMode(mode),
         builder: (hover) => Container(
-          padding: const EdgeInsets.symmetric(vertical: 18),
+          margin: const EdgeInsets.only(right: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            color: hover ? C.sel : C.field,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: hover ? C.accent : C.line2),
+            color: on ? C.sel : (hover ? C.hover : null),
+            borderRadius: BorderRadius.circular(7),
           ),
-          child: Column(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(height: 26, child: Center(child: icon)),
-              const SizedBox(height: 8),
-              Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Kbd(key),
+              Icon(icon, size: 14, color: on ? C.accent : C.dim),
+              const SizedBox(width: 6),
+              Text(label, style: TextStyle(fontSize: 12.5, color: on ? C.text : C.dim)),
+              const SizedBox(width: 6),
+              Text('⌘$n', style: const TextStyle(fontSize: 11, color: C.dim2)),
             ],
           ),
         ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+      child: Row(
+        children: [
+          tab(PopupMode.idea, Icons.lightbulb_outline, 'Idea', 1),
+          tab(PopupMode.todo, Icons.check_circle_outline, 'Todo', 2),
+          tab(PopupMode.note, Icons.sticky_note_2_outlined, 'Note', 3),
+          tab(PopupMode.ask, Icons.auto_awesome, 'Ask', 4),
+          const Spacer(),
+          Tooltip(
+            message: 'Open Džep',
+            child: Hoverable(
+              onTap: () => unawaited(app.openMain()),
+              builder: (hover) => Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(Icons.open_in_new, size: 14, color: hover ? C.text : C.dim),
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
 
-    final todos = s.openTodos.take(5).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              tile('1', const Text('💡', style: TextStyle(fontSize: 22)), 'Idea', () => _pick(Kind.idea)),
-              const SizedBox(width: 10),
-              tile('2', const TodoCheck(done: false, size: 22), 'Todo', () => _pick(Kind.todo)),
-              const SizedBox(width: 10),
-              tile('3', const Icon(Icons.auto_awesome, size: 22, color: C.accent), 'Ask', _ask),
-              const SizedBox(width: 10),
-              tile(
-                '4',
-                const Icon(Icons.open_in_new, size: 22, color: C.dim),
-                'Open app',
-                () => unawaited(app.openMain()),
+  /// A note: one free text field (↵ is a new line, ⌘↵ saves); the recent
+  /// notes below open in the main window.
+  List<Widget> _notePane(IdeaStore s) {
+    final recent = s.notes.take(5).toList();
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Icon(Icons.sticky_note_2_outlined, size: 18, color: C.accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: _note,
+                focusNode: _noteFocus,
+                minLines: 3,
+                maxLines: 10,
+                keyboardType: TextInputType.multiline,
+                style: const TextStyle(fontSize: 16, height: 1.5),
+                decoration: plainInput.copyWith(
+                  hintText: 'Write a note…  the first line is its title',
+                  hintStyle: const TextStyle(color: C.dim2),
+                ),
               ),
+            ),
+          ],
+        ),
+      ),
+      if (recent.isNotEmpty)
+        Container(
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: C.line)),
+          ),
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 8, 18, 4),
+                child: Text('RECENT NOTES', style: TextStyle(fontSize: 11, letterSpacing: .6, color: C.dim)),
+              ),
+              for (final n in recent)
+                Hoverable(
+                  onTap: () => unawaited(app.openMain(select: n.id)),
+                  builder: (hover) => Container(
+                    color: hover ? C.hover : null,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.notes, size: 13, color: C.dim),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            n.title.isEmpty ? 'Empty note' : n.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(stamp(n.updatedAt), style: const TextStyle(fontSize: 11, color: C.dim)),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
-        if (todos.isNotEmpty) ...[
-          const Divider(height: 1, color: C.line),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
-            child: Text(
-              'OPEN TODOS · ${s.openTodos.length}',
-              style: const TextStyle(fontSize: 11, letterSpacing: .6, color: C.dim),
-            ),
-          ),
-          for (final t in todos)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-              child: Row(
-                children: [
-                  GestureDetector(onTap: () => _toggleTodo(t), child: const TodoCheck(done: false, size: 14)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      t.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 6),
-        ],
-      ],
-    );
+    ];
   }
 
   List<Widget> _capture(IdeaStore s) {
@@ -739,18 +806,16 @@ class _PopupState extends State<Popup> {
         const Spacer(),
         if (s == null)
           const KeyHint('esc', 'hide')
-        else if (_choosing) ...const [
-          KeyHint('1', 'idea'),
-          KeyHint('2', 'todo'),
-          KeyHint('3', 'ask'),
-          KeyHint('4', 'open app'),
-          KeyHint('esc', 'hide'),
-        ] else if (_asking) ...const [
+        else if (_asking) ...const [
           KeyHint('↵', 'ask'),
           KeyHint('⇧↵', 'newline'),
-          KeyHint('⇧⌘C', 'copy answer'),
           KeyHint('⌘N', 'new chat'),
           KeyHint('⌘O', 'chats'),
+          KeyHint('esc', 'hide'),
+        ] else if (_mode == PopupMode.note) ...const [
+          KeyHint('↵', 'newline'),
+          KeyHint('⌘↵', 'save'),
+          KeyHint('⌘O', 'notes'),
           KeyHint('esc', 'hide'),
         ] else if (_notesFocus.hasFocus) ...const [
           KeyHint('↵', 'newline'),

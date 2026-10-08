@@ -59,8 +59,12 @@ class IdeaStore extends ChangeNotifier {
 
   List<Idea> get _live => _ideas.values.where((i) => !i.deleted).toList();
 
-  /// Live ideas (not todos), newest first.
-  List<Idea> get ideas => _live.where((i) => !i.isTodo).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  /// Live ideas (not todos or notes), newest first.
+  List<Idea> get ideas =>
+      _live.where((i) => i.kind == Kind.idea).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+  /// Live notes, most recently edited first.
+  List<Idea> get notes => _live.where((i) => i.isNote).toList()..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
   /// Open todos, newest first.
   List<Idea> get openTodos =>
@@ -90,7 +94,7 @@ class IdeaStore extends ChangeNotifier {
       kind: kind,
       title: title.trim(),
       notes: notes.trim(),
-      project: kind == Kind.todo ? '' : project.trim(),
+      project: kind == Kind.idea ? project.trim() : '',
       remindAt: kind == Kind.todo ? remindAt?.toUtc() : null,
       device: device,
       createdAt: now,
@@ -100,6 +104,12 @@ class IdeaStore extends ChangeNotifier {
     _changed(idea);
     return idea;
   }
+
+  /// A new note with [text] (its first line becomes the title).
+  Idea addNote(String text) => add(title: noteTitle(text), kind: Kind.note, notes: text);
+
+  /// Replaces a note's text, and so its title.
+  void editNote(Idea note, String text) => update(note, title: noteTitle(text), notes: text);
 
   /// Null leaves a field as it is; [remind] sets the reminder, `(at: null)`
   /// clears it. A done or deleted todo keeps its reminder (for Undo) but
@@ -126,7 +136,9 @@ class IdeaStore extends ChangeNotifier {
   void _changed(Idea idea) {
     idea
       ..dirty = true
-      ..rev += 1;
+      ..rev += 1
+      // Shown at once as "edited just now"; the push brings the server's time.
+      ..updatedAt = DateTime.now().toUtc();
     notifyListeners();
     _scheduleSave();
     _pushTimer?.cancel();

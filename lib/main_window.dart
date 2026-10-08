@@ -15,13 +15,12 @@ import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Sidebar selection: the todo lists, an idea status ('inbox', …, or 'all'),
-/// or a project.
+/// Sidebar selection: Todos, Ideas, Notes, Ask, or a project's ideas.
 typedef Shelf = ({bool project, String id});
 
 const Shelf _todos = (project: false, id: 'todos');
-const Shelf _todosDone = (project: false, id: 'todos-done');
 const Shelf _all = (project: false, id: 'all');
+const Shelf _notes = (project: false, id: 'notes');
 const Shelf _chats = (project: false, id: 'chats');
 
 /// Drag strip for the transparent title bar.
@@ -134,6 +133,9 @@ class _LibraryState extends State<Library> {
   Shelf _view = _all;
   String? _selId;
   String _query = '';
+
+  /// Todos ticked off show under the open ones, folded by default.
+  bool _showDone = false;
   String? _focusNotesOf;
   final _search = TextEditingController();
 
@@ -170,30 +172,40 @@ class _LibraryState extends State<Library> {
     super.dispose();
   }
 
-  /// The popup asked to open a specific idea, todo or chat.
+  /// The popup asked to open a specific item, the notes or a chat.
   void _takePendingSelect() {
-    final chat = widget.app.pendingChat;
+    final app = widget.app;
+    final chat = app.pendingChat;
     if (chat != null) {
-      widget.app.pendingChat = null;
+      app.pendingChat = null;
       setState(() {
         _view = _chats;
         _chat = chat;
       });
     }
-    final id = widget.app.pendingSelect;
+    if (app.pendingNotes) {
+      app.pendingNotes = false;
+      _setView(_notes);
+    }
+    final id = app.pendingSelect;
     if (id == null) return;
-    widget.app.pendingSelect = null;
+    app.pendingSelect = null;
     final item = store.byId(id);
     if (item == null) return;
     setState(() {
-      _view = !item.isTodo ? _all : (item.done ? _todosDone : _todos);
+      _view = switch (item.kind) {
+        Kind.todo => _todos,
+        Kind.note => _notes,
+        Kind.idea => _all,
+      };
+      if (item.isTodo && item.done) _showDone = true;
       _query = '';
       _search.clear();
       _selId = id;
     });
   }
 
-  bool get _todoView => !_view.project && (_view == _todos || _view == _todosDone);
+  bool get _todoView => _view == _todos;
 
   bool _inView(Idea i, Shelf v) => !v.project || i.project == v.id;
 
@@ -205,17 +217,19 @@ class _LibraryState extends State<Library> {
 
   List<Idea> get _visible {
     if (_view == _chats) return const [];
-    if (_view == _todos) return store.openTodos.where(_matches).toList();
-    if (_view == _todosDone) return store.doneTodos.where(_matches).toList();
+    if (_view == _todos) {
+      return [...store.openTodos.where(_matches), if (_showDone) ...store.doneTodos.where(_matches)];
+    }
+    if (_view == _notes) return store.notes.where(_matches).toList();
     return store.ideas.where((i) => _inView(i, _view) && _matches(i)).toList();
   }
 
   String _viewName(Shelf v) {
     if (v.project) return '@${v.id}';
     if (v == _todos) return 'Todos';
-    if (v == _todosDone) return 'Done';
-    if (v == _chats) return 'Chats';
-    return 'All ideas';
+    if (v == _notes) return 'Notes';
+    if (v == _chats) return 'Ask';
+    return 'Ideas';
   }
 
   void _select(String? id) => setState(() => _selId = id);
@@ -240,7 +254,11 @@ class _LibraryState extends State<Library> {
     final next = pos + 1 < v.length ? v[pos + 1] : (pos > 0 ? v[pos - 1] : null);
     setState(() => _selId = next?.id);
     Toaster.of(context).show(
-      i.isTodo ? 'Todo deleted' : 'Idea deleted',
+      switch (i.kind) {
+        Kind.todo => 'Todo deleted',
+        Kind.note => 'Note deleted',
+        Kind.idea => 'Idea deleted',
+      },
       undo: () {
         store.restore(i);
         setState(() => _selId = i.id);
@@ -249,6 +267,17 @@ class _LibraryState extends State<Library> {
   }
 
   void _addFromField() {
+    if (_view == _notes) {
+      final text = _newIdea.text.trim();
+      if (text.isEmpty) return;
+      final note = store.addNote(text);
+      _newIdea.clear();
+      setState(() {
+        _selId = note.id;
+        _focusNotesOf = note.id;
+      });
+      return;
+    }
     if (_todoView) {
       final parsed = parseReminder(_newIdea.text, DateTime.now());
       if (parsed.title.isEmpty) return;
@@ -313,6 +342,15 @@ class _LibraryState extends State<Library> {
                     )
                   : selected == null
                   ? const _EmptyDetail()
+                  : selected.isNote
+                  ? NoteEditor(
+                      key: ValueKey(selected.id),
+                      note: selected,
+                      store: store,
+                      focus: _focusNotesOf == selected.id,
+                      onFocused: () => _focusNotesOf = null,
+                      onDelete: () => _delete(selected),
+                    )
                   : _Detail(
                       key: ValueKey(selected.id),
                       idea: selected,
@@ -339,8 +377,8 @@ class _LibraryState extends State<Library> {
     Widget nav(Shelf v, Widget icon, String name) {
       final n = v == _todos
           ? store.openTodos.length
-          : v == _todosDone
-          ? 0
+          : v == _notes
+          ? store.notes.length
           : v == _chats
           ? _chatStore.conversations.length
           : store.ideas.where((i) => _inView(i, v)).length;
@@ -389,16 +427,13 @@ class _LibraryState extends State<Library> {
           Expanded(
             child: ListView(
               children: [
-                header('TODOS'),
-                nav(_todos, const Icon(Icons.radio_button_unchecked, size: 13, color: C.dim), 'Todos'),
-                nav(_todosDone, const Icon(Icons.check_circle_outline, size: 13, color: C.dim), 'Done'),
-                header('CHATS'),
-                nav(_chats, const Icon(Icons.auto_awesome, size: 13, color: C.dim), 'Quick questions'),
-                header('IDEAS'),
-                nav(_all, const Icon(Icons.lightbulb_outline, size: 14, color: C.dim), 'All ideas'),
+                nav(_todos, const Icon(Icons.check_circle_outline, size: 14, color: C.dim), 'Todos'),
+                nav(_all, const Icon(Icons.lightbulb_outline, size: 14, color: C.dim), 'Ideas'),
+                nav(_notes, const Icon(Icons.sticky_note_2_outlined, size: 14, color: C.dim), 'Notes'),
+                nav(_chats, const Icon(Icons.auto_awesome, size: 14, color: C.dim), 'Ask'),
                 if (store.projects.isNotEmpty) header('PROJECTS'),
                 for (final p in store.projects)
-                  nav((project: true, id: p), const Icon(Icons.crop_square, size: 13, color: C.dim), p),
+                  nav((project: true, id: p), const Icon(Icons.tag, size: 13, color: C.dim), p),
               ],
             ),
           ),
@@ -439,21 +474,49 @@ class _LibraryState extends State<Library> {
     final rows = <Widget>[];
     String? group;
     for (final i in visible) {
-      final g = _group(i.isTodo && i.done ? i.doneAt! : i.createdAt);
+      if (i.isTodo && i.done) continue;
+      final g = _group(i.isNote ? i.updatedAt : i.createdAt);
       if (g != group) {
         group = g;
-        rows.add(
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              g,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: C.dim2),
-            ),
-          ),
-        );
+        rows.add(_groupHeader(g));
       }
       rows.add(_row(i));
     }
+    if (_todoView) {
+      final done = store.doneTodos.where(_matches).length;
+      if (done > 0) {
+        rows.add(
+          Hoverable(
+            onTap: () => setState(() => _showDone = !_showDone),
+            builder: (hover) => Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+              child: Row(
+                children: [
+                  Icon(_showDone ? Icons.expand_more : Icons.chevron_right, size: 15, color: C.dim2),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Done · $done',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: hover ? C.text : C.dim2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        if (_showDone) {
+          rows.addAll([
+            for (final i in visible)
+              if (i.isTodo && i.done) _row(i),
+          ]);
+        }
+      }
+    }
+    final count = visible.where((i) => !(i.isTodo && i.done)).length;
+    final noun = switch (_view) {
+      _todos => 'open',
+      _notes => count == 1 ? 'note' : 'notes',
+      _ => count == 1 ? 'idea' : 'ideas',
+    };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -471,7 +534,7 @@ class _LibraryState extends State<Library> {
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   children: [
                     TextSpan(
-                      text: '   ${visible.length} idea${visible.length == 1 ? '' : 's'}',
+                      text: '   $count $noun',
                       style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: C.dim),
                     ),
                   ],
@@ -526,7 +589,11 @@ class _LibraryState extends State<Library> {
                   focusNode: _newFocus,
                   style: const TextStyle(fontSize: 13),
                   decoration: plainInput.copyWith(
-                    hintText: _todoView ? 'New todo…  ↵' : 'New idea…  ↵',
+                    hintText: switch (_view) {
+                      _todos => 'New todo…  !15:00  ↵',
+                      _notes => 'New note…  ↵ then keep writing',
+                      _ => 'New idea…  ↵',
+                    },
                     hintStyle: const TextStyle(color: C.dim2),
                   ),
                   onSubmitted: (_) => _addFromField(),
@@ -542,11 +609,12 @@ class _LibraryState extends State<Library> {
                   child: Text(
                     _query.isNotEmpty
                         ? 'No matches.'
-                        : _view == _all
-                        ? 'No ideas yet.\n${widget.app.hotKey.label} then 1 adds one from anywhere.'
-                        : _view == _todos
-                        ? 'All done 🎉\n${widget.app.hotKey.label} then ⌘T adds a todo from anywhere.'
-                        : 'Nothing here yet.',
+                        : switch (_view) {
+                            _todos => 'All done 🎉\n${widget.app.hotKey.label} then ⌘2 adds a todo from anywhere.',
+                            _notes => 'No notes yet.\n${widget.app.hotKey.label} then ⌘3 writes one from anywhere.',
+                            _all => 'No ideas yet.\n${widget.app.hotKey.label} then ⌘1 adds one from anywhere.',
+                            _ => 'Nothing here yet.',
+                          },
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: C.dim),
                   ),
@@ -568,7 +636,10 @@ class _LibraryState extends State<Library> {
       decoration: struck ? TextDecoration.lineThrough : null,
       decorationColor: C.dim,
     );
-    final firstNote = i.notes.split('\n').first;
+    // A note's title is its first line; the next one is the preview.
+    final preview = i.isNote
+        ? i.notes.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).skip(1).firstOrNull ?? ''
+        : i.notes.split('\n').first;
     return Hoverable(
       onTap: () {
         _select(i.id);
@@ -591,6 +662,11 @@ class _LibraryState extends State<Library> {
                   child: TodoCheck(done: i.done),
                 ),
               )
+            else if (i.isNote)
+              const Padding(
+                padding: EdgeInsets.only(top: 1),
+                child: Icon(Icons.notes, size: 14, color: C.dim),
+              )
             else
               const Padding(padding: EdgeInsets.only(top: 5), child: Dot(C.dim)),
             const SizedBox(width: 10),
@@ -599,13 +675,13 @@ class _LibraryState extends State<Library> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text.rich(
-                    highlight(i.title.isEmpty ? 'Untitled' : i.title, _query, titleStyle),
+                    highlight(i.title.isEmpty ? (i.isNote ? 'Empty note' : 'Untitled') : i.title, _query, titleStyle),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (firstNote.isNotEmpty)
+                  if (preview.isNotEmpty)
                     Text.rich(
-                      highlight(firstNote, _query, const TextStyle(fontSize: 12, color: C.dim)),
+                      highlight(preview, _query, const TextStyle(fontSize: 12, color: C.dim)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -617,12 +693,20 @@ class _LibraryState extends State<Library> {
               ),
             ),
             const SizedBox(width: 8),
-            Text(stamp(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim2)),
+            Text(stamp(i.isNote ? i.updatedAt : i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim2)),
           ],
         ),
       ),
     );
   }
+
+  Widget _groupHeader(String g) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+    child: Text(
+      g,
+      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: C.dim2),
+    ),
+  );
 
   static String _group(DateTime t) {
     final now = DateTime.now();
@@ -677,9 +761,143 @@ class _EmptyDetail extends StatelessWidget {
       children: [
         Opacity(opacity: .5, child: Text('💡', style: TextStyle(fontSize: 40))),
         SizedBox(height: 8),
-        Text('Select an idea', style: TextStyle(color: C.dim)),
+        Text('Nothing selected', style: TextStyle(color: C.dim)),
       ],
     ),
+  );
+}
+
+/// A note, the whole of it in one editor: the first line is its title. Saved
+/// as it's typed, like any other edit.
+class NoteEditor extends StatefulWidget {
+  const NoteEditor({
+    required this.note,
+    required this.store,
+    required this.focus,
+    required this.onFocused,
+    required this.onDelete,
+    super.key,
+  });
+
+  final Idea note;
+  final IdeaStore store;
+
+  /// Just created: the cursor goes on a new line under the first.
+  final bool focus;
+  final VoidCallback onFocused;
+  final VoidCallback onDelete;
+
+  @override
+  State<NoteEditor> createState() => _NoteEditorState();
+}
+
+class _NoteEditorState extends State<NoteEditor> {
+  late final _text = TextEditingController(text: widget.note.notes);
+  final _focus = FocusNode();
+
+  Idea get note => widget.note;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.focus) {
+      if (!_text.text.endsWith('\n')) _text.text += '\n';
+      _text.selection = TextSelection.collapsed(offset: _text.text.length);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _focus.requestFocus();
+        widget.onFocused();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(NoteEditor old) {
+    super.didUpdateWidget(old);
+    // Edited on another device: show it unless it's being typed in here.
+    if (!_focus.hasFocus && _text.text != note.notes) _text.text = note.notes;
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Container(
+        padding: const EdgeInsets.fromLTRB(14, 34, 10, 8),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: C.line)),
+        ),
+        child: Row(
+          children: [
+            const Text('Notes', style: TextStyle(color: C.dim, fontSize: 13)),
+            const Text('  ›  ', style: TextStyle(color: C.dim)),
+            Expanded(
+              child: Text(
+                note.title.isEmpty ? 'Empty note' : note.title,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Copy',
+              iconSize: 15,
+              color: C.dim,
+              icon: const Icon(Icons.copy_outlined),
+              onPressed: () {
+                unawaited(Clipboard.setData(ClipboardData(text: note.notes.trim())));
+                Toaster.of(context).show('Copied');
+              },
+            ),
+            IconButton(
+              tooltip: 'Delete',
+              iconSize: 15,
+              color: C.dim,
+              icon: const Icon(Icons.delete_outline),
+              onPressed: widget.onDelete,
+            ),
+          ],
+        ),
+      ),
+      Expanded(
+        child: GestureDetector(
+          // A click below the text still lands in the editor.
+          behavior: HitTestBehavior.translucent,
+          onTap: _focus.requestFocus,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(34, 26, 34, 26),
+            child: TextField(
+              controller: _text,
+              focusNode: _focus,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              style: const TextStyle(fontSize: 15, height: 1.65, color: Color(0xFFD7DAE2)),
+              decoration: plainInput.copyWith(
+                hintText: 'Write anything. The first line is the title.',
+                hintStyle: const TextStyle(color: C.dim2),
+              ),
+              onChanged: (t) => widget.store.editNote(note, t),
+            ),
+          ),
+        ),
+      ),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 34, vertical: 8),
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: C.line)),
+        ),
+        child: Text(
+          'Edited ${stamp(note.updatedAt)} · added ${stamp(note.createdAt)}'
+          '${note.device.isEmpty ? '' : ' on ${note.device}'}',
+          style: const TextStyle(fontSize: 11, color: C.dim2),
+        ),
+      ),
+    ],
   );
 }
 

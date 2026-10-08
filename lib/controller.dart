@@ -8,6 +8,9 @@ import 'package:dzep/store.dart';
 import 'package:dzep/terminal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// The popup's modes, switched with ⌘1–⌘4.
+enum PopupMode { idea, todo, note, ask }
+
 /// The Mac app: [Session] plus its two windows (the ⇧⌘Space popup panel and
 /// the main window, each its own Flutter view) and the hotkey.
 class AppController extends Session {
@@ -31,11 +34,19 @@ class AppController extends Session {
   /// Idea the main window should select next (from the popup's list).
   String? pendingSelect;
 
+  /// The main window should show the notes next (popup ⌘O in the note mode).
+  bool pendingNotes = false;
+
   /// Conversation the main window's Chats should show next (popup ⌘O).
   Conversation? pendingChat;
 
   /// The next popup open goes straight to the chat (Continue in popup).
   bool askNext = false;
+
+  /// What the popup opens on: the mode it was last used in.
+  PopupMode get popupMode => PopupMode.values.asNameMap()[_prefs.getString('popup_mode')] ?? PopupMode.idea;
+
+  void setPopupMode(PopupMode mode) => unawaited(_prefs.setString('popup_mode', mode.name));
 
   HotKey get hotKey => _hotKey;
   late HotKey _hotKey = _loadHotKey();
@@ -171,9 +182,12 @@ class AppController extends Session {
     await openPopup();
   }
 
-  Future<void> openMain({String? select, Conversation? conversation}) async {
+  /// Shows the main window; [select] an item, [conversation] a chat, or
+  /// [notes] the notes list.
+  Future<void> openMain({String? select, Conversation? conversation, bool notes = false}) async {
     if (select != null) pendingSelect = select;
     if (conversation != null) pendingChat = conversation;
+    if (notes) pendingNotes = true;
     if (_popupOpen) await closePopup();
     _mainOpen = true;
     notifyListeners();
