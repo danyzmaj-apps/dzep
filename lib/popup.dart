@@ -38,6 +38,10 @@ class _PopupState extends State<Popup> {
   late final FocusNode _notesFocus = FocusNode(onKeyEvent: _onNotesKey);
   bool _withNotes = false;
 
+  /// Whose draft [_title] / [_notes] hold now, and the other's, kept aside.
+  PopupMode _shownDraft = PopupMode.idea;
+  final _drafts = <PopupMode, ({TextEditingValue title, TextEditingValue notes})>{};
+
   final _question = TextEditingController();
   late final FocusNode _questionFocus = FocusNode(onKeyEvent: _onQuestionKey);
   final _attachments = ChatAttachments();
@@ -91,6 +95,7 @@ class _PopupState extends State<Popup> {
     _sel = -1;
     _mode = app.askNext ? PopupMode.ask : app.popupMode;
     app.askNext = false;
+    _showDraftOf(_mode);
     _titleFocus.unfocus();
     _notesFocus.unfocus();
     _questionFocus.unfocus();
@@ -100,14 +105,29 @@ class _PopupState extends State<Popup> {
   }
 
   void _setMode(PopupMode mode) {
-    if (mode == _mode) return;
-    // The text stays: an idea typed in the todo mode is one ⌘1 away.
-    setState(() {
-      _mode = mode;
-      _sel = -1;
-    });
-    app.setPopupMode(mode);
+    // Clicking a tab took the focus from the field, even the current tab's:
+    // always hand it back, so typing just works.
+    if (mode != _mode) {
+      setState(() {
+        _mode = mode;
+        _sel = -1;
+        _showDraftOf(mode);
+      });
+      app.setPopupMode(mode);
+    }
     _focusMode();
+  }
+
+  /// Idea and todo share one field (and its description), but each keeps its
+  /// own text, like note and ask: switching puts the other's draft in.
+  void _showDraftOf(PopupMode mode) {
+    if (mode != PopupMode.idea && mode != PopupMode.todo || mode == _shownDraft) return;
+    _drafts[_shownDraft] = (title: _title.value, notes: _notes.value);
+    final next = _drafts[mode];
+    _title.value = next?.title ?? TextEditingValue.empty;
+    _notes.value = next?.notes ?? TextEditingValue.empty;
+    _withNotes = _notes.text.isNotEmpty;
+    _shownDraft = mode;
   }
 
   void _focusMode() => switch (_mode) {
@@ -344,7 +364,15 @@ class _PopupState extends State<Popup> {
   @override
   Widget build(BuildContext context) {
     final s = store;
-    final stage = s == null ? 'locked' : _mode.name;
+    // Idea and todo are one pane (the same field, only what ↵ saves differs):
+    // two copies cross-fading would share its focus node, and the outgoing
+    // one would take the focus with it.
+    final stage = s == null
+        ? 'locked'
+        : switch (_mode) {
+            PopupMode.idea || PopupMode.todo => 'capture',
+            _ => _mode.name,
+          };
     // The window is a fixed, transparent 720×660 (no resizes, see
     // MainFlutterWindow.swift); the panel sits at its top and animates its
     // height between stages. A click on the empty area closes the popup,
