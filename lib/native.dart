@@ -29,6 +29,9 @@ class Native {
   static Future<void> startDrag() => _channel.invokeMethod('startDrag');
   static Future<void> setTodoCount(int count) => _channel.invokeMethod('setTodoCount', {'count': count});
 
+  /// Mac: seconds since the last keyboard or mouse input.
+  static Future<double> idleSeconds() async => await _channel.invokeMethod<double>('idleSeconds') ?? 0;
+
   // Mac and iPhone: todo reminders, as local notifications.
   /// Replaces every pending reminder with [reminders] (lib/remind.dart picks
   /// them); the first non-empty set asks for permission.
@@ -41,6 +44,16 @@ class Native {
   /// iPhone: the todo whose reminder was tapped, once (a tap that launched
   /// the app lands before Dart listens, so openTodo only says "look").
   static Future<String?> takeTappedTodo() => _channel.invokeMethod<String>('takeTappedTodo');
+
+  /// iPhone: asks for notification permission and this iPhone's APNs token,
+  /// with its push key (ios/Shared/DzepShared.swift). Null: not allowed, or
+  /// APNs didn't answer.
+  static Future<({String token, String key})?> registerPush() async {
+    final m = await _channel.invokeMapMethod<String, String>('registerPush');
+    final token = m?['token'];
+    final key = m?['key'];
+    return token == null || key == null ? null : (token: token, key: key);
+  }
 
   // The App Group the widgets (and the iPhone's Siri intents) read:
   // ios/Shared/DzepShared.swift.

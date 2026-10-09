@@ -89,6 +89,23 @@ function render(proj: string, ideas: Numbered[]): string {
 }
 
 export default function ideaExtension(pi: ExtensionAPI) {
+	// The agent finished (its last agent_end of the run): Džep pushes it to the
+	// iPhone, but only if nobody has used the Mac for a minute. Quiet when
+	// Džep isn't running.
+	pi.on("agent_end", async (event, ctx) => {
+		if (event.isTerminal === false) return;
+		let last = "";
+		for (const m of event.messages) {
+			if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+			for (const part of m.content) if (part.type === "text" && part.text.trim()) last = part.text;
+		}
+		const summary = last.replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim();
+		await call("POST", "/v1/notify", {
+			title: `omp finished · ${basename(ctx.cwd)}`,
+			body: summary.length > 180 ? `${summary.slice(0, 179)}…` : summary,
+		}).catch(() => {});
+	});
+
 	pi.registerCommand("idea", {
 		description: "Capture an idea into Džep (under this repo's project) without interrupting the agent",
 		handler: async (args, ctx) => {

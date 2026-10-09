@@ -10,7 +10,7 @@ Install Džep and open it. With no server yet, it starts a setup wizard:
 2. **Project.** Pick an existing project or let Džep create one (region guessed from your time zone).
 3. **GitHub sign-in.** Džep opens GitHub's "new OAuth app" form with the name and callback URL filled in; paste back the client ID and secret.
 4. **AI (optional).** DeepSeek, OpenAI, OpenRouter or any OpenAI-compatible API, with its key.
-5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in, private sign-up and the `dzep://` redirect, deploys the `ask`, `device` and `pair` functions and stores the AI key as a function secret. If a step fails, **Try again** resumes from it.
+5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in, private sign-up and the `dzep://` redirect, deploys the `ask`, `device`, `pair` and `push` functions and stores the AI key as a function secret. If a step fails, **Try again** resumes from it. Push notifications need nothing more: the iPhone registers itself, and your server sends through the app publisher's relay, encrypted so only your phone can read them.
 
 Then sign in with GitHub. For the iPhone, see [Connect the apps](#connect-the-apps).
 
@@ -40,7 +40,7 @@ It walks you through the rest:
 2. It asks you to **create a GitHub OAuth app** at [github.com/settings/applications/new](https://github.com/settings/applications/new), with the callback URL `https://<project-ref>.supabase.co/auth/v1/callback`, and to paste its client ID and secret. They are stored in `supabase/.env`, which git ignores.
 3. It creates the tables, security rules and storage (`supabase db push`).
 4. It turns on GitHub sign-in, the `dzep://` redirect and private sign-up (`supabase config push`).
-5. It deploys the edge functions: `ask`, `device` and `pair`.
+5. It deploys the edge functions: `ask`, `device`, `pair` and `push`.
 6. It asks for your AI provider (see [AI provider](#ai-provider)). You can skip this.
 
 At the end it prints a **setup link**: `dzep://setup?url=…&key=…`. It holds only your project URL and its publishable key, both of which are safe in an app; row-level security protects your data.

@@ -14,6 +14,11 @@ Each release is a notarized DMG on GitHub Releases, plus an `appcast.xml` that i
    macos/Pods/Sparkle/bin/generate_keys -x sparkle-private-key   # store this file somewhere safe, offline
    ```
 4. `gh auth login`, with push access to the repo.
+5. **Push relay** (iPhone notifications for every Džep server). Create an APNs key at [developer.apple.com → Keys](https://developer.apple.com/account/resources/authkeys/add) (Apple Push Notifications service, Sandbox & Production, team scoped), keep the `.p8` safe (it downloads once), then deploy the relay to the publisher's Supabase project:
+   ```sh
+   tool/deploy-relay.sh <project-ref> ~/path/AuthKey_<KEYID>.p8 <TEAM>
+   ```
+   `functions/push` on every server points at `https://<project-ref>.supabase.co/functions/v1/relay` (`PUSH_RELAY_URL`); change its default if the relay moves.
 
 ## Each release
 

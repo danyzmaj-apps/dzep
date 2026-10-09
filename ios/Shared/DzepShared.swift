@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// What the app, its Siri intents and the widget extension share through the
 /// App Group: the backend (the Supabase project the user connected, written
@@ -47,6 +48,20 @@ enum DzepShared {
   static var todos: [Todo] {
     get { (try? JSONDecoder().decode([Todo].self, from: defaults.data(forKey: "todos") ?? Data())) ?? [] }
     set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "todos") }
+  }
+
+  /// This iPhone's push key (32 bytes): made here, given only to the user's
+  /// own server (functions/push), which seals each notification with it; the
+  /// DzepPush extension opens them. Made on first use, kept across sign-ins.
+  static var pushKey: Data? { defaults.data(forKey: "pushKey") }
+
+  static func makePushKey() -> Data {
+    if let key = pushKey { return key }
+    var bytes = [UInt8](repeating: 0, count: 32)
+    _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+    let key = Data(bytes)
+    defaults.set(key, forKey: "pushKey")
+    return key
   }
 
   /// Actions for the app to replay (the iPhone's offline ones, every tick of

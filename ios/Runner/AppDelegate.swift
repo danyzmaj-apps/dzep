@@ -7,6 +7,9 @@ import WidgetKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let reminders = Reminders()
 
+  /// Waiting for APNs to hand over this iPhone's device token (registerPush).
+  private var pushWaiter: FlutterResult?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -17,6 +20,23 @@ import WidgetKit
     return launched
   }
 
+  override func application(
+    _ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+  ) {
+    super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+    let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+    pushWaiter?(["token": token, "key": DzepShared.makePushKey().base64EncodedString()])
+    pushWaiter = nil
+  }
+
+  override func application(
+    _ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error
+  ) {
+    super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
+    pushWaiter?(nil)
+    pushWaiter = nil
+  }
+
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     // The iPhone half of lib/native.dart: device name, the App Group the Siri
@@ -24,7 +44,7 @@ import WidgetKit
     let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "DzepNative")!
     let channel = FlutterMethodChannel(name: "dzep/native", binaryMessenger: registrar.messenger())
     reminders.channel = channel
-    channel.setMethodCallHandler { [reminders] call, result in
+    channel.setMethodCallHandler { [reminders, weak self] call, result in
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
       case "deviceName":
@@ -66,6 +86,17 @@ import WidgetKit
         reminders.schedule(args["reminders"] as? [[String: Any]] ?? []) { result(nil) }
       case "takeTappedTodo":
         result(reminders.takeTapped())
+      case "registerPush":
+        // Permission first (a no-op after the first answer), then APNs. nil:
+        // not allowed or no token (the app keeps local reminders then).
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+          DispatchQueue.main.async {
+            guard granted, let self else { return result(nil) }
+            self.pushWaiter?(nil)
+            self.pushWaiter = result
+            UIApplication.shared.registerForRemoteNotifications()
+          }
+        }
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -135,7 +166,17 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
     _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
-    let id = response.notification.request.identifier
+    // A push carries its todo in userInfo (DzepPush); a local reminder is
+    // identified by it.
+    let info = response.notification.request.content.userInfo
+    let id = info["todo"] as? String ?? response.notification.request.identifier
+    if info["kind"] as? String == "terminal" {
+      DispatchQueue.main.async {
+        self.channel?.invokeMethod("openTerminal", arguments: nil)
+        completionHandler()
+      }
+      return
+    }
     switch response.actionIdentifier {
     case "done":
       DzepShared.todos.removeAll { $0.id == id }

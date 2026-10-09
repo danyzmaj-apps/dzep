@@ -37,6 +37,7 @@ flutter:
     - supabase/functions/ask/
     - supabase/functions/device/
     - supabase/functions/pair/
+    - supabase/functions/push/
 
 # `swift tool/make_icon.swift && fvm dart run flutter_launcher_icons`
 flutter_launcher_icons:

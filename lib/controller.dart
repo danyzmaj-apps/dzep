@@ -6,6 +6,7 @@ import 'package:dzep/native.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
 import 'package:dzep/terminal.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The popup's modes, switched with ⌘1–⌘4.
@@ -197,6 +198,21 @@ class AppController extends Session {
   void setSettingsOpen({required bool open}) {
     settingsOpen = open;
     notifyListeners();
+  }
+
+  /// Pushes [title] / [body] to the user's iPhones (functions/push) when
+  /// nobody has touched this Mac for a minute: at the desk, the Mac's own
+  /// screen says it already. False if it didn't go.
+  Future<bool> notifyPhone(String title, String body) async {
+    if (store == null || await Native.idleSeconds() < 60) return false;
+    try {
+      final res = await client.functions.invoke('push', body: {'action': 'notify', 'title': title, 'body': body});
+      final data = res.data;
+      return data is Map && (data['sent'] as int? ?? 0) > 0;
+    } on Object catch (e) {
+      debugPrint('Džep: notify failed: $e');
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------- hotkey

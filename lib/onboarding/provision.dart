@@ -118,8 +118,9 @@ create table if not exists supabase_migrations.schema_migrations (version text p
   }
 
   Future<void> deployFunctions() async {
-    for (final slug in ['ask', 'device', 'pair']) {
-      // All check the caller themselves (a user token, a device token).
+    // relay is the publisher's alone (tool/deploy-relay.sh): never on a user's server.
+    for (final slug in ['ask', 'device', 'pair', 'push']) {
+      // All check the caller themselves (a user token, a device token, the scheduler's secret).
       await admin.deployFunction(ref, slug, await source.function(slug), verifyJwt: false);
     }
   }

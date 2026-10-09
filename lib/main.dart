@@ -22,7 +22,7 @@ Future<void> main() async {
     return;
   }
   final app = AppController(prefs, device);
-  final api = LocalApi(() => app.store);
+  final api = LocalApi(() => app.store, app.notifyPhone);
   try {
     await api.start();
   } on Object catch (e) {

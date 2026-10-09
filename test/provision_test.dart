@@ -130,7 +130,7 @@ void main() {
     // Keeps the redirects that were already allowed.
     expect(api.auth['uri_allow_list'], 'https://example.com,dzep://login-callback');
     expect(api.auth['hook_before_user_created_enabled'], isTrue);
-    expect(api.deployed.keys, {'ask', 'device', 'pair'});
+    expect(api.deployed.keys, {'ask', 'device', 'pair', 'push'});
     expect(api.deployed.values.every((m) => m['verify_jwt'] == false), isTrue);
     expect(api.secrets, {
       'AI_BASE_URL': 'https://api.deepseek.com',

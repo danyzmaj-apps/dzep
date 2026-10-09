@@ -19,15 +19,16 @@ The first design mockup is `design/mockup.html`.
 | `lib/chat.dart`, `chat_view.dart` | Quick questions: `ChatStore` (synced chats, streaming from `ask`) and the transcript/list/thread widgets (Mac and iPhone) |
 | `lib/kitty.dart` | Mac: kitty's remote control through `kitten @` (windows, screen text, typing, keys, new windows) |
 | `lib/terminal.dart`, `terminal_view.dart` | Terminal from iPhone: the protocol, `TerminalBridge` (Mac), `TerminalRemote` and its screens (iPhone) |
-| `lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea`, `/todo` and `/note` |
+| `lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea`, `/todo`, `/note` and omp's finished-session push |
 | `lib/mobile.dart` | iPhone app |
-| `macos/Runner/MainFlutterWindow.swift`, `AppDelegate.swift` | Popup panel + main window on one multi-view engine, menu-bar icon, Carbon hotkey, activation policy, launch at login, reminder notifications |
-| `ios/Runner/AppDelegate.swift` | The iPhone half of `native.dart`: App Group, reminder notifications |
+| `macos/Runner/MainFlutterWindow.swift`, `AppDelegate.swift` | Popup panel + main window on one multi-view engine, menu-bar icon, Carbon hotkey, activation policy, launch at login, reminder notifications, idle time |
+| `ios/Runner/AppDelegate.swift` | The iPhone half of `native.dart`: App Group, reminder notifications, push registration |
+| `ios/DzepPush/` | Notification Service Extension: decrypts pushes |
 | `ios/Runner/AddIdeaIntent.swift` | Siri / Action Button intents (Add Idea, Add Todo) |
 | `ios/DzepWidget/` | WidgetKit extension (Todos, New idea) |
 | `macos/DzepWidget/` | Mac WidgetKit extension (Todos), sandboxed; its ticks go through the running app |
 | `ios/Shared/DzepShared.swift` | App Group storage + `device` function client (app and widget; the Mac's app and widget compile it too) |
-| `supabase/` | Migrations and the `ask`, `device` and `pair` edge functions |
+| `supabase/` | Migrations and the `ask`, `device`, `pair` and `push` edge functions; `relay` is the publisher's push relay (`tool/deploy-relay.sh`) |
 | `maestro/` | Simulator flows |
 | `config/Dzep.xcconfig` | Team, bundle id and App Group for every Xcode target (`Local.xcconfig` overrides them) |
 | `tool/setup-backend.sh`, `release.sh` | Self-hosting setup; Mac release (DMG, notarization, Sparkle appcast) |
@@ -69,7 +70,27 @@ Every user runs their own Supabase project ([SELF_HOSTING.md](SELF_HOSTING.md)),
 
 - Each device schedules its own local notifications (`UNUserNotificationCenter`; identifier = todo id, body = title). Which ones is Dart's call (`pendingReminders`: open todos whose reminder is still ahead, soonest first, at most 64, the iPhone's limit), redone on every store change (`Session`); the Swift side only replaces the pending set (`setReminders`). The first non-empty set asks for permission; if it was denied, enable Džep in System Settings / Settings → Notifications.
 - Native code rather than `flutter_local_notifications`: the same few lines of `UNUserNotificationCenter` on both platforms, no timezone packages, and the actions need the app's own paths anyway: **Done** goes through the desktop widget's queue on the Mac (applied once the store is open, even when the click launched Džep) and through the `device` function on the iPhone (like the Todos widget, so it works with the app closed; queued if offline). A click on the Mac sends `openTodo {id}` → `AppController.openMain(select:)`; a tap on the iPhone is kept until Dart asks (`takeTappedTodo`), since the tap that launches the app arrives before Dart listens.
-- **iPhone caveat:** the phone schedules what its store knows, which is current only while the app runs (launch, coming back to the foreground, live updates while open). A reminder set on the Mac reaches the iPhone the next time Džep is opened there, and a todo ticked off elsewhere can still go off on the phone until then. There's no server push and no background refresh: the sync is Dart, which doesn't run while the app is in the background, and a second headless engine would race the app for the session's refresh token and the cache file.
+- **iPhone: pushed, not scheduled.** Once the iPhone has registered for push with its server, it schedules no local reminders (`Session.remindersByPush`); the server pushes each one when due, so a reminder set on the Mac arrives with the app closed, and one ticked off elsewhere never goes off. Until registration has worked once (or on a server without the `push` function) the iPhone keeps local reminders, with the old caveat: it only knows what its store saw while the app ran.
+
+## Push notifications (iPhone)
+
+Each user's server knows when something is due, but only the app's publisher can talk to Apple's push service for Džep (the APNs key is theirs, and it can reach every Džep install). So the servers send through one **relay** the publisher runs, and encrypt for the phone so the relay never reads anything.
+
+```mermaid
+flowchart LR
+  P[iPhone] -- "1. APNs token + its own AES key (push register)" --> S[User's server<br/>functions/push]
+  C[pg_cron, every minute] -- "2. due reminders" --> S
+  S -- "3. token + AES-GCM ciphertext" --> R[Publisher's relay<br/>functions/relay, holds the .p8]
+  R -- "4. alert, mutable-content" --> A[APNs] --> P
+```
+
+- **Registration** (`MobileSession._registerPush`, on every sign-in): permission, then `registerForRemoteNotifications`; the device token and a 32-byte key the iPhone made itself (`DzepShared.pushKey`, App Group) go to `functions/push {action: register}`. Sign-out sends `unregister`.
+- **Server** (`20261013090000_push.sql`): `push_devices` (token, user, key; service role only), `push_sent` (idea + `remind_at` already pushed: a moved reminder pushes again, overlapping ticks can't double-send), `push_config` (the function's own URL and a random secret, written by the first registration so no setup step has to). `pg_cron` runs every minute and calls `functions/push {action: tick}` through `pg_net` only when `push_due` has rows: open, not deleted todos due in the last 5 minutes for users with a registered iPhone, not pushed yet. `claim_due_reminders()` marks and returns them in one statement.
+- **Sealing**: `{kind, title, body, id?}` as JSON, AES-256-GCM with that iPhone's key, sent as base64(nonce ‖ ciphertext ‖ tag), CryptoKit's combined form. `functions/push` posts `{token, kind, enc, collapse: todo id}` to `PUSH_RELAY_URL` (the publisher's by default); a 410 from the relay deletes the device.
+- **Relay** (`functions/relay`, publisher only: `tool/deploy-relay.sh <ref> <AuthKey_ID.p8> <team>`): signs an ES256 provider token (cached 40 min), sends an alert with generic text (`Reminder` / `Terminal`), `mutable-content: 1`, the todo category for reminders and `enc`. It tries production, then the sandbox on `BadDeviceToken` (builds from Xcode / `flutter run` get sandbox tokens), and answers 410 for tokens Apple calls gone.
+- **iPhone** (`ios/DzepPush`, a Notification Service Extension sharing the App Group): opens `enc` with `pushKey` and replaces the title and body, and puts `kind` and `todo` in `userInfo`. A tap on a reminder opens the todo, **Done** ticks it off like a local one; a terminal push opens the Terminal tab.
+- **Terminal**: omp's extension posts `/v1/notify` on its final `agent_end`; the Mac forwards it (`push {action: notify}`, the user's token) only if nobody has touched the Mac for 60 s (`CGEventSource.secondsSinceLastEventType`).
+- A fork with its own bundle id deploys its own relay and sets `PUSH_RELAY_URL` on its servers.
 
 ## Terminal API (Mac)
 
@@ -81,6 +102,7 @@ GET   /v1/ideas?kind=todo        → {"ideas": [...]}  open todos, oldest first
 GET   /v1/ideas?kind=note        → {"ideas": [...]}  notes, oldest first
 POST  /v1/ideas                  {title, kind?, notes?, project?}   (a note: its text in title, or title + notes)
 PATCH /v1/ideas/ID               {done} (todos only)
+POST  /v1/notify                 {title, body?} → {"sent": bool}   push to the iPhone if the Mac has been idle a minute
 Authorization: Bearer <token>
 ```
 

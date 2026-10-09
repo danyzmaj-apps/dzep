@@ -146,6 +146,8 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       let count = args["count"] as? Int ?? 0
       statusItem?.button?.title = count > 0 ? " \(count)" : ""
       result(nil)
+    case "idleSeconds":
+      result(CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!))
     case "setSharedTodos":
       // The desktop widget's snapshot (macos/DzepWidget); null once signed out.
       let todos = (args["todos"] as? [[String: String]])?.compactMap { t -> DzepShared.Todo? in

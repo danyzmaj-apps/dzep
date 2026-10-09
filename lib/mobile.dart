@@ -50,6 +50,7 @@ class MobileSession extends Session {
 
     store.addListener(shareTodos);
     shareTodos();
+    unawaited(_registerPush(store.userId));
     await drainPending();
     final saved = _prefs.getString(_tokenKey);
     if (saved != null && _prefs.getString(_tokenUserKey) == store.userId) {
@@ -68,13 +69,44 @@ class MobileSession extends Session {
     }
   }
 
+  static const _pushTokenKey = 'dzep_push_token';
+  static const _pushUserKey = 'dzep_push_user';
+
+  /// Hands this iPhone's APNs token and push key to the user's server, which
+  /// from then on pushes the reminders (functions/push). Until that has
+  /// worked once for this user, reminders stay local; a server without the
+  /// push function (not updated yet) keeps them local for good.
+  Future<void> _registerPush(String userId) async {
+    if (_prefs.getString(_pushUserKey) == userId) remindersByPush = true;
+    try {
+      final push = await Native.registerPush();
+      if (push == null || user?.id != userId) return;
+      await client.functions.invoke(
+        'push',
+        body: {'action': 'register', 'token': push.token, 'key': push.key, 'label': device},
+      );
+      await _prefs.setString(_pushTokenKey, push.token);
+      await _prefs.setString(_pushUserKey, userId);
+      remindersByPush = true;
+    } on Object catch (e) {
+      debugPrint('Džep: push registration failed: $e');
+    }
+  }
+
   @override
   Future<void> onSigningOut() async {
     final token = _prefs.getString(_tokenKey);
+    final pushToken = _prefs.getString(_pushTokenKey);
     await _prefs.remove(_tokenKey);
     await _prefs.remove(_tokenUserKey);
+    await _prefs.remove(_pushTokenKey);
+    await _prefs.remove(_pushUserKey);
+    remindersByPush = false;
     await Native.setSharedToken(null);
     if (token != null) await client.from('device_tokens').delete().eq('token_hash', _hash(token));
+    if (pushToken != null) {
+      await client.functions.invoke('push', body: {'action': 'unregister', 'token': pushToken});
+    }
   }
 }
 
@@ -210,12 +242,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// From ios/Runner/AppDelegate.swift: a reminder was tapped, or its Done
-  /// couldn't reach the server and waits in the App Group.
+  /// couldn't reach the server and waits in the App Group, or a terminal
+  /// push was tapped.
   void _onNative(String event, Map<Object?, Object?> _) {
     if (!mounted) return;
     switch (event) {
       case 'openTodo':
         unawaited(_openTapped());
+      case 'openTerminal':
+        setState(() => _tab = 4);
       case 'pending':
         unawaited(widget.session.drainPending());
     }

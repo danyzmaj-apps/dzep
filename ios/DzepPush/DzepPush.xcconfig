@@ -1,0 +1,5 @@
+// The push notification extension builds from Flutter's generated settings (version,
+// build number) and the shared ids, but not CocoaPods: it links system
+// frameworks only.
+#include "../Flutter/Generated.xcconfig"
+#include "../../config/Dzep.xcconfig"

@@ -17,12 +17,18 @@ import 'package:flutter/foundation.dart';
 ///   POST  /v1/ideas                {title, kind?, notes?, project?} → {"idea": {...}}
 ///                                  (a note: its text in title, or title + notes)
 ///   PATCH /v1/ideas/ID             {done} (todos only) → {"idea": {...}}
+///   POST  /v1/notify               {title, body?} → {"sent": bool}: push to the iPhone
+///                                  if nobody has used this Mac for a minute
 ///
 /// Writes go through the [IdeaStore], so they sync like any other edit.
 class LocalApi {
-  LocalApi(this._store);
+  LocalApi(this._store, this._notify);
 
   final IdeaStore? Function() _store;
+
+  /// Pushes a notification to the user's iPhones; false when it didn't go
+  /// (someone is at the Mac, no iPhone, offline).
+  final Future<bool> Function(String title, String body) _notify;
   HttpServer? _server;
   late final String _token = List.generate(
     32,
@@ -72,6 +78,16 @@ class LocalApi {
     final store = _store();
     if (store == null) return (401, {'error': 'Sign in to Džep first.'});
     final path = req.uri.pathSegments;
+
+    // A coding session finished (omp's agent_end): tell the iPhone, unless
+    // someone is at this Mac.
+    if (req.method == 'POST' && path.length == 2 && path[0] == 'v1' && path[1] == 'notify') {
+      final body = jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>;
+      final title = (body['title'] as String? ?? '').trim();
+      if (title.isEmpty) return (400, {'error': 'title is required.'});
+      return (200, {'sent': await _notify(title, (body['body'] as String? ?? '').trim())});
+    }
+
     if (path.length < 2 || path[0] != 'v1' || path[1] != 'ideas') return (404, {'error': 'Not found.'});
 
     if (req.method == 'GET' && path.length == 2) {

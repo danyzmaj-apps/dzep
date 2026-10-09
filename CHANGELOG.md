@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Push notifications on the iPhone**: reminders arrive on time even when Džep hasn't been opened since they were set on the Mac, and a todo ticked off elsewhere no longer goes off. When an omp session finishes while you're away from the Mac, the iPhone gets a push too (tap: Terminal tab). Your server encrypts every notification with a key only your iPhone has; the relay that hands it to Apple sees only ciphertext.
 - **Setup wizard**: on first launch the Mac app sets up your server for you (Supabase project, tables, GitHub sign-in, functions, AI key) from a Supabase access token. No repo or CLI needed; `tool/setup-backend.sh` still works.
 - **iPhone setup by QR**: Mac **Settings → Set up iPhone…** shows a one-time code (10 minutes); the iPhone app scans it with its own camera and signs in, no GitHub login on the phone.
 - **New icon**: a pocket with a note in it ("džep" is Croatian for pocket), in the app icons, the Mac menu bar and the app's screens.

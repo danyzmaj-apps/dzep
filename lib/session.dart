@@ -227,11 +227,25 @@ class Session extends ChangeNotifier {
   List<Reminder>? _reminders;
   bool _sendingReminders = false;
 
+  /// The server pushes this device's reminders (functions/push), so it
+  /// schedules none itself: both would go off.
+  bool _remindersByPush = false;
+  bool get remindersByPush => _remindersByPush;
+
+  @protected
+  set remindersByPush(bool value) {
+    if (value == _remindersByPush) return;
+    _remindersByPush = value;
+    _syncReminders(_store);
+  }
+
   /// Keeps this device's pending notifications equal to [pendingReminders]
   /// of the open store, on every change to it; native code only schedules.
   void _syncReminders(IdeaStore? store) {
     if (store != _store) return;
-    final due = store == null ? const <Reminder>[] : pendingReminders(store.openTodos, DateTime.now());
+    final due = store == null || _remindersByPush
+        ? const <Reminder>[]
+        : pendingReminders(store.openTodos, DateTime.now());
     if (listEquals(due, _reminders)) return;
     _reminders = due;
     if (!_sendingReminders) unawaited(_sendReminders());

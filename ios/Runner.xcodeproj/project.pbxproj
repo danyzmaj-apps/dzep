@@ -14,21 +14,32 @@
 		2A4EF77519D735760060E234 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 271103C8B51654A058C807AB /* Pods_Runner.framework */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
+		44B2582FAE8711537C9BCBFF /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F92AF8CCFA21587D43A34AA6 /* NotificationService.swift */; };
 		4C9DA3284460AAB68B74BF5F /* DzepWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DA086895D1496E904500F046 /* DzepWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5E5D7DC910D5F938E0C5B2CE /* DzepPush.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 253072033A289A134696B750 /* DzepPush.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		97514C1BAA21D2DA5D20CDE3 /* DzepWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E38265C13E6F0BF70250A40 /* DzepWidget.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
-		F1A2B3C4D5E6F7A8B9C0D1E3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E2 /* PrivacyInfo.xcprivacy */; };
+		9F92D8EF6D7B663C16E4C9B1 /* DzepShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F282ABC65C3976B71350A6FA /* DzepShared.swift */; };
 		A22F99F5DB1A0C87B20A98C0 /* DzepShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F282ABC65C3976B71350A6FA /* DzepShared.swift */; };
 		CD6FCE96FA3B4AF969E38283 /* AddIdeaIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73FC57645BB2B64188AE6591 /* AddIdeaIntent.swift */; };
 		D4D28887640318B87505ACB3 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
+		EE55FF83F5BEB2B72B07637F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
+		F1A2B3C4D5E6F7A8B9C0D1E3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E2 /* PrivacyInfo.xcprivacy */; };
 		F52923C8703C13E38558B605 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E6DCE7634C573C852A2FA7F /* Pods_RunnerTests.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		126E651ACB5845D0CC64F8E4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1BF65F914C1014560B0737F0;
+			remoteInfo = DzepPush;
+		};
 		331C8085294A63A400263BE5 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
@@ -63,6 +74,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				4C9DA3284460AAB68B74BF5F /* DzepWidget.appex in Embed Foundation Extensions */,
+				5E5D7DC910D5F938E0C5B2CE /* DzepPush.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -70,8 +82,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		07E388AE79A2640B9161AC70 /* DzepPush.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = DzepPush.xcconfig; sourceTree = "<group>"; };
+		0832AC7E8AC8A1C589B289C8 /* DzepPush.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = DzepPush.entitlements; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
+		253072033A289A134696B750 /* DzepPush.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DzepPush.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		271103C8B51654A058C807AB /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		2B85076E99CD9481182D8DB7 /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		2E1CFE68F9BBE39C089CA7F8 /* Runner.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
@@ -79,6 +94,7 @@
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
+		3B9396AAEB198572B5F084DB /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		40206ADEC13E3989BEE81514 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		47DE70D6EBC39F343AEFC816 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		5E38265C13E6F0BF70250A40 /* DzepWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DzepWidget.swift; sourceTree = "<group>"; };
@@ -97,15 +113,16 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		F1A2B3C4D5E6F7A8B9C0D1E2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B04F24C543C64395BA257B95 /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		B07F5FDC52D9D055C579F441 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		D649B0C14B0E29605AC57344 /* DzepWidget.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = DzepWidget.entitlements; sourceTree = "<group>"; };
 		D649B0C14B0E29605AC57345 /* DzepWidget.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DzepWidget.xcconfig; sourceTree = "<group>"; };
 		D7F963ECF0CF4A09CDBB1DD3 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		DA086895D1496E904500F046 /* DzepWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DzepWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F1A2B3C4D5E6F7A8B9C0D1E2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F282ABC65C3976B71350A6FA /* DzepShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DzepShared.swift; sourceTree = "<group>"; };
 		F6AAE2D3AE02F294270C2A9D /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		F92AF8CCFA21587D43A34AA6 /* NotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -132,6 +149,14 @@
 				D4D28887640318B87505ACB3 /* Foundation.framework in Frameworks */,
 				183FC9797C99AE135BEB7429 /* WidgetKit.framework in Frameworks */,
 				0D8A2CC3F8EBCB30E3060484 /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7EF2E52C8E3224ADF0206E0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EE55FF83F5BEB2B72B07637F /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -214,6 +239,7 @@
 				5A001806F2B94C0CE1E3E384 /* DzepWidget */,
 				67F06F5AD4825B909C575A20 /* Pods */,
 				A874B4B61E4E84133B640F91 /* Shared */,
+				9A5C84AD9FE92D463367BEDB /* DzepPush */,
 			);
 			sourceTree = "<group>";
 		};
@@ -223,6 +249,7 @@
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
 				DA086895D1496E904500F046 /* DzepWidget.appex */,
+				253072033A289A134696B750 /* DzepPush.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -246,6 +273,18 @@
 			path = Runner;
 			sourceTree = "<group>";
 		};
+		9A5C84AD9FE92D463367BEDB /* DzepPush */ = {
+			isa = PBXGroup;
+			children = (
+				F92AF8CCFA21587D43A34AA6 /* NotificationService.swift */,
+				3B9396AAEB198572B5F084DB /* Info.plist */,
+				0832AC7E8AC8A1C589B289C8 /* DzepPush.entitlements */,
+				07E388AE79A2640B9161AC70 /* DzepPush.xcconfig */,
+			);
+			name = DzepPush;
+			path = DzepPush;
+			sourceTree = "<group>";
+		};
 		A874B4B61E4E84133B640F91 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
@@ -258,6 +297,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1BF65F914C1014560B0737F0 /* DzepPush */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CFDE29A0F16A04520C3176C7 /* Build configuration list for PBXNativeTarget "DzepPush" */;
+			buildPhases = (
+				F09BBBCA47F85E0F531587C3 /* Sources */,
+				C7EF2E52C8E3224ADF0206E0 /* Frameworks */,
+				CD67E6AEAE46F48387E75ACE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DzepPush;
+			productName = DzepPush;
+			productReference = 253072033A289A134696B750 /* DzepPush.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		331C8080294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */;
@@ -312,6 +368,7 @@
 			);
 			dependencies = (
 				CFE5A4FD96980A08B649AAC8 /* PBXTargetDependency */,
+				421718AF2E1A4D7F5156551F /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
@@ -354,6 +411,7 @@
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
 				77C5320EB1F31192F8445E90 /* DzepWidget */,
+				1BF65F914C1014560B0737F0 /* DzepPush */,
 			);
 		};
 /* End PBXProject section */
@@ -382,6 +440,13 @@
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
 				F1A2B3C4D5E6F7A8B9C0D1E3 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CD67E6AEAE46F48387E75ACE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -512,6 +577,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F09BBBCA47F85E0F531587C3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				44B2582FAE8711537C9BCBFF /* NotificationService.swift in Sources */,
+				9F92D8EF6D7B663C16E4C9B1 /* DzepShared.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -519,6 +593,12 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		421718AF2E1A4D7F5156551F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = DzepPush;
+			target = 1BF65F914C1014560B0737F0 /* DzepPush */;
+			targetProxy = 126E651ACB5845D0CC64F8E4 /* PBXContainerItemProxy */;
 		};
 		CFE5A4FD96980A08B649AAC8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -705,6 +785,35 @@
 			};
 			name = Profile;
 		};
+		8E81526D0371566950832533 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 07E388AE79A2640B9161AC70 /* DzepPush.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = DzepPush/DzepPush.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = "$(DZEP_TEAM)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DzepPush/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DZEP_BUNDLE_ID).DzepPush";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Profile;
+		};
 		97C147031CF9000F007C117D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -867,6 +976,34 @@
 			};
 			name = Release;
 		};
+		A10A9522586A2778FA5269A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 07E388AE79A2640B9161AC70 /* DzepPush.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = DzepPush/DzepPush.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = "$(DZEP_TEAM)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DzepPush/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DZEP_BUNDLE_ID).DzepPush";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		A8D5C68943390A22FDF81F4B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D649B0C14B0E29605AC57345 /* DzepWidget.xcconfig */;
@@ -895,6 +1032,35 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		B998B2CDD2887CAFCF4E3EAE /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 07E388AE79A2640B9161AC70 /* DzepPush.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = DzepPush/DzepPush.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = "$(DZEP_TEAM)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DzepPush/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DZEP_BUNDLE_ID).DzepPush";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
 		};
 		C57E2FC01E82E862C0BF48E2 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -965,6 +1131,16 @@
 				C57E2FC01E82E862C0BF48E2 /* Release */,
 				A8D5C68943390A22FDF81F4B /* Debug */,
 				7340140D5E864097988800AA /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CFDE29A0F16A04520C3176C7 /* Build configuration list for PBXNativeTarget "DzepPush" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B998B2CDD2887CAFCF4E3EAE /* Release */,
+				A10A9522586A2778FA5269A9 /* Debug */,
+				8E81526D0371566950832533 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
