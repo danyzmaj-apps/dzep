@@ -9,7 +9,7 @@
 - Fixed: on the Mac, Settings could ignore the gear and Done (the main window didn't redraw on app changes).
 - Fixed: the popup could crash at launch when it opened in Ask mode before the chats had loaded.
 - **Notes**: free-text notes next to ideas and todos, first line as the title, saved as you type. In the popup (⌘3), the main window's Notes, the iPhone's Notes tab, Siri ("add a note to Džep") and omp's `/note`.
-- **Simpler popup**: it opens straight into the mode you used last; a strip on top (⌘1–⌘4: Idea, Todo, Note, Ask) replaces the 1/2/3/4 chooser.
+- **Simpler popup**: it opens straight into the mode you used last; a strip on top (⌘1–⌘4: Idea, Todo, Note, Ask) replaces the 1/2/3/4 chooser, with **Open app** (⌘5) at its far right.
 - **Simpler main window**: the sidebar is Todos, Ideas, Notes, Ask and your projects; done todos fold away under the open ones instead of a separate list.
 - Quick questions take images: paste with ⌘V or attach with 📎 in the Mac popup and main window, paste or pick from Photos on the iPhone. Up to 4 per question, scaled to 2048 px at most; they show in the chat history on every device.
 - Fixed: right after launch the Mac could join the terminal channel before its sign-in was ready, and then never hear the iPhone (its Terminal tab spun forever).

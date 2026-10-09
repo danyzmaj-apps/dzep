@@ -22,7 +22,7 @@ final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
 
 /// The ⇧⌘Space panel. It opens straight into the mode it was last used in,
 /// field focused: an idea, a todo, a note or a quick question (⌘1–⌘4 or the
-/// strip at the top switch). ↵ saves and gets out of the way.
+/// strip at the top switch; ⌘5 opens the app). ↵ saves and gets out of the way.
 class Popup extends StatefulWidget {
   const Popup({required this.app, super.key});
   final AppController app;
@@ -159,6 +159,10 @@ class _PopupState extends State<Popup> {
     final k = e.logicalKey;
     if (_cmd && !_shift && _modeKeys[k] != null) {
       _setMode(_modeKeys[k]!);
+      return true;
+    }
+    if (_cmd && !_shift && k == LogicalKeyboardKey.digit5) {
+      unawaited(app.openMain());
       return true;
     }
     // The chat's keys work whether the field or the transcript has focus.
@@ -476,32 +480,30 @@ class _PopupState extends State<Popup> {
     ),
   );
 
-  /// The strip on top: which mode ↵ saves in (⌘1–⌘4), and the way to the app.
+  /// The strip on top: which mode ↵ saves in (⌘1–⌘4), and the way to the app
+  /// (⌘5).
   Widget _modes() {
-    Widget tab(PopupMode mode, IconData icon, String label, int n) {
-      final on = _mode == mode;
-      return Hoverable(
-        onTap: () => _setMode(mode),
-        builder: (hover) => Container(
-          margin: const EdgeInsets.only(right: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: on ? C.sel : (hover ? C.hover : null),
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: on ? C.accent : C.dim),
-              const SizedBox(width: 6),
-              Text(label, style: TextStyle(fontSize: 12.5, color: on ? C.text : C.dim)),
-              const SizedBox(width: 6),
-              Text('⌘$n', style: const TextStyle(fontSize: 11, color: C.dim2)),
-            ],
-          ),
+    Widget button(IconData icon, String label, int n, {required bool on, required VoidCallback onTap}) => Hoverable(
+      onTap: onTap,
+      builder: (hover) => Container(
+        margin: const EdgeInsets.only(right: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(color: on ? C.sel : (hover ? C.hover : null), borderRadius: BorderRadius.circular(7)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: on ? C.accent : C.dim),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(fontSize: 12.5, color: on ? C.text : C.dim)),
+            const SizedBox(width: 6),
+            Text('⌘$n', style: const TextStyle(fontSize: 11, color: C.dim2)),
+          ],
         ),
-      );
-    }
+      ),
+    );
+
+    Widget tab(PopupMode mode, IconData icon, String label, int n) =>
+        button(icon, label, n, on: _mode == mode, onTap: () => _setMode(mode));
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
@@ -512,16 +514,7 @@ class _PopupState extends State<Popup> {
           tab(PopupMode.note, Icons.sticky_note_2_outlined, 'Note', 3),
           tab(PopupMode.ask, Icons.auto_awesome, 'Ask', 4),
           const Spacer(),
-          Tooltip(
-            message: 'Open Džep',
-            child: Hoverable(
-              onTap: () => unawaited(app.openMain()),
-              builder: (hover) => Padding(
-                padding: const EdgeInsets.all(6),
-                child: Icon(Icons.open_in_new, size: 14, color: hover ? C.text : C.dim),
-              ),
-            ),
-          ),
+          button(Icons.open_in_new, 'Open app', 5, on: false, onTap: () => unawaited(app.openMain())),
         ],
       ),
     );
