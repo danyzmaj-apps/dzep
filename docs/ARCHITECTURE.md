@@ -11,6 +11,8 @@ The first design mockup is `design/mockup.html`.
 | `lib/idea.dart` | One row of `ideas`: an idea or a todo (`kind`) |
 | `lib/session.dart` | The connected backend, GitHub sign-in and the user's `IdeaStore` / `ChatStore` (shared) |
 | `lib/backend.dart`, `setup.dart` | Which Supabase project to use: parsing and checking it, setup links, the setup screen |
+| `lib/onboarding/` | First-run setup: the wizard (`flow.dart`, `wizard.dart`), provisioning through the Supabase Management API (`supabase_admin.dart`, `provision.dart`), the Mac's pairing QR (`pair.dart`) and the iPhone's scanner (`scan.dart`) |
+| `lib/logo.dart` | The pocket mark, drawn in Flutter (the app icons come from `tool/make_icon.swift`) |
 | `lib/remind.dart` | Reminders: the `!` parser, how a time reads, which todos should have a notification pending (pure Dart, `test/remind_test.dart`) |
 | `lib/store.dart` | Local JSON cache + Supabase sync (push dirty, pull since cursor, realtime) |
 | `lib/controller.dart`, `popup.dart`, `main_window.dart`, `native.dart` | Mac app |
@@ -25,7 +27,7 @@ The first design mockup is `design/mockup.html`.
 | `ios/DzepWidget/` | WidgetKit extension (Todos, New idea) |
 | `macos/DzepWidget/` | Mac WidgetKit extension (Todos), sandboxed; its ticks go through the running app |
 | `ios/Shared/DzepShared.swift` | App Group storage + `device` function client (app and widget; the Mac's app and widget compile it too) |
-| `supabase/` | Migrations and the `device` edge function |
+| `supabase/` | Migrations and the `ask`, `device` and `pair` edge functions |
 | `maestro/` | Simulator flows |
 | `config/Dzep.xcconfig` | Team, bundle id and App Group for every Xcode target (`Local.xcconfig` overrides them) |
 | `tool/setup-backend.sh`, `release.sh` | Self-hosting setup; Mac release (DMG, notarization, Sparkle appcast) |
@@ -44,6 +46,8 @@ Every user runs their own Supabase project ([SELF_HOSTING.md](SELF_HOSTING.md)),
 - Terminal from iPhone: private Realtime broadcast on `terminal:<user id>`, nothing stored. RLS on `realtime.messages` lets only that user join, to receive or to send (a public channel of the same name is a separate room the apps never join). While its Terminal screens are open the iPhone says `hello` every 4 s; the Mac answers each with `state` (windows, projects) and, while some phone has said hello in the last 12 s, polls kitty every second and sends a watched window's `screen` (with its newest ~64 KB of scrollback; Realtime drops messages past ~100 KB) when it changes. `run` (`send`, `key`, `launch`, `close`, `image`) is answered with `ran`. The iPhone calls the Mac offline after 10 s without word. Window keys are `<socket>/<window id>`; keys are a fixed list, and nothing the phone sends reaches a shell except as typed text.
 - Auth: GitHub only, through each owner's OAuth app (`[auth.external.github]`, secrets in the git-ignored `supabase/.env`); redirect `dzep://login-callback`. The `before_user_created` auth hook lets the first account in and then only emails listed in `public.allowed_signups`, so a stranger who learns the URL can't sign up and spend the owner's AI key. `delete_my_account()` deletes the caller from `auth.users`, which cascades to all their rows; the app empties their Storage folder first.
 - Sync pulls page through `fetchAll` (`lib/store.dart`): PostgREST returns at most `max_rows` (1000) rows per request, and a batch upsert gives many rows the same `updated_at`, so pages are offsets in a stable order (`updated_at`, `id`) within one pull, and the cursor moves only after.
+- **Setup wizard** (`lib/onboarding/`): with a Management API token the Mac app does what `tool/setup-backend.sh` does. The migrations and function sources ship as app assets (`pubspec.yaml`), so a downloaded app needs neither the repo nor the CLI. Migrations run one per transaction and are recorded in `supabase_migrations.schema_migrations`, the CLI's own table, so the script and the wizard agree on what's applied. Steps are idempotent and a retry skips the finished ones. The token is never stored.
+- **Pairing** (`functions/v1/pair`, user's token): `auth.admin.generateLink({type: 'magiclink'})` for the caller's own email; it returns only the hashed token. The Mac puts it in a setup link (`dzep://setup?url=…&key=…&pair=<hash>`) shown as a QR; the iPhone redeems it with `verifyOTP(type: magiclink, tokenHash)` and gets its own session. Single use; `mailer_otp_exp` / `otp_expiry` = 600 s. A device already signed in refuses a link for another server. Deployed with `--no-verify-jwt`.
 
 `tool/setup-backend.sh` sets all of this up on a project and is safe to run again after an update.
 

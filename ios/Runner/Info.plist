@@ -8,6 +8,8 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Pick an image to attach to an omp session on your Mac.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan the setup code your Mac shows, to connect and sign in.</string>
 	<key>CFBundleDisplayName</key>
 	<string>Džep</string>
 	<key>CFBundleExecutable</key>

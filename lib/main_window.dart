@@ -5,7 +5,9 @@ import 'package:dzep/chat_view.dart';
 import 'package:dzep/controller.dart';
 import 'package:dzep/idea.dart';
 import 'package:dzep/kitty.dart';
+import 'package:dzep/logo.dart';
 import 'package:dzep/native.dart';
+import 'package:dzep/onboarding/pair.dart';
 import 'package:dzep/popup.dart';
 import 'package:dzep/remind.dart';
 import 'package:dzep/session.dart';
@@ -86,7 +88,7 @@ class SignInPage extends StatelessWidget {
               ),
               border: Border.all(color: const Color(0xFF3A4160)),
             ),
-            child: const Text('💡', style: TextStyle(fontSize: 36)),
+            child: const DzepLogo(size: 52),
           ),
           const SizedBox(height: 18),
           const Text('Džep', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
@@ -759,7 +761,7 @@ class _EmptyDetail extends StatelessWidget {
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Opacity(opacity: .5, child: Text('💡', style: TextStyle(fontSize: 40))),
+        Opacity(opacity: .35, child: DzepLogo(size: 52)),
         SizedBox(height: 8),
         Text('Nothing selected', style: TextStyle(color: C.dim)),
       ],
@@ -1358,14 +1360,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
                         trailing: _button('Sign out', () => unawaited(app.signOut()), danger: true),
                       ),
                       _row(
-                        label: 'Supabase project',
-                        sub: '${app.backend?.host ?? ''} · Copy the setup link to connect your iPhone',
-                        trailing: _button('Copy setup link', () {
-                          final link = app.backend?.link;
-                          if (link == null) return;
-                          unawaited(Clipboard.setData(ClipboardData(text: link.toString())));
-                          Toaster.of(context).show('Setup link copied. Open it on your iPhone.');
-                        }),
+                        label: 'Your server',
+                        sub: '${app.backend?.host ?? ''} · Scan a code with your iPhone to connect it',
+                        trailing: _button('Set up iPhone…', () => unawaited(showPairingQr(context, app))),
                       ),
                       _row(
                         label: 'Delete account',

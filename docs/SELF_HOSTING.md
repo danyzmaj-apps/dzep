@@ -1,8 +1,22 @@
 # Self-hosting
 
-Džep has no central server. Your ideas, todos and chats live in a Supabase project that you own, and the apps connect to it. This takes about 10 minutes, once. The free Supabase plan is more than enough for one person.
+Džep has no central server. Your ideas, todos and chats live in a Supabase project that you own, and the apps connect to it. This takes a few minutes, once. The free Supabase plan is more than enough for one person.
 
-You need:
+## The easy way: the Mac app
+
+Install Džep and open it. With no server yet, it starts a setup wizard:
+
+1. **Supabase access token.** Create one at [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) (`sbp_…`) and paste it. It's used for this setup only and never saved.
+2. **Project.** Pick an existing project or let Džep create one (region guessed from your time zone).
+3. **GitHub sign-in.** Džep opens GitHub's "new OAuth app" form with the name and callback URL filled in; paste back the client ID and secret.
+4. **AI (optional).** DeepSeek, OpenAI, OpenRouter or any OpenAI-compatible API, with its key.
+5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in, private sign-up and the `dzep://` redirect, deploys the `ask`, `device` and `pair` functions and stores the AI key as a function secret. If a step fails, **Try again** resumes from it.
+
+Then sign in with GitHub. For the iPhone, see [Connect the apps](#connect-the-apps).
+
+## The script
+
+Same result from a terminal. You need:
 
 - a [Supabase](https://supabase.com) account,
 - a GitHub account (Džep signs in with GitHub),
@@ -10,11 +24,11 @@ You need:
 - this repository: `git clone https://github.com/danyzmaj-apps/dzep && cd dzep`,
 - optionally, an API key for any OpenAI-compatible AI provider, for quick questions.
 
-## 1. Create a Supabase project
+### 1. Create a Supabase project
 
 At [supabase.com/dashboard](https://supabase.com/dashboard), choose **New project**. Pick a region near you and keep the database password somewhere safe; Džep itself never needs it. Note the project ref: it's the `abcdefghijklmnopqrst` in `https://abcdefghijklmnopqrst.supabase.co`.
 
-## 2. Run the setup script
+### 2. Run the setup script
 
 ```sh
 tool/setup-backend.sh <project-ref>
@@ -26,15 +40,15 @@ It walks you through the rest:
 2. It asks you to **create a GitHub OAuth app** at [github.com/settings/applications/new](https://github.com/settings/applications/new), with the callback URL `https://<project-ref>.supabase.co/auth/v1/callback`, and to paste its client ID and secret. They are stored in `supabase/.env`, which git ignores.
 3. It creates the tables, security rules and storage (`supabase db push`).
 4. It turns on GitHub sign-in, the `dzep://` redirect and private sign-up (`supabase config push`).
-5. It deploys the two edge functions, `ask` and `device`.
+5. It deploys the edge functions: `ask`, `device` and `pair`.
 6. It asks for your AI provider (see [AI provider](#ai-provider)). You can skip this.
 
 At the end it prints a **setup link**: `dzep://setup?url=…&key=…`. It holds only your project URL and its publishable key, both of which are safe in an app; row-level security protects your data.
 
-## 3. Connect the apps
+## Connect the apps
 
-- **Mac**: install Džep from [Releases](https://github.com/danyzmaj-apps/dzep/releases/latest), then open the setup link (the script offers to) or paste it into Džep's setup screen. Sign in with GitHub.
-- **iPhone**: build it ([BUILDING.md](BUILDING.md#iphone)), then open the setup link on the phone: send it to yourself in Notes or Messages, or use **Settings → Copy setup link** on the Mac.
+- **Mac**: install Džep from [Releases](https://github.com/danyzmaj-apps/dzep/releases/latest), then open the setup link (the script offers to) or paste it into Džep's setup screen (**I already have one: connect it**). Sign in with GitHub.
+- **iPhone**: on the Mac, **Settings → Set up iPhone…** shows a QR code. In the iPhone app, tap **Scan the code from your Mac**. The code carries the server address, its publishable key and a one-time sign-in code, so the phone signs in as you without GitHub. It works once and expires after 10 minutes; anyone who scans it gets into your account, so only show it to your own phone. No camera? **Paste a setup link instead** takes the same link.
 
 The first account that signs in **owns the server**.
 

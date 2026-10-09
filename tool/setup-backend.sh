@@ -64,6 +64,7 @@ supabase config push --yes
 say "5/6  Edge functions"
 supabase functions deploy ask --no-verify-jwt
 supabase functions deploy device --no-verify-jwt
+supabase functions deploy pair --no-verify-jwt
 
 say "6/6  AI for quick questions"
 if supabase secrets list 2>/dev/null | grep -q AI_API_KEY; then

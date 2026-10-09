@@ -142,7 +142,7 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       if let event = currentEvent { performDrag(with: event) }
       result(nil)
     case "setTodoCount":
-      // "💡 3" in the menu bar: open todos at a glance.
+      // The pocket icon then "3" in the menu bar: open todos at a glance.
       let count = args["count"] as? Int ?? 0
       statusItem?.button?.title = count > 0 ? " \(count)" : ""
       result(nil)
@@ -279,14 +279,54 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
   private func setupStatusItem() {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     if let button = item.button {
-      button.image = NSImage(systemSymbolName: "lightbulb", accessibilityDescription: "Džep")
-      button.image?.isTemplate = true
+      button.image = Self.pocketIcon()
       button.imagePosition = .imageLeading
       button.target = self
       button.action = #selector(statusClicked(_:))
       button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
     statusItem = item
+  }
+
+  /// The menu bar mark: the app icon's pocket with a note tucked in, drawn
+  /// as a template so macOS tints it for light and dark menu bars.
+  private static func pocketIcon() -> NSImage {
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+      // The note, tilted, behind the pocket.
+      NSGraphicsContext.saveGraphicsState()
+      let tilt = NSAffineTransform()
+      tilt.translateX(by: 9.6, yBy: 11.6)
+      tilt.rotate(byDegrees: -9)
+      tilt.concat()
+      NSColor.black.setFill()
+      NSBezierPath(roundedRect: NSRect(x: -3.6, y: -3, width: 7.2, height: 6.6), xRadius: 1, yRadius: 1).fill()
+      NSGraphicsContext.restoreGraphicsState()
+
+      let pocket = NSBezierPath()
+      pocket.move(to: NSPoint(x: 3, y: 10.6))
+      pocket.line(to: NSPoint(x: 15, y: 10.6))
+      pocket.line(to: NSPoint(x: 15, y: 5.4))
+      pocket.line(to: NSPoint(x: 9, y: 1.8))
+      pocket.line(to: NSPoint(x: 3, y: 5.4))
+      pocket.close()
+      pocket.lineJoinStyle = .round
+      // Hollow pocket: clears the note where the pocket covers it.
+      NSGraphicsContext.current?.compositingOperation = .clear
+      pocket.fill()
+      NSGraphicsContext.current?.compositingOperation = .sourceOver
+      pocket.lineWidth = 1.5
+      pocket.stroke()
+      let hem = NSBezierPath()
+      hem.move(to: NSPoint(x: 4.5, y: 8.6))
+      hem.line(to: NSPoint(x: 13.5, y: 8.6))
+      hem.lineWidth = 1
+      hem.setLineDash([1.4, 1.2], count: 2, phase: 0)
+      hem.stroke()
+      return true
+    }
+    image.isTemplate = true
+    image.accessibilityDescription = "Džep"
+    return image
   }
 
   @objc private func statusClicked(_ sender: NSStatusBarButton) {

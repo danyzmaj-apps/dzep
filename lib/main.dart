@@ -65,7 +65,10 @@ class _DzepWindowsState extends State<DzepWindows> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final app = widget.app;
-    Widget window(Widget child) => MaterialApp(
+    // Built inside the builder, so every change to [app] rebuilds the
+    // window's content (a prebuilt child would be reused as is, and screens
+    // reading app state — the Settings sheet — would never update).
+    Widget window(Widget Function() content) => MaterialApp(
       title: 'Džep',
       debugShowCheckedModeBanner: false,
       theme: appTheme(),
@@ -73,7 +76,7 @@ class _DzepWindowsState extends State<DzepWindows> with WidgetsBindingObserver {
       home: Material(
         type: MaterialType.transparency,
         child: Toaster(
-          child: ListenableBuilder(listenable: app, builder: (_, _) => child),
+          child: ListenableBuilder(listenable: app, builder: (_, _) => content()),
         ),
       ),
     );
@@ -87,19 +90,16 @@ class _DzepWindowsState extends State<DzepWindows> with WidgetsBindingObserver {
               // Stays mounted while hidden so it resets and takes keys the
               // moment the hotkey fires, before the next frame.
               child: window(
-                ListenableBuilder(
-                  listenable: app,
-                  builder: (_, _) => Offstage(
-                    offstage: !app.popupOpen,
-                    child: Popup(app: app),
-                  ),
+                () => Offstage(
+                  offstage: !app.popupOpen,
+                  child: Popup(app: app),
                 ),
               ),
             )
           else if (view.viewId == widget.ids.main)
             View(
               view: view,
-              child: window(MainWindow(app: app)),
+              child: window(() => MainWindow(app: app)),
             ),
       ],
     );

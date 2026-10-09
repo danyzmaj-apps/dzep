@@ -51,7 +51,7 @@ open ios/Runner.xcworkspace   # once: pick your phone, let Xcode register the de
 fvm flutter run -d <your-iphone> --release
 ```
 
-Then open your setup link on the phone ([SELF_HOSTING.md](SELF_HOSTING.md#3-connect-the-apps)).
+Then scan the Mac's setup code with it, or open your setup link on the phone ([SELF_HOSTING.md](SELF_HOSTING.md#connect-the-apps)).
 
 ## Backend, locally
 

@@ -45,30 +45,55 @@ class Session extends ChangeNotifier {
   String? authError;
 
   /// Launch: opens the backend this device was set up with, if any, and
-  /// listens for setup links (`dzep://setup?url=…&key=…`).
+  /// listens for setup links (`dzep://setup?url=…&key=…[&pair=…]`).
   Future<void> start() async {
-    _links = AppLinks().uriLinkStream.listen((uri) => unawaited(_onSetupLink(uri)));
+    _links = AppLinks().uriLinkStream.listen((uri) {
+      if (Backend.fromLink(uri) != null) unawaited(connectLink(uri));
+    });
     final saved = await Backend.load();
     if (saved != null) await connect(saved);
   }
 
   StreamSubscription<Uri>? _links;
 
-  Future<void> _onSetupLink(Uri uri) async {
+  /// A setup link: connects to its server and, with a pairing code (the
+  /// Mac's QR), signs in too. Problems land in [authError].
+  Future<void> connectLink(Uri uri) async {
     final backend = Backend.fromLink(uri);
-    if (backend == null || backend == _backend) return;
+    if (backend == null) return;
+    final code = uri.queryParameters['pair'];
     if (_user != null) {
-      authError = 'Sign out before switching to ${backend.host}.';
+      if (backend != _backend) authError = 'Sign out before switching to ${backend.host}.';
       notifyListeners();
       return;
     }
-    final problem = await backend.check();
-    if (problem != null) {
-      authError = problem;
-      notifyListeners();
-      return;
+    if (backend != _backend) {
+      final problem = await backend.check();
+      if (problem != null) {
+        authError = problem;
+        notifyListeners();
+        return;
+      }
+      await connect(backend);
     }
-    await connect(backend);
+    if (code == null) return;
+    try {
+      await client.auth.verifyOTP(type: OtpType.magiclink, tokenHash: code);
+    } on Object {
+      authError =
+          'That code has expired or was already used. Make a new one on your Mac '
+          '(Settings → Set up iPhone), or sign in with GitHub here.';
+      notifyListeners();
+    }
+  }
+
+  /// A setup link that also signs a new device in (functions/pair): works
+  /// once, for 10 minutes. Only while signed in.
+  Future<Uri> pairingLink() async {
+    final res = await client.functions.invoke('pair');
+    final hash = (res.data as Map)['token_hash'] as String;
+    final link = _backend!.link;
+    return link.replace(queryParameters: {...link.queryParameters, 'pair': hash});
   }
 
   /// Opens [backend] (and remembers it): the one saved at launch, the setup
@@ -182,8 +207,12 @@ class Session extends ChangeNotifier {
     _chats = null;
     _user = user;
     if (user != null) {
-      final store = _store = await IdeaStore.open(client, user.id, device);
-      _chats = await ChatStore.open(client, user.id);
+      // Both open before either is published: screens read the chats
+      // whenever the store is there.
+      final store = await IdeaStore.open(client, user.id, device);
+      final chats = await ChatStore.open(client, user.id);
+      _store = store;
+      _chats = chats;
       store.addListener(() => _syncReminders(store));
       _syncReminders(store);
       unawaited(onSignedIn(store));

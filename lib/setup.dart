@@ -1,6 +1,10 @@
 import 'dart:async';
 
 import 'package:dzep/backend.dart';
+import 'package:dzep/logo.dart';
+import 'package:dzep/onboarding/flow.dart';
+import 'package:dzep/onboarding/scan.dart';
+import 'package:dzep/onboarding/wizard.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +13,9 @@ import 'package:url_launcher/url_launcher.dart';
 const selfHostingGuide = 'https://github.com/danyzmaj-apps/dzep/blob/main/docs/SELF_HOSTING.md';
 
 /// First run: which Supabase project this device syncs through. Džep has no
-/// server of its own; every user runs theirs (docs/SELF_HOSTING.md).
+/// server of its own; every user runs theirs. The wizard sets one up from
+/// scratch (lib/onboarding/); a server that already exists connects with
+/// its setup link, or URL and key.
 class SetupPage extends StatefulWidget {
   const SetupPage({required this.session, super.key});
   final Session session;
@@ -21,6 +27,8 @@ class SetupPage extends StatefulWidget {
 class _SetupPageState extends State<SetupPage> {
   final _url = TextEditingController();
   final _key = TextEditingController();
+  final _flow = SetupFlow();
+  bool _existing = false;
   bool _busy = false;
   String? _error;
 
@@ -28,21 +36,51 @@ class _SetupPageState extends State<SetupPage> {
   void dispose() {
     _url.dispose();
     _key.dispose();
+    _flow.dispose();
     super.dispose();
   }
 
   Future<void> _connect() async {
-    // A whole setup link pasted into the URL field works too.
+    // A whole setup link pasted into the URL field works too, pairing code
+    // and all.
     final link = Uri.tryParse(_url.text.trim());
-    final fromLink = link == null ? null : Backend.fromLink(link);
-    final parsed = fromLink != null ? (backend: fromLink, error: null) : Backend.parse(_url.text, _key.text);
+    if (link != null && Backend.fromLink(link) != null) return await _connectLink(link);
+    final parsed = Backend.parse(_url.text, _key.text);
     final backend = parsed.backend;
     if (backend == null) return setState(() => _error = parsed.error);
+    await _use(backend, check: true);
+  }
+
+  /// The Mac's code, read with this iPhone's camera.
+  Future<void> _scan() async {
+    final link = await scanSetupCode(context);
+    if (link != null && mounted) await _connectLink(link);
+  }
+
+  /// Connects (and with a pairing code, signs in). If the server can't be
+  /// reached the app stays here, so the reason shows on this page.
+  Future<void> _connectLink(Uri link) async {
     setState(() {
       _busy = true;
       _error = null;
     });
-    final problem = await backend.check();
+    await widget.session.connectLink(link);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (widget.session.backend == null && widget.session.authError != null) {
+        _error = widget.session.authError;
+        _existing = true;
+      }
+    });
+  }
+
+  Future<void> _use(Backend backend, {required bool check}) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final problem = check ? await backend.check() : null;
     if (problem == null) {
       try {
         await widget.session.connect(backend);
@@ -55,25 +93,20 @@ class _SetupPageState extends State<SetupPage> {
     if (mounted) setState(() => _busy = false);
   }
 
-  InputDecoration _field(String hint) => InputDecoration(
-    hintText: hint,
-    hintStyle: const TextStyle(color: C.dim2),
-    filled: true,
-    fillColor: C.field,
-    isDense: true,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: C.line2),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: C.line2),
-    ),
-  );
-
   @override
-  Widget build(BuildContext context) => Center(
+  Widget build(BuildContext context) {
+    if (!_existing) {
+      return SetupWizard(
+        flow: _flow,
+        onConnect: () => _use(_flow.backend!, check: false),
+        onExisting: () => setState(() => _existing = true),
+        onScan: () => unawaited(_scan()),
+      );
+    }
+    return _existingForm();
+  }
+
+  Widget _existingForm() => Center(
     child: SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: SizedBox(
@@ -82,17 +115,17 @@ class _SetupPageState extends State<SetupPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('💡', textAlign: TextAlign.center, style: TextStyle(fontSize: 40)),
+            const Center(child: DzepLogo(size: 56)),
             const SizedBox(height: 14),
             const Text(
-              'Connect your Supabase project',
+              'Connect your server',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Džep keeps your ideas in your own Supabase project, so nobody else holds your data. '
-              'Paste the setup link the setup script printed, or the project URL and publishable key.',
+              'Paste its setup link (on another device: Settings → Copy setup link), or the project URL '
+              'and publishable key.',
               textAlign: TextAlign.center,
               style: TextStyle(color: C.dim, height: 1.4),
             ),
@@ -102,7 +135,7 @@ class _SetupPageState extends State<SetupPage> {
               enabled: !_busy,
               autocorrect: false,
               keyboardType: TextInputType.url,
-              decoration: _field('https://abcdefgh.supabase.co  or  dzep://setup?…'),
+              decoration: setupField('https://abcdefgh.supabase.co  or  dzep://setup?…'),
               onSubmitted: (_) => unawaited(_connect()),
             ),
             const SizedBox(height: 10),
@@ -110,7 +143,7 @@ class _SetupPageState extends State<SetupPage> {
               controller: _key,
               enabled: !_busy,
               autocorrect: false,
-              decoration: _field('Publishable key (sb_publishable_…)'),
+              decoration: setupField('Publishable key (sb_publishable_…)'),
               onSubmitted: (_) => unawaited(_connect()),
             ),
             const SizedBox(height: 16),
@@ -133,8 +166,13 @@ class _SetupPageState extends State<SetupPage> {
             ],
             const SizedBox(height: 18),
             TextButton(
+              onPressed: () => setState(() => _existing = false),
+              child: const Text('← Set up a new server instead'),
+            ),
+            TextButton(
               onPressed: () => unawaited(launchUrl(Uri.parse(selfHostingGuide))),
-              child: const Text("Don't have one yet? Set it up in about 10 minutes →", textAlign: TextAlign.center),
+              style: TextButton.styleFrom(foregroundColor: C.dim2),
+              child: const Text('Self-hosting guide'),
             ),
           ],
         ),

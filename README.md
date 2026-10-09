@@ -20,12 +20,12 @@
 
 ## Get started
 
-Džep has no central server. You run the backend on a free Supabase project, and every app you install connects to it. That takes about 10 minutes, once.
+Džep has no central server. You run the backend on a free Supabase project, and every app you install connects to it. The Mac app sets it up for you in about five minutes, once.
 
-1. **Set up your backend.** Follow [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md): create a Supabase project and a GitHub OAuth app, then run `tool/setup-backend.sh`. It prints a setup link.
-2. **Install the Mac app.** Download `Dzep-x.y.z.dmg` from [Releases](https://github.com/danyzmaj-apps/dzep/releases/latest) and drag Džep to Applications. It updates itself.
-3. **Connect it.** Open the setup link, or paste it into Džep's setup screen, then sign in with GitHub.
-4. **iPhone (optional).** Build it from source with your Apple developer account ([docs/BUILDING.md](docs/BUILDING.md#iphone)), then open the same setup link on the phone. The Mac's Settings can copy it for you.
+1. **Install the Mac app.** Download `Dzep-x.y.z.dmg` from [Releases](https://github.com/danyzmaj-apps/dzep/releases/latest) and drag Džep to Applications. It updates itself.
+2. **Set up your server.** On first launch Džep walks you through it: a Supabase access token, a project (it can create one), a GitHub OAuth app for sign-in, and optionally an AI key. It then creates the tables, deploys the functions and connects. Prefer a terminal? `tool/setup-backend.sh` does the same ([docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)).
+3. **Sign in with GitHub** on the Mac. The first account owns the server.
+4. **iPhone (optional).** On the Mac: **Settings → Set up iPhone…** shows a code. On the iPhone, tap **Scan the code from your Mac**: it connects and signs in, no GitHub login on the phone. The code works once, for 10 minutes.
 
 Requirements: macOS 13+ (the desktop widget needs 14+), iOS 17+.
 
