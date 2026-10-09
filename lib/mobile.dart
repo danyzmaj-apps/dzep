@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:app_links/app_links.dart';
@@ -15,12 +16,13 @@ import 'package:dzep/remind.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/setup.dart';
 import 'package:dzep/store.dart';
-import 'package:dzep/terminal.dart';
+import 'package:dzep/terminal_remote.dart';
 import 'package:dzep/terminal_view.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/cupertino.dart' show CupertinoDatePicker;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The iPhone side of [Session]: registers a device token for the Siri /
@@ -176,9 +178,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Open whenever the idea store is (see Session).
   ChatStore get chats => widget.session.chats!;
 
-  /// The Mac's kitty, through Džep on the Mac; live only while a Terminal
-  /// screen is up.
-  late final _terminal = TerminalRemote(widget.session.client, store.userId);
+  /// The Mac's omp sessions and kitty windows, through Džep on the Mac; live
+  /// while the app is in front. Null until its cache folder is known.
+  TerminalRemote? _terminal;
+  bool _terminalAttached = false;
+
+  /// A tapped terminal push's session, waiting for [_terminal].
+  String? _sessionToOpen;
 
   void _openChat(Conversation? c) => Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -193,21 +199,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ),
   );
 
-  void _openTerminal(String window) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => TerminalPage(remote: _terminal, window: window),
-    ),
-  );
+  Future<void> _startTerminal() async {
+    final dir = await getApplicationSupportDirectory();
+    if (!mounted) return;
+    setState(() => _terminal = TerminalRemote(widget.session.client, store.userId, Directory('${dir.path}/terminal')));
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state == null || state == AppLifecycleState.resumed) _attachTerminal(attach: true);
+    final key = _sessionToOpen;
+    _sessionToOpen = null;
+    if (key != null) _openSession(key);
+  }
 
-  Future<void> _openNewSession() async {
-    final window = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: C.bar,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => NewSessionSheet(remote: _terminal),
-    );
-    if (window != null && mounted) _openTerminal(window);
+  void _attachTerminal({required bool attach}) {
+    final t = _terminal;
+    if (t == null || attach == _terminalAttached) return;
+    _terminalAttached = attach;
+    attach ? t.attach() : t.detach();
+  }
+
+  /// The Terminal tab, on omp session [key] (from a tapped push).
+  void _openSession(String key) {
+    setState(() => _tab = 4);
+    final t = _terminal;
+    if (t == null) {
+      _sessionToOpen = key;
+      return;
+    }
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    openSession(context, t, key);
+  }
+
+  /// Opens the session whose terminal push was tapped, if one was.
+  Future<void> _openTappedSession() async {
+    final key = await Native.takeTappedSession();
+    if (key != null && mounted) _openSession(key);
   }
 
   @override
@@ -219,8 +244,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // getInitialLink() would handle it twice.
     _links = AppLinks().uriLinkStream.listen(_onLink);
     Native.listen(_onNative);
-    // A reminder tap that launched the app.
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_openTapped()));
+    // A reminder or terminal push tap that launched the app.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_openTapped());
+      unawaited(_openTappedSession());
+    });
+    unawaited(_startTerminal());
   }
 
   @override
@@ -228,16 +257,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_links?.cancel());
     _search.dispose();
-    _terminal.dispose();
+    _terminal?.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      unawaited(widget.session.drainPending());
-      unawaited(store.syncNow());
-      unawaited(_openTapped());
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _attachTerminal(attach: true);
+        unawaited(widget.session.drainPending());
+        unawaited(store.syncNow());
+        unawaited(_openTapped());
+        unawaited(_openTappedSession());
+      case AppLifecycleState.hidden || AppLifecycleState.paused:
+        _attachTerminal(attach: false);
+      case AppLifecycleState.inactive || AppLifecycleState.detached:
+        break;
     }
   }
 
@@ -251,6 +287,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         unawaited(_openTapped());
       case 'openTerminal':
         setState(() => _tab = 4);
+        // The session comes through takeTappedSession, once, whichever of
+        // this and the resume asks first.
+        unawaited(_openTappedSession());
       case 'pending':
         unawaited(widget.session.drainPending());
     }
@@ -364,7 +403,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         onPressed: () => switch (_tab) {
           2 => _openNote(null),
           3 => _openChat(null),
-          4 => unawaited(_openNewSession()),
+          4 => _terminal == null ? null : unawaited(openNewSession(context, _terminal!)),
           _ => unawaited(_openAdd(_tab == 0 ? Kind.todo : Kind.idea)),
         },
         child: Icon(_tab == 2 || _tab == 3 ? Icons.edit_outlined : Icons.add, size: 28),
@@ -439,7 +478,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             const Divider(height: 1, color: C.line),
             Expanded(
               child: switch (_tab) {
-                4 => TerminalList(remote: _terminal, onOpen: _openTerminal),
+                4 => _terminal == null ? const SizedBox.shrink() : TerminalList(remote: _terminal!),
                 3 => RefreshIndicator(onRefresh: chats.syncNow, child: _chatsList()),
                 2 => RefreshIndicator(onRefresh: store.syncNow, child: _notesList()),
                 _ => RefreshIndicator(onRefresh: store.syncNow, child: _tab == 0 ? _todosList() : _ideasList()),

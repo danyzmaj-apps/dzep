@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:dzep/chat.dart';
 import 'package:dzep/kitty.dart';
+import 'package:dzep/live_hub.dart';
 import 'package:dzep/native.dart';
 import 'package:dzep/session.dart';
 import 'package:dzep/store.dart';
-import 'package:dzep/terminal.dart';
+import 'package:dzep/terminal_bridge.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -55,11 +56,15 @@ class AppController extends Session {
 
   static const _terminalKey = 'terminal_bridge';
 
-  /// The iPhone may see and type into kitty (lib/terminal.dart). Off until
-  /// turned on in Settings: whoever holds the account can then type here.
+  /// The iPhone may see and type into kitty and omp (lib/terminal_bridge.dart).
+  /// Off until turned on in Settings: whoever holds the account can then type
+  /// here.
   bool get terminalOn => _prefs.getBool(_terminalKey) ?? false;
   TerminalBridge? _bridge;
   final kitty = Kitty();
+
+  /// The omp sessions reporting to the local API (integrations/omp/live.ts).
+  late final live = LiveHub()..events.listen((e) => unawaited(_onLive(e)));
 
   Future<void> setTerminal({required bool on}) async {
     await _prefs.setBool(_terminalKey, on);
@@ -75,7 +80,19 @@ class AppController extends Session {
     final old = _bridge;
     _bridge = null;
     await old?.stop();
-    if (want) await (_bridge = TerminalBridge(client, user.id, kitty)).start();
+    if (want) await (_bridge = TerminalBridge(client, user.id, kitty, live)).start();
+  }
+
+  /// An omp run ended, or omp waits for an answer: the iPhone hears about it,
+  /// unless it's showing that session right now.
+  Future<void> _onLive(LiveEvent e) async {
+    final s = e.session;
+    if (_bridge?.watching(s.key) ?? false) return;
+    final (title, body) = switch (e) {
+      LiveFinished(:final summary) => ('omp finished · ${s.project}', summary),
+      LiveAsked(:final ask) => ('omp needs you · ${s.project}', ask.text),
+    };
+    await notifyPhone(title, body, session: s.key);
   }
 
   @override
@@ -202,11 +219,15 @@ class AppController extends Session {
 
   /// Pushes [title] / [body] to the user's iPhones (functions/push) when
   /// nobody has touched this Mac for a minute: at the desk, the Mac's own
-  /// screen says it already. False if it didn't go.
-  Future<bool> notifyPhone(String title, String body) async {
+  /// screen says it already. [session]: the omp session a tap opens. False if
+  /// it didn't go.
+  Future<bool> notifyPhone(String title, String body, {String? session}) async {
     if (store == null || await Native.idleSeconds() < 60) return false;
     try {
-      final res = await client.functions.invoke('push', body: {'action': 'notify', 'title': title, 'body': body});
+      final res = await client.functions.invoke(
+        'push',
+        body: {'action': 'notify', 'title': title, 'body': body, 'session': ?session},
+      );
       final data = res.data;
       return data is Map && (data['sent'] as int? ?? 0) > 0;
     } on Object catch (e) {

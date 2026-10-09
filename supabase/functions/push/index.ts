@@ -5,7 +5,8 @@
 //
 //   POST {"action": "register", "token", "key", "label"?}   user token: this iPhone
 //   POST {"action": "unregister", "token"}                  user token: signed out
-//   POST {"action": "notify", "title", "body"?}             user token: e.g. an omp session finished on the Mac
+//   POST {"action": "notify", "title", "body"?, "session"?}  user token: e.g. an omp session finished on the Mac;
+//                                                            session: the omp session a tap opens
 //   POST {"action": "tick"}                                 x-dzep-cron: the scheduler, reminders now due
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { decodeBase64, encodeBase64 } from "jsr:@std/encoding@1/base64";
@@ -18,7 +19,8 @@ const relay = Deno.env.get("PUSH_RELAY_URL") ?? "https://tgqmhieundubwtyvsnih.su
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-type Message = { kind: "reminder" | "terminal"; title: string; body: string; id?: string };
+/** id: the todo (reminders); session: the omp session (terminal). */
+type Message = { kind: "reminder" | "terminal"; title: string; body: string; id?: string; session?: string };
 
 /** AES-256-GCM: base64(nonce ‖ ciphertext ‖ tag), CryptoKit's combined form. */
 export async function seal(keyB64: string, message: Message): Promise<string> {
@@ -45,8 +47,9 @@ async function send(userId: string, message: Message): Promise<number> {
         token: d.token,
         kind: message.kind,
         enc: await seal(d.key, message),
-        // Lets a newer reminder for the same todo replace an older one.
-        collapse: message.id,
+        // Lets a newer push for the same todo, or the same omp session,
+        // replace an older one.
+        collapse: message.id ?? message.session,
       }),
     }).catch((e) => {
       console.error("relay unreachable", e);
@@ -114,7 +117,9 @@ Deno.serve(async (req) => {
     const title = typeof body.title === "string" ? body.title.trim().slice(0, 120) : "";
     if (!title) return json(400, { error: "title is required" });
     const text = typeof body.body === "string" ? body.body.trim().slice(0, 400) : "";
-    return json(200, { sent: await send(user, { kind: "terminal", title, body: text }) });
+    // A session key: `kitty-<pid>/<window id>` or `pid:<pid>` (it doubles as the collapse id, at most 64).
+    const session = typeof body.session === "string" && /^[\w.:/-]{1,64}$/.test(body.session) ? body.session : undefined;
+    return json(200, { sent: await send(user, { kind: "terminal", title, body: text, session }) });
   }
 
   return json(400, { error: "action must be register, unregister, notify or tick" });

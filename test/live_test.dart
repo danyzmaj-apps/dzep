@@ -1,0 +1,290 @@
+import 'dart:convert';
+
+import 'package:dzep/live.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+LiveItem _text(String id, String text, {ItemKind kind = ItemKind.assistant}) =>
+    LiveItem(id: id, kind: kind, text: text);
+
+/// What a phone ends up with when every op reaches it through JSON.
+LiveView _follow(LiveLog log, List<LiveOp> ops, {LiveView? view}) {
+  final v = view ?? LiveView(epoch: log.epoch);
+  final wire = [for (final op in ops) LiveOp.fromJson(jsonDecode(jsonEncode(op.toJson())) as Map<String, dynamic>)];
+  expect(v.apply(log.epoch, wire), isTrue);
+  return v;
+}
+
+void main() {
+  group('LiveLog → LiveView', () {
+    test('a phone that follows every op ends with what the Mac has', () {
+      final log = LiveLog([_text('u1', 'hi', kind: ItemKind.user)], older: false);
+      final view = LiveView(epoch: log.epoch)
+        ..catchUp(epoch: log.epoch, seq: log.seq, reset: true, items: log.items, last: true);
+      final ops = [
+        log.upsert(_text('a1', '')),
+        log.append('a1', 'Hel')!,
+        log.append('a1', 'lo')!,
+        log.upsert(LiveItem(id: 't1', kind: ItemKind.tool, tool: 'bash', args: 'ls')),
+        log.upsert(LiveItem(id: 't1', kind: ItemKind.tool, tool: 'bash', args: 'ls', output: 'a\nb')),
+      ];
+      _follow(log, ops, view: view);
+      expect(view.items.map((i) => i.id), ['u1', 'a1', 't1']);
+      expect(view.items[1].text, 'Hello');
+      expect(view.items[2].output, 'a\nb');
+      expect(view.seq, log.seq);
+    });
+
+    test('a replaced item shows its new text even when the list was read in between', () {
+      final log = LiveLog([], older: false);
+      final view = _follow(log, [log.upsert(_text('a1', '')), log.append('a1', 'Hel')!]);
+      expect(view.items.single.text, 'Hel');
+      // The answer's final text, whole: the last streamed bit never went out on its own.
+      _follow(log, [log.upsert(_text('a1', 'Hello.'))], view: view);
+      expect(view.items.single.text, 'Hello.');
+    });
+
+    test('an op holds the item as it was: a later append is not applied twice', () {
+      final log = LiveLog([], older: false);
+      final upsert = log.upsert(_text('a1', 'He'));
+      final append = log.append('a1', 'llo')!;
+      // Both are serialized only now, as a batch would be.
+      final view = _follow(log, [upsert, append]);
+      expect(view.items.single.text, 'Hello');
+    });
+
+    test('a missing op is detected, and a catch-up from since fills the gap', () {
+      final log = LiveLog([], older: false);
+      final first = log.upsert(_text('a1', 'one'));
+      final view = _follow(log, [first]);
+      log.upsert(_text('a2', 'two')); // lost on the way
+      final third = log.upsert(_text('a3', 'three'));
+      expect(view.apply(log.epoch, [third]), isFalse);
+      view.catchUp(epoch: log.epoch, seq: log.seq, reset: false, items: log.since(view.seq), last: true);
+      expect(view.items.map((i) => i.text), ['one', 'two', 'three']);
+      expect(view.seq, log.seq);
+      // Ops the catch-up already covered are skipped, not doubled.
+      expect(view.apply(log.epoch, [third]), isTrue);
+      expect(view.items.length, 3);
+    });
+
+    test('a new epoch is refused by apply and replaces everything on a reset catch-up', () {
+      final old = LiveLog([_text('x', 'old')], older: false);
+      final view = LiveView(epoch: old.epoch)
+        ..catchUp(epoch: old.epoch, seq: old.seq, reset: true, items: old.items, last: true);
+      final log = LiveLog([_text('y', 'new')], older: true);
+      expect(view.apply(log.epoch, [log.upsert(_text('z', '!'))]), isFalse);
+      view.catchUp(epoch: log.epoch, seq: log.seq, reset: true, items: log.items, last: true, older: log.older);
+      expect(view.items.map((i) => i.id), ['y', 'z']);
+      expect(view.older, isTrue);
+    });
+
+    test('seq moves only with the last chunk of a catch-up', () {
+      final log = LiveLog([for (var i = 0; i < 4; i++) _text('$i', '$i')], older: false);
+      final view = LiveView(epoch: log.epoch);
+      final items = log.items;
+      view.catchUp(epoch: log.epoch, seq: log.seq, reset: true, items: items.sublist(0, 2), last: false);
+      expect(view.seq, 0);
+      view.catchUp(epoch: log.epoch, seq: log.seq, reset: true, items: items.sublist(2), last: true);
+      expect(view.seq, log.seq);
+      expect(view.items.length, 4);
+    });
+
+    test('older items go above the oldest, in their own order, and reach a follower', () {
+      final log = LiveLog([_text('c', 'c'), _text('d', 'd')], older: true);
+      final view = LiveView(epoch: log.epoch)
+        ..catchUp(epoch: log.epoch, seq: log.seq, reset: true, items: log.items, last: true);
+      final ops = log.addOlder([_text('a', 'a'), _text('b', 'b'), _text('c', 'dup')], more: false);
+      _follow(log, ops, view: view);
+      expect(view.items.map((i) => i.id), ['a', 'b', 'c', 'd']);
+      expect(view.items[2].text, 'c', reason: 'an item already there is not replaced by an older copy');
+      expect(log.older, isFalse);
+    });
+
+    test('past its cap the log drops the oldest items and says there are older ones', () {
+      final log = LiveLog([for (var i = 0; i < 5; i++) _text('$i', '$i')], older: false, cap: 3);
+      expect(log.items.map((i) => i.id), ['2', '3', '4']);
+      expect(log.older, isTrue);
+      log.upsert(_text('5', '5'));
+      expect(log.items.map((i) => i.id), ['3', '4', '5']);
+    });
+
+    test('the disk cache keeps the newest items and remembers the rest are on the Mac', () {
+      final log = LiveLog([for (var i = 0; i < 10; i++) _text('$i', '$i')], older: false);
+      final view = LiveView(epoch: log.epoch)
+        ..catchUp(epoch: log.epoch, seq: log.seq, reset: true, items: log.items, last: true);
+      final back = LiveView.fromJson(jsonDecode(jsonEncode(view.toJson(keep: 4))) as Map<String, dynamic>);
+      expect(back.items.map((i) => i.id), ['6', '7', '8', '9']);
+      expect(back.older, isTrue);
+      expect(back.seq, view.seq);
+      // A cached view still follows the live ops.
+      _follow(log, [log.upsert(_text('10', 'x'))], view: back);
+      expect(back.items.last.id, '10');
+    });
+  });
+
+  group('answerKeys', () {
+    LiveAsk ask(List<LiveQuestion> qs) => LiveAsk.questions('call', qs);
+    const db = LiveQuestion(id: 'db', question: 'Database?', options: ['SQLite', 'Postgres', 'MySQL']);
+    List<Object> flat(List<KeyStep> steps) => [
+      for (final s in steps)
+        switch (s) {
+          Keys(:final keys) => keys.join(' '),
+          Typed(:final text) => 'type:$text',
+        },
+    ];
+    String to(int row, int rows) => [...List.filled(rows, 'up'), ...List.filled(row, 'down')].join(' ');
+
+    test('a single choice goes to the top, down to its row and presses Enter', () {
+      expect(
+        flat(
+          answerKeys(
+            ask([db]),
+            answers: [
+              const LiveAnswer(picks: [1]),
+            ],
+          ),
+        ),
+        ['${to(1, 4)} enter'],
+      );
+    });
+
+    test('a typed answer picks Other, types, and confirms', () {
+      expect(flat(answerKeys(ask([db]), answers: [const LiveAnswer(custom: ' DuckDB ')])), [
+        '${to(3, 4)} enter',
+        'type:DuckDB',
+        'enter',
+      ]);
+    });
+
+    test('multiple choice toggles each pick with Space, then Enter', () {
+      const q = LiveQuestion(id: 'f', question: 'Features?', options: ['a', 'b', 'c'], multi: true);
+      expect(
+        flat(
+          answerKeys(
+            ask([q]),
+            answers: [
+              const LiveAnswer(picks: [0, 2]),
+            ],
+          ),
+        ),
+        ['${to(0, 4)} space ${to(2, 4)} space enter'],
+      );
+    });
+
+    test('a lone multiple-choice question with typed text ends on the Submit tab', () {
+      const q = LiveQuestion(id: 'f', question: 'Features?', options: ['a'], multi: true);
+      expect(
+        flat(
+          answerKeys(
+            ask([q]),
+            answers: [
+              const LiveAnswer(picks: [0], custom: 'z'),
+            ],
+          ),
+        ),
+        ['${to(0, 2)} space ${to(1, 2)} enter', 'type:z', 'enter enter'],
+      );
+    });
+
+    test('several questions answer one after another, then submit', () {
+      const q2 = LiveQuestion(id: 'os', question: 'OS?', options: ['mac', 'linux']);
+      expect(
+        flat(
+          answerKeys(
+            ask([db, q2]),
+            answers: [
+              const LiveAnswer(picks: [2]),
+              const LiveAnswer(picks: [0]),
+            ],
+          ),
+        ),
+        ['${to(2, 4)} enter ${to(0, 3)} enter enter'],
+      );
+    });
+
+    test('approval: Enter approves, Down Enter denies', () {
+      const a = LiveAsk.approval('call', tool: 'bash');
+      expect(flat(answerKeys(a, approve: true)), ['enter']);
+      expect(flat(answerKeys(a)), ['down enter']);
+    });
+
+    test('answers that the dialog cannot take are refused before any key goes out', () {
+      expect(() => answerKeys(ask([db]), answers: []), throwsArgumentError);
+      expect(
+        () => answerKeys(
+          ask([db]),
+          answers: [
+            const LiveAnswer(picks: [3]),
+          ],
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => answerKeys(
+          ask([db]),
+          answers: [
+            const LiveAnswer(picks: [0, 1]),
+          ],
+        ),
+        throwsArgumentError,
+      );
+      expect(() => answerKeys(ask([db]), answers: [const LiveAnswer(custom: '  ')]), throwsArgumentError);
+    });
+  });
+
+  group('askOnScreen', () {
+    test('finds a question wrapped and styled by the terminal', () {
+      const q = LiveQuestion(id: 'x', question: 'Which **storage** backend should the sync layer use?', options: ['a']);
+      const screen = '│ Which storage backend should\n│ the sync layer use?\n│ > a';
+      expect(askOnScreen(const LiveAsk.questions('c', [q]), screen.replaceAll('│', '')), isTrue);
+      expect(askOnScreen(const LiveAsk.questions('c', [q]), 'π > waiting for input'), isFalse);
+    });
+
+    test('an approval needs both of its buttons on screen', () {
+      const a = LiveAsk.approval('c', tool: 'bash');
+      expect(askOnScreen(a, 'Run bash?\n> Approve\n  Deny'), isTrue);
+      expect(askOnScreen(a, 'Approve the plan'), isFalse);
+    });
+  });
+
+  group('ScreenDiff', () {
+    List<String> lines(int from, int to) => [for (var i = from; i < to; i++) 'line $i'];
+
+    test('scrolled output costs only the new lines', () {
+      final a = lines(0, 100);
+      final b = [...lines(5, 100), ...lines(100, 105)];
+      final d = ScreenDiff.between(a, b)!;
+      expect((d.drop, d.keep, d.tail.length), (5, 95, 5));
+      expect(d.apply(a), b);
+    });
+
+    test('a redrawn bottom is sent from the first changed line', () {
+      final a = lines(0, 50);
+      final b = [...lines(0, 45), 'x', 'y'];
+      final d = ScreenDiff.between(a, b)!;
+      expect(d.tail, ['x', 'y']);
+      expect(d.apply(a), b);
+    });
+
+    test('an unrelated screen goes whole', () {
+      expect(ScreenDiff.between(lines(0, 10), lines(50, 60)), isNull);
+    });
+
+    test('a diff on the wrong base is refused rather than misapplied', () {
+      final d = ScreenDiff.between(lines(0, 100), lines(10, 110))!;
+      expect(d.apply(lines(0, 20)), isNull);
+    });
+  });
+
+  test('chunkJson keeps every chunk under the limit and loses nothing', () {
+    final items = [
+      for (var i = 0; i < 50; i++) {'id': '$i', 't': 'x' * 900},
+    ];
+    final chunks = chunkJson(items, maxBytes: 5000);
+    expect(chunks.length, greaterThan(1));
+    for (final c in chunks) {
+      expect(utf8.encode(jsonEncode(c)).length, lessThan(5000 + 100));
+    }
+    expect(chunks.expand((c) => c).length, 50);
+  });
+}

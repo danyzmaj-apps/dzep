@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
-/// One kitty window, as the iPhone sees it (`kitten @ ls`, minus everything
+/// One kitty window, as the iPhone sees it (kitty's `ls`, minus everything
 /// the phone has no business seeing, like the window's environment).
 class TermWindow {
   const TermWindow({
@@ -59,15 +60,21 @@ class KittyException implements Exception {
   String toString() => message;
 }
 
-/// kitty's remote control on this Mac, through `kitten @`. kitty listens
-/// only with `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty`
-/// in kitty.conf (read at startup), which makes it `/tmp/kitty-<pid>`; every
-/// unix socket named `kitty*` in /tmp counts, so several kittys work.
+/// kitty's remote control on this Mac, spoken over its unix socket (one
+/// connection per command; see https://sw.kovidgoyal.net/kitty/rc_protocol/).
+/// kitty listens only with `allow_remote_control socket-only` and
+/// `listen_on unix:/tmp/kitty` in kitty.conf (read at startup), which makes it
+/// `/tmp/kitty-<pid>`; every unix socket named `kitty*` in /tmp counts, so
+/// several kittys work.
 class Kitty {
-  Kitty({String? home, this.socketDir = '/tmp'}) : home = home ?? Platform.environment['HOME'] ?? '';
+  Kitty({String? home, this.socketDir = '/tmp', this.timeout = const Duration(seconds: 5)})
+    : home = home ?? Platform.environment['HOME'] ?? '';
 
   final String home;
   final String socketDir;
+
+  /// How long one command may take, connecting included.
+  final Duration timeout;
 
   static const notListening =
       "kitty isn't listening. Add `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty` "
@@ -76,13 +83,10 @@ class Kitty {
   /// Keys the iPhone may press, as kitty names them.
   static const keys = {'esc', 'tab', 'up', 'down', 'enter', 'ctrl+c'};
 
-  /// A GUI app's PATH has no Homebrew, so look where kitty installs it.
-  late final String? _kitten = [
-    '/opt/homebrew/bin/kitten',
-    '/usr/local/bin/kitten',
-    '/Applications/kitty.app/Contents/MacOS/kitten',
-    '$home/Applications/kitty.app/Contents/MacOS/kitten',
-  ].where((p) => File(p).existsSync()).firstOrNull;
+  /// The protocol version we claim; kitty refuses clients newer than itself.
+  static const _version = [0, 20, 0];
+  static const _prefix = '\x1bP@kitty-cmd';
+  static const _end = '\x1b\\';
 
   List<String> _sockets() {
     final dir = Directory(socketDir);
@@ -95,47 +99,66 @@ class Kitty {
     ]..sort();
   }
 
-  Future<String> _rc(String socket, List<String> args, {String? stdin}) async {
-    final kitten = _kitten;
-    if (kitten == null) throw const KittyException("kitty's `kitten` isn't installed on this Mac.");
-    final p = await Process.start(kitten, ['@', '--to', 'unix:$socketDir/$socket', ...args]);
-    if (stdin != null) p.stdin.write(stdin);
-    await p.stdin.close();
-    const decoder = Utf8Decoder(allowMalformed: true);
-    final out = p.stdout.transform(decoder).join();
-    final err = p.stderr.transform(decoder).join();
-    final code = await p.exitCode.timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        p.kill();
-        return -1;
-      },
-    );
-    if (code != 0) {
-      final msg = (await err).trim().replaceFirst(RegExp('^Error: '), '');
-      throw KittyException(msg.isEmpty ? 'kitty did not answer.' : msg);
+  /// Runs [cmd] on the kitty behind [socket] and returns the answer's `data`
+  /// (kitty sends most of it as a string, ls as JSON inside that string).
+  Future<Object?> _rc(String socket, String cmd, [Map<String, Object?>? payload]) async {
+    final address = InternetAddress('$socketDir/$socket', type: InternetAddressType.unix);
+    final Socket s;
+    try {
+      s = await Socket.connect(address, 0, timeout: timeout);
+    } on SocketException {
+      throw const KittyException('kitty did not answer.');
     }
-    return await out;
+    final String reply;
+    try {
+      s.add(utf8.encode('$_prefix${jsonEncode({'cmd': cmd, 'version': _version, 'payload': ?payload})}$_end'));
+      reply = await _reply(s).timeout(timeout);
+    } on TimeoutException {
+      throw const KittyException('kitty did not answer.');
+    } on SocketException {
+      throw const KittyException('kitty did not answer.');
+    } finally {
+      s.destroy();
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(reply.substring(reply.startsWith(_prefix) ? _prefix.length : 0));
+    } on FormatException {
+      throw const KittyException('kitty answered gibberish.');
+    }
+    if (decoded is! Map) throw const KittyException('kitty answered gibberish.');
+    if (decoded['ok'] != true) {
+      final error = decoded['error'] as String? ?? 'kitty refused.';
+      if (error.startsWith('No matching windows')) throw const KittyException('That window is gone.');
+      throw KittyException(error);
+    }
+    return decoded['data'];
+  }
+
+  /// Everything kitty writes back, up to (not including) the terminator.
+  /// JSON escapes ESC, so the terminator can't occur inside the answer.
+  static Future<String> _reply(Socket s) async {
+    final bytes = BytesBuilder(copy: false);
+    var prev = 0;
+    await for (final chunk in s) {
+      if (chunk.isEmpty) continue;
+      bytes.add(chunk);
+      final beforeLast = chunk.length >= 2 ? chunk[chunk.length - 2] : prev;
+      if (beforeLast == 0x1b && chunk.last == 0x5c) {
+        final text = utf8.decode(bytes.takeBytes(), allowMalformed: true);
+        return text.substring(0, text.length - _end.length);
+      }
+      prev = chunk.last;
+    }
+    throw const KittyException('kitty hung up mid-answer.');
   }
 
   /// `<socket>/<id>` back to its parts; anything else is refused before it
-  /// reaches a command line.
-  (String socket, int id) _parse(String key) {
+  /// reaches kitty.
+  (String socket, String match) _parse(String key) {
     final m = RegExp(r'^(kitty[\w.-]*)/(\d+)$').firstMatch(key);
     if (m == null || !_sockets().contains(m[1])) throw const KittyException('That window is gone.');
-    return (m[1]!, int.parse(m[2]!));
-  }
-
-  /// [_parse] for typing: kitty's send-text and send-key succeed quietly
-  /// when no window matches, so ask first.
-  Future<(String socket, int id)> _live(String key) async {
-    final (socket, id) = _parse(key);
-    try {
-      await _rc(socket, ['ls', '--match', 'id:$id']);
-    } on KittyException {
-      throw const KittyException('That window is gone.');
-    }
-    return (socket, id);
+    return (m[1]!, 'id:${m[2]}');
   }
 
   /// Every window of every listening kitty, in kitty's order.
@@ -145,15 +168,15 @@ class Kitty {
     final out = <TermWindow>[];
     var answered = false;
     for (final socket in sockets) {
-      final String json;
+      final Object? data;
       try {
-        json = await _rc(socket, ['ls']);
+        data = await _rc(socket, 'ls');
       } on KittyException {
         // A socket left behind by a kitty that has quit.
         continue;
       }
       answered = true;
-      for (final os in jsonDecode(json) as List) {
+      for (final os in jsonDecode(data! as String) as List) {
         for (final tab in (os as Map)['tabs'] as List) {
           for (final w in (tab as Map)['windows'] as List) {
             final win = w as Map;
@@ -179,43 +202,45 @@ class Kitty {
   }
 
   /// Realtime drops or refuses messages past ~100 KB (one of 180 KB closed the
-  /// socket), and every change is sent again, so scrollback keeps only its
-  /// newest lines up to this many UTF-8 bytes.
-  static const historyBytes = 64000;
+  /// socket), so scrollback keeps only its newest lines up to this many UTF-8
+  /// bytes.
+  static const historyBytes = 60000;
 
   /// What the window shows now (with [history], its scrollback above too),
-  /// with its colors as ANSI escapes (lib/ansi.dart reads them), without
-  /// trailing blanks.
-  Future<String> screen(String key, {bool history = false}) async {
-    final (socket, id) = _parse(key);
-    final text = await _rc(socket, [
-      'get-text',
-      '--match',
-      'id:$id',
-      '--extent',
-      if (history) 'all' else 'screen',
-      '--ansi',
-    ]);
+  /// line by line with its colors as ANSI escapes (lib/ansi.dart reads them),
+  /// without trailing padding or trailing blank lines.
+  Future<List<String>> lines(String key, {bool history = false}) async {
+    final (socket, match) = _parse(key);
+    final text =
+        await _rc(socket, 'get-text', {'match': match, 'extent': history ? 'all' : 'screen', 'ansi': true}) as String?;
     // Plain spaces at a line's end, among its closing escapes, are padding.
     final pad = RegExp(r'(?: |\x1b\[[0-9;:]*m)+$');
     final sgr = RegExp(r'\x1b\[[0-9;:]*m');
-    final lines = [
-      for (final l in text.split('\n')) l.replaceFirstMapped(pad, (m) => sgr.allMatches(m[0]!).map((e) => e[0]).join()),
-    ];
+    // Newest first, stopping at the budget: scrollback can run to megabytes.
+    final raw = (text ?? '').split('\n');
+    final kept = <String>[];
     var bytes = 0;
-    var from = lines.length;
-    while (from > 0) {
-      bytes += utf8.encode(lines[from - 1]).length + 1;
+    for (var i = raw.length - 1; i >= 0; i--) {
+      final line = raw[i].replaceFirstMapped(pad, (m) => sgr.allMatches(m[0]!).map((e) => e[0]).join());
+      if (kept.isEmpty && line.replaceAll(sgr, '').isEmpty) continue;
+      bytes += utf8.encode(line).length + 1;
       if (bytes > historyBytes) break;
-      from--;
+      kept.add(line);
     }
-    return lines.sublist(from).join('\n').trimRight();
+    return kept.reversed.toList();
+  }
+
+  /// What the window shows now as plain text, to check what's on screen.
+  Future<String> plainScreen(String key) async {
+    final (socket, match) = _parse(key);
+    final text = await _rc(socket, 'get-text', {'match': match, 'extent': 'screen', 'ansi': false}) as String?;
+    return (text ?? '').trimRight();
   }
 
   /// The window's colors: `{fg, bg, palette}` as 0xRRGGBB, palette of 256.
   Future<Map<String, Object>> colors(String key) async {
-    final (socket, id) = _parse(key);
-    final out = await _rc(socket, ['get-colors', '--match', 'id:$id']);
+    final (socket, match) = _parse(key);
+    final out = await _rc(socket, 'get-colors', {'match': match}) as String? ?? '';
     final named = <String, int>{};
     for (final line in out.split('\n')) {
       final m = RegExp(r'^(\w+)\s+#([0-9a-fA-F]{6})$').firstMatch(line.trim());
@@ -233,47 +258,48 @@ class Kitty {
   /// image is on the Mac's clipboard. A line break goes in as Shift+Enter
   /// (a new line in omp's editor; a shell runs the line).
   Future<void> send(String key, String text, {required bool enter}) async {
-    final (socket, id) = await _live(key);
+    final (socket, match) = _parse(key);
+    final newline = {
+      'match': match,
+      'keys': ['shift+enter'],
+    };
     for (final (i, line) in text.split('\n').indexed) {
-      if (i > 0) await _rc(socket, ['send-key', '--match', 'id:$id', 'shift+enter']);
+      if (i > 0) await _rc(socket, 'send-key', newline);
       if (line.isEmpty) continue;
-      await _rc(socket, ['send-text', '--match', 'id:$id', '--stdin', '--bracketed-paste', 'disable'], stdin: line);
+      await _rc(socket, 'send-text', {'match': match, 'data': 'text:$line', 'bracketed_paste': 'disable'});
     }
-    if (enter) await press(key, 'enter');
+    if (!enter) return;
+    await _rc(socket, 'send-key', {
+      'match': match,
+      'keys': ['enter'],
+    });
   }
 
+  /// Types [text] as keystrokes, without Enter.
+  Future<void> type(String key, String text) async {
+    final (socket, match) = _parse(key);
+    await _rc(socket, 'send-text', {'match': match, 'data': 'text:$text', 'bracketed_paste': 'disable'});
+  }
+
+  /// Presses one of [keys] (what the iPhone may press).
   Future<void> press(String key, String name) async {
     if (!keys.contains(name)) throw KittyException('Unknown key: $name');
-    final (socket, id) = await _live(key);
-    await _rc(socket, ['send-key', '--match', 'id:$id', name]);
+    await pressKeys(key, [name]);
+  }
+
+  /// Presses [names] (any key kitty names, like `shift+tab` or `a`) in order,
+  /// in one command.
+  Future<void> pressKeys(String key, List<String> names) async {
+    final (socket, match) = _parse(key);
+    if (names.isEmpty) return;
+    await _rc(socket, 'send-key', {'match': match, 'keys': names});
   }
 
   /// Closes the window and whatever runs in it (kitty doesn't ask; the
   /// iPhone does, before it sends this).
   Future<void> close(String key) async {
-    final (socket, id) = await _live(key);
-    await _rc(socket, ['close-window', '--match', 'id:$id']);
-  }
-
-  /// Attaches [image] (any format macOS reads) to the omp prompt in the
-  /// window: it goes on the Mac's clipboard as PNG, then Ctrl+V, which omp
-  /// answers by attaching the clipboard's image. Replaces the clipboard.
-  Future<void> pasteImage(String key, File image) async {
-    final (socket, id) = await _live(key);
-    final png = '${image.path}.png';
-    try {
-      final conv = await Process.run('/usr/bin/sips', ['-s', 'format', 'png', image.path, '--out', png]);
-      if (conv.exitCode != 0) throw const KittyException("The Mac couldn't read that image.");
-      final set = await Process.run('/usr/bin/osascript', [
-        '-e',
-        'set the clipboard to (read (POSIX file "$png") as «class PNGf»)',
-      ]);
-      if (set.exitCode != 0) throw KittyException("The image didn't go on the Mac's clipboard: ${set.stderr}");
-      await _rc(socket, ['send-key', '--match', 'id:$id', 'ctrl+v']);
-    } finally {
-      final f = File(png);
-      if (f.existsSync()) f.deleteSync();
-    }
+    final (socket, match) = _parse(key);
+    await _rc(socket, 'close-window', {'match': match});
   }
 
   /// A new kitty OS window in [cwd] (a session of its own, like one opened by
@@ -287,7 +313,13 @@ class Kitty {
     for (final socket in sockets) {
       final String id;
       try {
-        id = (await _rc(socket, ['launch', '--type', 'os-window', '--keep-focus', '--cwd', cwd])).trim();
+        final data = await _rc(socket, 'launch', {
+          'args': <String>[],
+          'cwd': cwd,
+          'type': 'os-window',
+          'keep_focus': true,
+        });
+        id = '$data'.trim();
       } on KittyException catch (e) {
         last = e;
         continue;
