@@ -2,16 +2,18 @@ import CryptoKit
 import UserNotifications
 
 /// Turns a push into its real text. The relay (supabase/functions/relay) only
-/// forwards ciphertext: the user's own server sealed {kind, title, body, id?}
-/// with the key this iPhone registered (`DzepShared.pushKey`), AES-256-GCM in
-/// CryptoKit's combined form. If anything is off, the relay's generic text
-/// ("Reminder") shows instead; nothing private ever did.
+/// forwards ciphertext: the user's own server sealed {kind, title, body, id?,
+/// session?} with the key this iPhone registered (`DzepShared.pushKey`),
+/// AES-256-GCM in CryptoKit's combined form. If anything is off, the relay's
+/// generic text ("Reminder") shows instead; nothing private ever did.
 final class NotificationService: UNNotificationServiceExtension {
   private struct Message: Decodable {
     let kind: String
     let title: String
     let body: String
     let id: String?
+    /// kind terminal: the omp session (its key) a tap opens.
+    let session: String?
   }
 
   override func didReceive(
@@ -32,6 +34,7 @@ final class NotificationService: UNNotificationServiceExtension {
     var info = content.userInfo
     info["kind"] = message.kind
     if let id = message.id { info["todo"] = id }
+    if let session = message.session { info["session"] = session }
     content.userInfo = info
   }
 }

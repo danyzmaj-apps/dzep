@@ -1420,11 +1420,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
                       _row(
                         label: 'Terminal from iPhone',
                         sub: !app.terminalOn
-                            ? 'Your iPhone sees and types into kitty while this Mac is awake'
+                            ? 'Your iPhone sees omp sessions and kitty, and types into them, while this Mac is awake'
                             : _kitty?.error ??
                                   (_kitty == null
                                       ? 'Looking for kitty…'
-                                      : '${_kitty!.windows} kitty windows · keeps this Mac from idle sleep'),
+                                      : '${_kitty!.windows} kitty windows · ${app.live.sessions.length} omp sessions '
+                                            '· keeps this Mac from idle sleep'),
                         subError: app.terminalOn && _kitty?.error != null,
                         trailing: Switch(
                           value: app.terminalOn,

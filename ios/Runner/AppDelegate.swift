@@ -86,6 +86,8 @@ import WidgetKit
         reminders.schedule(args["reminders"] as? [[String: Any]] ?? []) { result(nil) }
       case "takeTappedTodo":
         result(reminders.takeTapped())
+      case "takeTappedSession":
+        result(reminders.takeTappedSession())
       case "registerPush":
         // Permission first (a no-op after the first answer), then APNs. nil:
         // not allowed or no token (the app keeps local reminders then).
@@ -115,6 +117,9 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
   /// The todo whose notification was tapped, until Dart takes it: a tap that
   /// launched the app arrives before Dart listens.
   private var tapped: String?
+
+  /// The same for a terminal push: the omp session it is about.
+  private var tappedSession: String?
 
   func install() {
     let center = UNUserNotificationCenter.current()
@@ -154,6 +159,11 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
     return tapped
   }
 
+  func takeTappedSession() -> String? {
+    defer { tappedSession = nil }
+    return tappedSession
+  }
+
   /// A reminder going off while Džep is open still shows.
   func userNotificationCenter(
     _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
@@ -171,8 +181,10 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
     let info = response.notification.request.content.userInfo
     let id = info["todo"] as? String ?? response.notification.request.identifier
     if info["kind"] as? String == "terminal" {
+      let session = info["session"] as? String
       DispatchQueue.main.async {
-        self.channel?.invokeMethod("openTerminal", arguments: nil)
+        self.tappedSession = session
+        self.channel?.invokeMethod("openTerminal", arguments: session.map { ["session": $0] })
         completionHandler()
       }
       return

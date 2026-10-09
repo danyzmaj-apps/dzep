@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:dzep/idea.dart';
+import 'package:dzep/live_hub.dart';
 import 'package:dzep/store.dart';
 import 'package:flutter/foundation.dart';
 
@@ -19,16 +20,19 @@ import 'package:flutter/foundation.dart';
 ///   PATCH /v1/ideas/ID             {done} (todos only) → {"idea": {...}}
 ///   POST  /v1/notify               {title, body?} → {"sent": bool}: push to the iPhone
 ///                                  if nobody has used this Mac for a minute
+///   GET   /v1/live                 WebSocket: an omp session reporting itself
+///                                  (integrations/omp/live.ts, lib/live_hub.dart)
 ///
 /// Writes go through the [IdeaStore], so they sync like any other edit.
 class LocalApi {
-  LocalApi(this._store, this._notify);
+  LocalApi(this._store, this._notify, this._live);
 
   final IdeaStore? Function() _store;
 
   /// Pushes a notification to the user's iPhones; false when it didn't go
   /// (someone is at the Mac, no iPhone, offline).
   final Future<bool> Function(String title, String body) _notify;
+  final LiveHub _live;
   HttpServer? _server;
   late final String _token = List.generate(
     32,
@@ -49,12 +53,21 @@ class LocalApi {
     await Process.run('chmod', ['600', tmp.path]);
     await tmp.writeAsString(jsonEncode({'port': server.port, 'token': _token, 'pid': pid}), flush: true);
     await tmp.rename(f.path);
-    server.listen((req) => unawaited(_handle(req)));
+    server.listen((req) => unawaited(req.uri.path == '/v1/live' ? _upgrade(req) : _handle(req)));
   }
 
   Future<void> stop() async {
     await _server?.close(force: true);
     if (file.existsSync()) file.deleteSync();
+  }
+
+  Future<void> _upgrade(HttpRequest req) async {
+    if (req.headers.value('authorization') != 'Bearer $_token' || !WebSocketTransformer.isUpgradeRequest(req)) {
+      req.response.statusCode = HttpStatus.forbidden;
+      await req.response.close();
+      return;
+    }
+    await _live.accept(await WebSocketTransformer.upgrade(req));
   }
 
   Future<void> _handle(HttpRequest req) async {

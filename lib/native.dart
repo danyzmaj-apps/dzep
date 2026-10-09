@@ -8,8 +8,9 @@ class Native {
 
   /// Events from the Swift side: hotKey, togglePopup, openMain,
   /// openSettings, blur (the popup lost focus), mainClosed (⌘W), openTodo
-  /// ({id}: a reminder notification was clicked), pending (an action waits in
-  /// [takePending], e.g. a tick from the desktop widget).
+  /// ({id}: a reminder notification was clicked), openTerminal ({session}:
+  /// a terminal push was tapped; see [takeTappedSession]), pending (an
+  /// action waits in [takePending], e.g. a tick from the desktop widget).
   static void listen(void Function(String event, Map<Object?, Object?> args) onEvent) {
     _channel.setMethodCallHandler(
       (call) async => onEvent(call.method, call.arguments as Map<Object?, Object?>? ?? const {}),
@@ -44,6 +45,9 @@ class Native {
   /// iPhone: the todo whose reminder was tapped, once (a tap that launched
   /// the app lands before Dart listens, so openTodo only says "look").
   static Future<String?> takeTappedTodo() => _channel.invokeMethod<String>('takeTappedTodo');
+
+  /// iPhone: the omp session (its key) whose terminal push was tapped, once.
+  static Future<String?> takeTappedSession() => _channel.invokeMethod<String>('takeTappedSession');
 
   /// iPhone: asks for notification permission and this iPhone's APNs token,
   /// with its push key (ios/Shared/DzepShared.swift). Null: not allowed, or
