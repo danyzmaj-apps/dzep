@@ -14,7 +14,7 @@
 - Quick questions take images: paste with ⌘V or attach with 📎 in the Mac popup and main window, paste or pick from Photos on the iPhone. Up to 4 per question, scaled to 2048 px at most; they show in the chat history on every device.
 - Fixed: right after launch the Mac could join the terminal channel before its sign-in was ready, and then never hear the iPhone (its Terminal tab spun forever).
 
-**Backend:** run `tool/setup-backend.sh` (new migrations: `chat_messages.images` with the private `chat` bucket, and the `note` kind; `ask` and `device` redeployed; new `pair` function; sign-in links valid for 10 minutes, `otp_expiry = 600`). Images need a model that reads them; `deepseek-flash` (V4.1) does.
+**Backend:** run `tool/setup-backend.sh` (new migrations: `chat_messages.images` with the private `chat` bucket, the `note` kind, and push: `push_devices`, `push_sent`, `push_config` and a `pg_cron` job; `ask` and `device` redeployed; new `pair` and `push` functions; sign-in links valid for 10 minutes, `otp_expiry = 600`). Images need a model that reads them; `deepseek-flash` (V4.1) does.
 
 ## 0.1.0
 
