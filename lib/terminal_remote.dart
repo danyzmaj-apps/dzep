@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dzep/ansi.dart';
 import 'package:dzep/kitty.dart';
 import 'package:dzep/live.dart';
+import 'package:dzep/terminal_channel.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -85,8 +86,19 @@ class TerminalRemote extends ChangeNotifier {
   static const _writeEvery = Duration(seconds: 2);
   static const _keepFor = Duration(days: 14);
 
-  RealtimeChannel? _ch;
-  bool _joined = false;
+  late final TerminalChannel _ch = TerminalChannel(
+    _client,
+    _userId,
+    {
+      for (final event in const ['state', 'items', 'live', 'screen', 'ran']) event: (p) => _receive(event, p),
+    },
+    name: 'terminal remote',
+    onJoined: ({required joined}) {
+      // Ops may have gone by while away.
+      if (joined) _watched();
+      notifyListeners();
+    },
+  );
   Timer? _timer;
   DateTime _openedAt = DateTime.now();
   DateTime? _heard;
@@ -131,7 +143,7 @@ class TerminalRemote extends ChangeNotifier {
   final _writes = <String, Timer>{};
 
   TerminalLink get link {
-    if (!_joined) return TerminalLink.connecting;
+    if (!_ch.joined) return TerminalLink.connecting;
     final now = DateTime.now();
     final heard = _heard;
     if (heard != null && now.difference(heard) < _silent) return TerminalLink.online;
@@ -200,16 +212,7 @@ class TerminalRemote extends ChangeNotifier {
     if (_users++ > 0) return;
     _openedAt = DateTime.now();
     if (_transmit != null) return;
-    void on(String event) => _ch!.onBroadcast(event: event, callback: (p) => _receive(event, p));
-    _ch = terminalTopic(_client, _userId);
-    const ['state', 'items', 'live', 'screen', 'ran'].forEach(on);
-    _ch!.subscribe((status, error) {
-      debugPrint('Džep: terminal remote: ${status.name}${error == null ? '' : ' $error'}');
-      _joined = status == RealtimeSubscribeStatus.subscribed;
-      // Ops may have gone by while away.
-      if (_joined) _watched();
-      notifyListeners();
-    });
+    _ch.open();
     _timer = Timer.periodic(_helloEvery, (_) {
       hello();
       // A session left behind with no state to come still catches up.
@@ -223,14 +226,11 @@ class TerminalRemote extends ChangeNotifier {
     if (_users == 0 || --_users > 0) return;
     _timer?.cancel();
     _timer = null;
-    _joined = false;
     _heard = null;
     _syncing.clear();
     _held.clear();
     _behind.clear();
-    final channel = _ch;
-    _ch = null;
-    if (channel != null) unawaited(_client.removeChannel(channel));
+    if (_transmit == null) unawaited(_ch.close());
     flush();
   }
 
@@ -263,11 +263,10 @@ class TerminalRemote extends ChangeNotifier {
 
   Future<void> _send(String event, Map<String, dynamic> payload) async {
     final t = _transmit;
-    final ch = _ch;
     if (t != null) {
       t(event, payload);
-    } else if (ch != null && _joined) {
-      await ch.sendBroadcastMessage(event: event, payload: payload);
+    } else {
+      await _ch.send(event, payload);
     }
   }
 

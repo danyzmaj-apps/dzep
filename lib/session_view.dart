@@ -93,18 +93,21 @@ class _SessionPageState extends State<SessionPage> {
   }
 
   Future<void> _send({required bool busy}) async {
-    final text = _field.text.trim();
+    final typed = _field.text;
+    final text = typed.trim();
     if ((text.isEmpty && _attachments.isEmpty) || _sending) return;
+    final images = List.of(_attachments.images);
     setState(() => _sending = true);
     try {
-      await remote.prompt(
-        key,
-        text,
-        images: [for (final i in _attachments.images) i.bytes],
-        followUp: busy && _followUp,
-      );
-      _field.clear();
-      _attachments.take();
+      await remote.prompt(key, text, images: [for (final i in images) i.bytes], followUp: busy && _followUp);
+      // Only what went: the field stays editable while it goes, and what was
+      // typed or attached meanwhile is the next prompt.
+      final now = _field.text;
+      _field.text = now.startsWith(typed) ? now.substring(typed.length).trimLeft() : now;
+      for (final i in images) {
+        final at = _attachments.images.indexOf(i);
+        if (at >= 0) _attachments.removeAt(at);
+      }
       _atBottom = true;
     } on Object catch (e) {
       if (mounted) termToast(context, e);
