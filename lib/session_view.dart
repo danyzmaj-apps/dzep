@@ -443,7 +443,7 @@ class _SessionPageState extends State<SessionPage> {
                     children: [
                       FilterChip(
                         key: const ValueKey('follow-up'),
-                        label: const Text('After this turn', style: TextStyle(fontSize: 12)),
+                        label: const Text('Queue', style: TextStyle(fontSize: 12)),
                         tooltip: 'Off: the prompt steers omp now',
                         selected: _followUp,
                         showCheckmark: true,
