@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show BoxWidthStyle;
 
 import 'package:dzep/remind.dart';
 import 'package:dzep/store.dart';
@@ -41,6 +42,13 @@ ThemeData appTheme() {
 
 const plainInput = InputDecoration(border: InputBorder.none, isCollapsed: true, contentPadding: EdgeInsets.zero);
 
+/// The selection of every multi-line field: only the selected text, line by
+/// line, like a Mac text view. Flutter's default on the Mac
+/// ([BoxWidthStyle.max]) runs each line out to the widest one and fills
+/// empty lines, so a selection looks like whole rows. The height keeps
+/// Flutter's default, which closes the gaps between lines.
+const BoxWidthStyle selectionWidth = BoxWidthStyle.tight;
+
 /// Asks before deleting the account; true to go ahead.
 Future<bool> confirmDeleteAccount(BuildContext context) async =>
     await showDialog<bool>(
@@ -81,10 +89,9 @@ class Kbd extends StatelessWidget {
         bottom: BorderSide(color: Color(0xFF363A47), width: 2),
       ),
     ),
-    child: Text(
-      label,
-      style: const TextStyle(fontSize: 11, color: Color(0xFFCFD3DD), fontFamily: 'Menlo'),
-    ),
+    // The system font, not a monospaced one: in Menlo's narrow O, ⌘O read as
+    // ⌘0.
+    child: Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFFCFD3DD))),
   );
 }
 

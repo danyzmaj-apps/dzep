@@ -9,6 +9,7 @@ import 'package:dzep/chat.dart';
 import 'package:dzep/chat_images.dart';
 import 'package:dzep/chat_view.dart';
 import 'package:dzep/idea.dart';
+import 'package:dzep/live_activity.dart';
 import 'package:dzep/main_window.dart' show Avatar, SignInPage;
 import 'package:dzep/native.dart';
 import 'package:dzep/popup.dart' show parseTitle;
@@ -202,7 +203,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _startTerminal() async {
     final dir = await getApplicationSupportDirectory();
     if (!mounted) return;
-    setState(() => _terminal = TerminalRemote(widget.session.client, store.userId, Directory('${dir.path}/terminal')));
+    final remote = TerminalRemote(widget.session.client, store.userId, Directory('${dir.path}/terminal'));
+    remote.activities = LiveActivities(widget.session.client, remote);
+    setState(() => _terminal = remote);
     final state = WidgetsBinding.instance.lifecycleState;
     if (state == null || state == AppLifecycleState.resumed) _attachTerminal(attach: true);
     final key = _sessionToOpen;
@@ -217,7 +220,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     attach ? t.attach() : t.detach();
   }
 
-  /// The Terminal tab, on omp session [key] (from a tapped push).
+  /// The Terminal tab, on omp session [key] (from a tapped push or Live
+  /// Activity).
   void _openSession(String key) {
     setState(() => _tab = 4);
     final t = _terminal;
@@ -239,9 +243,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // The widgets open dzep://add, dzep://add?kind=todo and dzep://todos. The
-    // stream also carries the link that cold-started the app, so
-    // getInitialLink() would handle it twice.
+    // The widgets open dzep://add, dzep://add?kind=todo and dzep://todos, a
+    // Live Activity dzep://session?key=…. The stream also carries the link
+    // that cold-started the app, so getInitialLink() would handle it twice.
     _links = AppLinks().uriLinkStream.listen(_onLink);
     Native.listen(_onNative);
     // A reminder or terminal push tap that launched the app.
@@ -257,6 +261,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_links?.cancel());
     _search.dispose();
+    _terminal?.activities?.dispose();
     _terminal?.dispose();
     super.dispose();
   }
@@ -279,8 +284,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// From ios/Runner/AppDelegate.swift: a reminder was tapped, or its Done
   /// couldn't reach the server and waits in the App Group, or a terminal
-  /// push was tapped.
-  void _onNative(String event, Map<Object?, Object?> _) {
+  /// push was tapped, or a Live Activity has news.
+  void _onNative(String event, Map<Object?, Object?> args) {
     if (!mounted) return;
     switch (event) {
       case 'openTodo':
@@ -292,6 +297,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         unawaited(_openTappedSession());
       case 'pending':
         unawaited(widget.session.drainPending());
+      case 'activityToken' || 'activityEnded':
+        _terminal?.activities?.onNative(event, args);
     }
   }
 
@@ -313,6 +320,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (uri == null || uri.scheme != 'dzep' || !mounted) return;
     if (uri.host == 'todos') {
       setState(() => _tab = 0);
+    } else if (uri.host == 'session') {
+      final key = uri.queryParameters['key'];
+      if (key != null && key.isNotEmpty) _openSession(key);
     } else if (uri.host == 'add') {
       final kind = Kind.parse(uri.queryParameters['kind']);
       setState(

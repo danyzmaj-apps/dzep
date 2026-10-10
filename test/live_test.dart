@@ -245,6 +245,72 @@ void main() {
       expect(askOnScreen(a, 'Run bash?\n> Approve\n  Deny'), isTrue);
       expect(askOnScreen(a, 'Approve the plan'), isFalse);
     });
+
+    test('a plan review is recognised by its header, whatever has focus', () {
+      const plan = LiveAsk.plan('c', title: 'notes');
+      expect(askOnScreen(plan, _planScreen()), isTrue);
+      expect(askOnScreen(plan, _planScreen(help: '↑/↓ scroll · a annotate · ⇥ regions')), isTrue);
+      expect(askOnScreen(plan, 'π > waiting for input\n  plan the next release'), isFalse);
+    });
+  });
+
+  group('plan review', () {
+    test('reads the options and the cursor row, past the slider and a wrapped row', () {
+      final review = parsePlanReview(_planScreen());
+      expect(review?.options, [
+        'Approve and execute',
+        'Approve and compact context',
+        'Approve and keep context (~47k / 1m) — then save every draft note as it changes',
+        'Refine plan',
+        'Save and quit',
+      ]);
+      expect(review?.current, 2);
+    });
+
+    test('reads a review without the slider, with the cursor on the last option', () {
+      final screen = _planScreen(slider: false, cursor: 4, long: false);
+      expect(parsePlanReview(screen)?.options.length, 5);
+      expect(parsePlanReview(screen)?.current, 4);
+    });
+
+    test('is not read while the plan text has focus, once a choice is made, or without a review', () {
+      expect(parsePlanReview(_planScreen(help: '↑/↓ scroll · a annotate · ⇥ regions')), isNull);
+      expect(parsePlanReview(_planScreen(help: 'Applying your selection — this can take a moment.')), isNull);
+      expect(parsePlanReview('π > waiting for input\n↑/↓ select'), isNull);
+    });
+
+    test('keys go down or up from the cursor to the option, then Enter', () {
+      expect(planKeys(1, 3), ['down', 'down', 'enter']);
+      expect(planKeys(3, 0), ['up', 'up', 'up', 'enter']);
+      expect(planKeys(2, 2), ['enter']);
+      expect(planKeys(4, 1, enter: false), ['up', 'up', 'up']);
+    });
+
+    test('keys never go above the first option', () {
+      expect(() => planKeys(2, -1), throwsArgumentError);
+      expect(() => planKeys(-1, 0), throwsArgumentError);
+      expect(planKeys(0, 0), ['enter']);
+    });
+
+    test('a plan ask goes through JSON with its options and cursor', () {
+      const ask = LiveAsk.plan(
+        'call',
+        title: 'notes-plan',
+        options: ['Approve and execute', 'Refine plan'],
+        selected: 1,
+      );
+      final back = LiveAsk.fromJson(jsonDecode(jsonEncode(ask.toJson())) as Map<String, dynamic>);
+      expect(back.isPlan, isTrue);
+      expect(back.id, 'call');
+      expect(back.title, 'notes-plan');
+      expect(back.options, ask.options);
+      expect(back.selected, 1);
+      expect(back.text, 'Plan ready: notes-plan');
+      // The extension sends a plan without options; the Mac reads them off the screen.
+      final bare = LiveAsk.fromJson(const {'kind': 'plan', 'id': 'x', 'title': 'notes-plan'});
+      expect(bare.isPlan, isTrue);
+      expect(bare.options, isEmpty);
+    });
   });
 
   group('ScreenDiff', () {
@@ -276,6 +342,39 @@ void main() {
     });
   });
 
+  group('slash commands', () {
+    const commands = [
+      (name: 'model', description: 'Switch model for this session'),
+      (name: 'new', description: 'Start a new session'),
+      (name: 'compact', description: 'Manually compact the session context'),
+      (name: 'plan-review', description: ''),
+      (name: 'plan', description: 'Toggle plan mode'),
+      (name: 'skill:Pdf', description: 'Read PDFs'),
+    ];
+    List<String> names(String text, {int max = 6}) => [for (final c in matchCommands(commands, text, max: max)) c.name];
+
+    test('a summary keeps its commands through JSON, a description-less one too', () {
+      const s = LiveSummary(key: 'k', id: 's', title: '', cwd: '/x', epoch: 'e', seq: 1, commands: commands);
+      final back = LiveSummary.fromJson(jsonDecode(jsonEncode(s.toJson())) as Map<String, dynamic>);
+      expect(back.commands, commands);
+      expect(LiveSummary.fromJson(const {'key': 'k'}).commands, isEmpty);
+    });
+
+    test('names that start with what was typed come first, then ones that contain it, in omp order', () {
+      expect(names('/p'), ['plan-review', 'plan', 'compact', 'skill:Pdf']);
+      expect(names('/PL'), ['plan-review', 'plan']);
+      expect(names('/n'), ['new', 'plan-review', 'plan']);
+      expect(names('/', max: 3), ['model', 'new', 'compact']);
+    });
+
+    test('nothing once a space follows the name, or without the slash', () {
+      expect(names('/new '), isEmpty);
+      expect(names('/compact keep the API'), isEmpty);
+      expect(names('new'), isEmpty);
+      expect(names('/zzz'), isEmpty);
+    });
+  });
+
   test('chunkJson keeps every chunk under the limit and loses nothing', () {
     final items = [
       for (var i = 0; i < 50; i++) {'id': '$i', 't': 'x' * 900},
@@ -287,4 +386,50 @@ void main() {
     }
     expect(chunks.expand((c) => c).length, 50);
   });
+}
+
+/// omp's plan review as kitty's plain text shows it [width] columns wide:
+/// the plan in a rounded box, then the "next step" prompt, the model slider,
+/// the options (cursor on [cursor]) and the help line. Rows too wide for the
+/// terminal wrap onto the next line, as they do in kitty.
+String _planScreen({
+  int width = 60,
+  int cursor = 2,
+  bool slider = true,
+  bool long = true,
+  String help = '↑/↓ select · ⏎ confirm · ←/→ model · c copy · ⇥ regions · esc cancel',
+}) {
+  final options = [
+    'Approve and execute',
+    'Approve and compact context',
+    if (long)
+      'Approve and keep context (~47k / 1m) — then save every draft note as it changes'
+    else
+      'Approve and keep context (~47k / 1m)',
+    'Refine plan',
+    'Save and quit',
+  ];
+  final inner = width - 4;
+  final out = <String>['╭─ Plan Review ${'─' * (width - 17)}╮'];
+  void row(String content) {
+    final line = '│ ${content.padRight(inner)} │';
+    for (var i = 0; i < line.length; i += width) {
+      out.add(line.substring(i, i + width > line.length ? line.length : i + width));
+    }
+  }
+
+  ['# Notes plan', '', '1. Read the notes store', '2. Save drafts on close', ''].forEach(row);
+  out.add('├${'─' * (width - 2)}┤');
+  row('Plan mode - next step');
+  if (slider) {
+    row('continue with  ◂  smol │ default │ slow  ▸');
+    row('  ↳ Claude Sonnet 4.5');
+  }
+  for (final (i, o) in options.indexed) {
+    row('${i == cursor ? '❯' : ' '} $o');
+  }
+  out.add('├${'─' * (width - 2)}┤');
+  row(help);
+  out.add('╰${'─' * (width - 2)}╯');
+  return out.join('\n');
 }

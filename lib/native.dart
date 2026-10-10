@@ -10,7 +10,9 @@ class Native {
   /// openSettings, blur (the popup lost focus), mainClosed (⌘W), openTodo
   /// ({id}: a reminder notification was clicked), openTerminal ({session}:
   /// a terminal push was tapped; see [takeTappedSession]), pending (an
-  /// action waits in [takePending], e.g. a tick from the desktop widget).
+  /// action waits in [takePending], e.g. a tick from the desktop widget),
+  /// activityToken ({key, token}: a Live Activity's push token, new or
+  /// changed) and activityEnded ({key, token?}: it ended or was swiped away).
   static void listen(void Function(String event, Map<Object?, Object?> args) onEvent) {
     _channel.setMethodCallHandler(
       (call) async => onEvent(call.method, call.arguments as Map<Object?, Object?>? ?? const {}),
@@ -58,6 +60,54 @@ class Native {
     final key = m?['key'];
     return token == null || key == null ? null : (token: token, key: key);
   }
+
+  // iPhone: omp sessions as Live Activities (ios/Shared/OmpActivity.swift,
+  // lib/live_activity.dart). [since]: when it got into [state].
+
+  /// Starts one for session [key], or updates the one it has; false when
+  /// Live Activities are off for Džep.
+  static Future<bool> startActivity({
+    required String key,
+    required String title,
+    required String project,
+    required String state,
+    required DateTime since,
+    String? kind,
+  }) async =>
+      await _channel.invokeMethod<bool>('startActivity', {
+        'key': key,
+        'title': title,
+        'project': project,
+        'state': state,
+        'kind': ?kind,
+        'since': since.millisecondsSinceEpoch,
+      }) ??
+      false;
+
+  static Future<void> updateActivity({
+    required String key,
+    required String state,
+    required DateTime since,
+    String? kind,
+  }) => _channel.invokeMethod('updateActivity', {
+    'key': key,
+    'state': state,
+    'kind': ?kind,
+    'since': since.millisecondsSinceEpoch,
+  });
+
+  /// [immediate]: gone at once (the person ended it), else Ended shows for
+  /// a few minutes.
+  static Future<void> endActivity(String key, {bool immediate = false}) =>
+      _channel.invokeMethod('endActivity', {'key': key, 'immediate': immediate});
+
+  /// The running ones: their session keys and push tokens (if iOS has
+  /// handed one over yet).
+  static Future<List<({String key, String? token})>> liveActivities() async => [
+    for (final m
+        in await _channel.invokeListMethod<Map<Object?, Object?>>('liveActivities') ?? const <Map<Object?, Object?>>[])
+      (key: m['key']! as String, token: m['token'] as String?),
+  ];
 
   // The App Group the widgets (and the iPhone's Siri intents) read:
   // ios/Shared/DzepShared.swift.

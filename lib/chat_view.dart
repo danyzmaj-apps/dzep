@@ -146,10 +146,13 @@ class _Answer extends StatelessWidget {
 
 /// The main window's middle pane in Chats: every saved conversation.
 class ChatList extends StatelessWidget {
-  const ChatList({required this.chat, required this.selected, required this.onSelect, super.key});
+  const ChatList({required this.chat, required this.selected, required this.onSelect, required this.hotKey, super.key});
 
   final ChatStore chat;
   final Conversation? selected;
+
+  /// The popup's shortcut as shown (⇧⌘Space unless changed in Settings).
+  final String hotKey;
 
   /// Null starts a new chat.
   final ValueChanged<Conversation?> onSelect;
@@ -193,8 +196,8 @@ class ChatList extends StatelessWidget {
       ),
       Expanded(
         child: chat.conversations.isEmpty
-            ? const Center(
-                child: Text('Ask something with ⇧⌘Space → 4.', style: TextStyle(color: C.dim)),
+            ? Center(
+                child: Text('Ask something with $hotKey then ⌘4.', style: const TextStyle(color: C.dim)),
               )
             : ListView(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -367,6 +370,7 @@ class _ChatThreadState extends State<ChatThread> {
                     child: TextField(
                       controller: _field,
                       focusNode: _focus,
+                      selectionWidthStyle: selectionWidth,
                       minLines: 1,
                       maxLines: 8,
                       style: const TextStyle(fontSize: 14, height: 1.45),

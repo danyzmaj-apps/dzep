@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:dzep/kitty.dart';
 import 'package:dzep/live.dart';
+import 'package:dzep/live_activity.dart';
 import 'package:dzep/live_hub.dart';
 import 'package:dzep/terminal_channel.dart';
 import 'package:flutter/foundation.dart';
@@ -72,14 +73,43 @@ class TerminalBridge {
   final _pendingOps = <String, ({String epoch, List<LiveOp> ops})>{};
   Timer? _flush;
 
+  /// Plan reviews (their ask ids) whose screen is being followed.
+  final _plans = <String>{};
+  bool _stopped = false;
+
+  /// How often a plan review's screen is read: often while it opens, then
+  /// now and then to follow its cursor and notice it go.
+  static const _planSoon = Duration(milliseconds: 500);
+  static const _planOpening = 6;
+  static const _planEvery = Duration(seconds: 3);
+
+  /// Each session's Live Activity state as last seen (lib/live_activity.dart)
+  /// and as last pushed; a change goes out once it has held for
+  /// [_activityWait], so a quick busy flicker between turns stays home.
+  final _activitySeen = <String, ActivityStatus>{};
+  final _activitySent = <String, ActivityStatus>{};
+  final _activitySoon = <String, Timer>{};
+  static const _activityWait = Duration(seconds: 2);
+
   /// Phones show this session now (said so within [_gone]).
   bool watching(String sessionKey) => _phones.values.any((p) => p.session == sessionKey);
 
   Future<void> start() async {
+    _stopped = false;
     _ch.open();
     _subs
       ..add(_hub.ops.listen(_onOps))
-      ..add(_hub.changes.listen((_) => _stateChanged()));
+      ..add(
+        _hub.changes.listen((_) {
+          _stateChanged();
+          _activitiesChanged();
+        }),
+      )
+      ..add(
+        _hub.events.listen((e) {
+          if (e is LiveAsked && e.ask.isPlan) unawaited(_followPlan(e.session.key, e.ask.id));
+        }),
+      );
     // Away from the Mac, an idle sleep would end the bridge; the lid still
     // sleeps it. `-w`: caffeinate goes when Džep does.
     try {
@@ -90,6 +120,7 @@ class TerminalBridge {
   }
 
   Future<void> stop() async {
+    _stopped = true;
     for (final s in _subs) {
       await s.cancel();
     }
@@ -98,6 +129,10 @@ class TerminalBridge {
     _tick = null;
     _flush?.cancel();
     _stateSoon?.cancel();
+    for (final t in _activitySoon.values) {
+      t.cancel();
+    }
+    _activitySoon.clear();
     _awake?.kill();
     _awake = null;
     _phones.clear();
@@ -187,6 +222,49 @@ class TerminalBridge {
       _stateSoon = null;
       _sendState();
     });
+  }
+
+  // ------------------------------------------------------------ Live Activities
+
+  /// A session started or stopped working, asks or stopped asking, or went:
+  /// its Live Activity on the iPhone hears about it through the server
+  /// (functions/push {action: activity}), which does nothing for a session
+  /// no phone follows. A session seen for the first time pushes nothing:
+  /// no phone can follow it yet.
+  void _activitiesChanged() {
+    for (final s in _hub.sessions) {
+      final status = activityStatus(busy: s.busy, ask: s.ask);
+      final seen = _activitySeen[s.key];
+      _activitySeen[s.key] = status;
+      if (seen == null) {
+        _activitySent[s.key] ??= status;
+      } else if (seen != status) {
+        _activitySoon[s.key]?.cancel();
+        _activitySoon[s.key] = Timer(_activityWait, () => _pushActivity(s.key));
+      }
+    }
+    for (final key in _activitySeen.keys.where((k) => _hub[k] == null).toList()) {
+      if (_activitySeen[key]!.state == ActivityState.ended) continue;
+      _activitySeen[key] = (state: ActivityState.ended, kind: null);
+      _activitySoon[key]?.cancel();
+      _activitySoon[key] = Timer(_activityWait, () => _pushActivity(key));
+    }
+  }
+
+  void _pushActivity(String key) {
+    _activitySoon.remove(key);
+    final status = _activitySeen[key];
+    if (status == null || status == _activitySent[key]) return;
+    _activitySent[key] = status;
+    if (status.state == ActivityState.ended) {
+      _activitySeen.remove(key);
+      _activitySent.remove(key);
+    }
+    unawaited(
+      _client.functions
+          .invoke('push', body: {'action': 'activity', 'session': key, ...activityJson(status)})
+          .then((_) {}, onError: (Object e) => debugPrint('Džep: Live Activity push: $e')),
+    );
   }
 
   void _sendState() {
@@ -331,6 +409,14 @@ class TerminalBridge {
 
   /// The phone's prompt, with its images fetched from Storage (and deleted).
   Future<void> _prompt(Map<String, dynamic> p) async {
+    // omp's own commands (/resume, /goal, /model …) are read by its editor,
+    // not the model: type them into its window like the person would.
+    final text = (p['text'] as String? ?? '').trim();
+    final window = _hub[p['session'] as String]?.window;
+    if (text.startsWith('/') && window != null && (p['images'] as List? ?? const []).isEmpty) {
+      await _kitty.send(window, text, enter: true);
+      return;
+    }
     final paths = (p['images'] as List? ?? const []).cast<String>();
     for (final path in paths) {
       if (!path.startsWith('$_userId/') || path.contains('..')) throw const LiveException('Bad image path.');
@@ -370,14 +456,90 @@ class TerminalBridge {
     }
   }
 
-  /// Answers omp's question or approval with keystrokes in its kitty window,
-  /// once its screen shows that the dialog is up.
+  /// Follows the plan review omp shows for ask [id] on its screen while omp
+  /// still asks it: its options are published once it has rendered, and
+  /// again when its cursor moves. A review gone from the screen twice
+  /// running was dismissed on the Mac (Esc), which omp's extension can't
+  /// see: the ask goes too.
+  Future<void> _followPlan(String key, String id) async {
+    if (!_plans.add(id)) return;
+    try {
+      var misses = 0;
+      for (var n = 0; !_stopped; n++) {
+        final opening = n < _planOpening;
+        await Future<void>.delayed(opening ? _planSoon : _planEvery);
+        final s = _hub[key];
+        final ask = s?.ask;
+        final window = s?.window;
+        if (ask == null || ask.id != id || window == null) return;
+        final String screen;
+        try {
+          screen = await _kitty.plainScreen(window);
+        } on KittyException catch (e) {
+          debugPrint('Džep: plan review $window: $e');
+          if (opening) continue;
+          return;
+        }
+        final review = parsePlanReview(screen);
+        if (review != null) {
+          misses = 0;
+          if (!listEquals(review.options, ask.options) || review.current != ask.selected) {
+            _hub.updateAsk(
+              key,
+              id,
+              LiveAsk.plan(id, title: ask.title, options: review.options, selected: review.current),
+            );
+          }
+        } else if (askOnScreen(ask, screen)) {
+          misses = 0;
+        } else if (!opening && ++misses >= 2) {
+          _hub.updateAsk(key, id, null);
+          return;
+        }
+      }
+    } finally {
+      _plans.remove(id);
+    }
+  }
+
+  /// Picks the plan review option [p] names: from where the cursor is now
+  /// (someone may have moved it on the Mac) down or up to it, and Enter once
+  /// the screen shows the cursor there. ↓/↑ skip an option omp has disabled,
+  /// which plain text doesn't show; a cursor that won't land on the option
+  /// means omp won't take it.
+  Future<void> _answerPlan(String window, LiveAsk ask, Map<String, dynamic> p) async {
+    final answers = [for (final a in p['answers'] as List? ?? const []) LiveAnswer.fromJson((a as Map).cast())];
+    final pick = answers.length == 1 && answers.single.picks.length == 1 ? answers.single.picks.single : -1;
+    if (pick < 0) throw const LiveException('Pick one option.');
+    for (var tries = 0; tries < 4; tries++) {
+      final review = parsePlanReview(await _kitty.plainScreen(window));
+      if (review == null) {
+        throw const LiveException(
+          "The plan review isn't ready on the Mac's screen. Open the screen to answer it there.",
+        );
+      }
+      if (pick >= review.options.length || (pick < ask.options.length && review.options[pick] != ask.options[pick])) {
+        throw const LiveException('The plan review on the Mac has changed. Open the screen to answer it there.');
+      }
+      if (review.current == pick) {
+        await _kitty.pressKeys(window, const ['enter']);
+        return;
+      }
+      await _kitty.pressKeys(window, planKeys(review.current, pick, enter: false));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    throw const LiveException("omp won't move to that option. Open the screen to answer it there.");
+  }
+
+  /// Answers omp's question, approval or plan review with keystrokes in its
+  /// kitty window, once its screen shows that the dialog is up.
   Future<void> _answer(Map<String, dynamic> p) async {
     final s = _hub[p['session'] as String];
     final ask = s?.ask;
     if (s == null || ask == null || ask.id != p['ask']) throw const LiveException('omp is no longer asking that.');
     final window = s.window;
     if (window == null) throw const LiveException('This omp runs outside kitty: answer it on the Mac.');
+    if (ask.isPlan) return await _answerPlan(window, ask, p);
     final steps = answerKeys(
       ask,
       answers: [for (final a in p['answers'] as List? ?? const []) LiveAnswer.fromJson((a as Map).cast())],

@@ -25,6 +25,7 @@ const TAIL_LINES = 60;
 const TAIL_CHARS = 4000;
 const NOTICE_CHARS = 1000;
 const SUMMARY_CHARS = 400;
+const COMMAND_CHARS = 80;
 const SILENT_ABORT = "__omp.silent_abort__";
 
 /** One transcript entry, keyed like LiveItem.toJson in lib/live.dart (the Mac adds `o` and `s`). */
@@ -71,7 +72,8 @@ type Entry = {
 };
 type Ask =
 	| { kind: "ask"; id: string; questions: unknown[] }
-	| { kind: "approval"; id: string; tool: string; summary?: string };
+	| { kind: "approval"; id: string; tool: string; summary?: string }
+	| { kind: "plan"; id: string; title: string };
 
 const parts = (content: unknown): Part[] => (Array.isArray(content) ? content : []);
 
@@ -285,6 +287,32 @@ function askOf(id: string, args: unknown): Ask | null {
 	};
 }
 
+/**
+ * The plan review omp opens at the end of plan mode, after a `write` (args `path` or `file_path`) to
+ * `xd://propose` succeeds. Checked as omp's event controller does: the write's result carries the device
+ * dispatch in `details.xdev`, whose `inner` holds the plan's file, title and whether it exists.
+ */
+export function planOf(id: string, toolName: string, result: unknown): Ask | null {
+	if (toolName !== "write") return null;
+	const details = (result as { details?: unknown } | null | undefined)?.details;
+	const xdev = (details as { xdev?: unknown } | null | undefined)?.xdev as
+		| { tool?: unknown; mode?: unknown; args?: unknown; inner?: unknown }
+		| null
+		| undefined;
+	if (xdev?.tool !== "propose" || xdev.mode !== "execute") return null;
+	const inner = xdev.inner as { planFilePath?: unknown; title?: unknown; planExists?: unknown } | null | undefined;
+	if (
+		typeof inner?.planFilePath !== "string" ||
+		typeof inner.title !== "string" ||
+		typeof inner.planExists !== "boolean"
+	) {
+		return null;
+	}
+	const written = (xdev.args as { title?: unknown } | null | undefined)?.title;
+	const title = inner.title.trim() || (typeof written === "string" ? written.trim() : "") || "Plan";
+	return { kind: "plan", id, title };
+}
+
 /** The last thing the agent said, flattened to one short line. */
 function lastAnswer(messages: readonly unknown[]): string {
 	let last = "";
@@ -319,6 +347,112 @@ function metaOf(ctx: ExtensionContext): { title: string; model: string; ctx: num
 	};
 }
 
+/** omp's builtin slash commands, which `getCommands()` leaves out (packages/coding-agent/src/slash-commands/builtin-*.ts,
+ * v18.4.2, in the order the TUI lists them). */
+const BUILTIN_COMMANDS: [string, string][] = [
+	["security", "Plan, run, inspect, import, and compare OMP-native security scans"],
+	["settings", "Open settings menu"],
+	["setup", "Open provider setup"],
+	["plan", "Toggle plan mode (agent plans before executing)"],
+	["plan-review", "Re-open the plan review for the latest plan (plan mode only)"],
+	["vibe", "Toggle vibe mode (direct persistent fast/good worker sessions; read-only toolset)"],
+	["goal", "Toggle goal mode (persistent autonomous objective for this session)"],
+	["guided-goal", "Have the agent interview you in chat, then set up goal mode"],
+	["loop", "Toggle loop mode: the next prompt re-submits after every yield"],
+	["queue", "Queue a message for after the agent yields"],
+	["model", "Switch model for this session"],
+	["switch", "Switch model for this session; accepts fuzzy ids, provider/id, @role, :level"],
+	["fast", "Toggle priority service tier (OpenAI service_tier=priority, Anthropic speed=fast)"],
+	["slow", "Toggle slow mode (flex tier on OpenAI/Google; low priority on Anthropic past the session limit)"],
+	["skillful", "Toggle listing available skills in the system prompt (session only)"],
+	["extended-context", "Toggle extended context windows"],
+	["computer", "Toggle the native computer-use eval prelude for this session"],
+	["prewalk", "Arm or restart a one-shot model handoff"],
+	["advisor", "Toggle the advisor (a second model that reviews each turn and injects notes)"],
+	["export", "Export session to HTML file"],
+	["trace", "Open this session's trace in the stats dashboard"],
+	["dump", "Copy session transcript to clipboard (and write LLM request JSON to tmp)"],
+	["share", "Share session via an encrypted link (share server or secret gist)"],
+	["collab", "Share this session live via a relay"],
+	["join", "Join a shared collab session"],
+	["leave", "Leave the collab session"],
+	["browser", "Toggle browser eval-prelude headless vs visible mode"],
+	["copy", "Pick text or code from the conversation to copy"],
+	["open", "Open the last link from the conversation in your browser (or pick one with /copy)"],
+	["todo", "View or modify the agent's todo list"],
+	["session", "Session management commands"],
+	["jobs", "Show async background jobs status"],
+	["usage", "Show provider usage and limits"],
+	["stats", "Launch the local stats dashboard"],
+	["changelog", "Show changelog entries"],
+	["hotkeys", "Show all keyboard shortcuts"],
+	["tools", "Show tools currently visible to the agent"],
+	["context", "Show estimated context usage breakdown"],
+	["extensions", "Open Extension Control Center dashboard"],
+	["agents", "Open the agents hub (per-agent model, prewalk, and advisor)"],
+	["git", "Open the git UI (split diff viewer, staging, commit composer)"],
+	["hub", "Open the live Agent Hub"],
+	["branch", "Rewind to a previous message, keeping the old path as a branch"],
+	["fork", "Create a new fork from a previous message"],
+	["tree", "Navigate session tree (switch branches)"],
+	["login", "Login with OAuth provider"],
+	["logout", "Logout from OAuth provider"],
+	["mcp", "Manage MCP servers (add, list, remove, test)"],
+	["ssh", "Manage SSH hosts (add, list, remove)"],
+	["new", "Start a new session"],
+	["fresh", "Reset provider stream state without changing the local transcript"],
+	["clear", "Clear the conversation context in place, keeping the session"],
+	["delete", "Delete the current session and start a new one"],
+	["compact", "Manually compact the session context"],
+	["shake", "Drop heavy content from context (tool results, large blocks)"],
+	["handoff", "Summarize the session into a handoff document and compact in place"],
+	["resume", "Resume a different session"],
+	["pin", "Pin or unpin a session at the top of the resume list"],
+	["btw", "Ask a side question, or browse this session's BTW history"],
+	["tan", "Run a full background agent on tangential work"],
+	["omfg", "Forge a TTSR rule from a complaint to stop a recurring behavior"],
+	["cleanse", "Detect and fix project diagnostics with weighted parallel subagents"],
+	["retry", "Retry the last failed agent turn"],
+	["debug", "Open debug tools selector"],
+	["memory", "Inspect and operate memory maintenance"],
+	["rename", "Rename the current session (omit title to generate)"],
+	["move", "Move the current session to a different directory"],
+	["wt", "Move this session into a new worktree, changes included"],
+	["add-dir", "Add a workspace directory to this session (multi-root)"],
+	["remove-dir", "Remove a workspace directory from this session"],
+	["dirs", "List this session's workspace directories"],
+	["exit", "Exit the application"],
+	["restart", "Restart omp with the same launch flags, resuming this session"],
+	["marketplace", "Manage marketplace plugin sources and installed plugins"],
+	["plugins", "View and manage installed plugins"],
+	["reload-plugins", "Reload all plugins (skills, commands, hooks, tools, agents, MCP)"],
+	["skills", "Search, install, and update skills from the skills.omp.sh registry"],
+	["force", "Force next turn to use a specific tool"],
+	["live", "Start Codex-backed realtime voice mode"],
+	["record", "Start or stop recording this screen to a replayable file (omp play)"],
+	["pause", "Freeze all agents (main, subagents, advisor) until resumed"],
+	["quit", "Quit the application"],
+];
+
+type Command = { name: string; description?: string };
+
+/** The slash commands the phone offers: omp's builtins, then the session's extension, prompt and skill commands. */
+function commandsOf(pi: ExtensionAPI): Command[] {
+	const out: Command[] = BUILTIN_COMMANDS.map(([name, description]) => ({ name, description }));
+	const seen = new Set(out.map((c) => c.name));
+	let more: readonly { name?: unknown; description?: unknown }[] = [];
+	try {
+		if (typeof pi.getCommands === "function") more = pi.getCommands() ?? [];
+	} catch {}
+	for (const c of more) {
+		if (typeof c?.name !== "string" || !c.name || seen.has(c.name)) continue;
+		seen.add(c.name);
+		const description = typeof c.description === "string" ? oneLine(c.description, COMMAND_CHARS) : "";
+		out.push({ name: c.name, description: description || undefined });
+	}
+	return out;
+}
+
 export default function liveExtension(pi: ExtensionAPI) {
 	// The session this extension streams, as the newest handler saw it.
 	let ctx: ExtensionContext | undefined;
@@ -334,6 +468,7 @@ export default function liveExtension(pi: ExtensionAPI) {
 	// Items older than the ones sent so far, for `older` requests.
 	let older: Item[] = [];
 	let meta = "";
+	let commands = "";
 	let ask: Ask | null = null;
 
 	// The answer being written: its text so far, and what hasn't gone out yet.
@@ -371,6 +506,8 @@ export default function liveExtension(pi: ExtensionAPI) {
 		older = items.slice(0, start);
 		const m = metaOf(c);
 		meta = JSON.stringify(m);
+		const list = commandsOf(pi);
+		commands = JSON.stringify(list);
 		send({
 			t: "hello",
 			v: VERSION,
@@ -381,6 +518,7 @@ export default function liveExtension(pi: ExtensionAPI) {
 			ctx: m.ctx,
 			items: items.slice(start),
 			older: start > 0,
+			commands: list,
 		});
 		// What's in flight isn't in the session file yet.
 		if (stream?.created) {
@@ -606,7 +744,13 @@ export default function liveExtension(pi: ExtensionAPI) {
 		} catch {}
 	});
 
-	pi.on("agent_start", (_event, c) => live(c, () => send({ t: "busy", busy: true })));
+	pi.on("agent_start", (_event, c) =>
+		live(c, () => {
+			// A run after a plan review: it was answered (approved, refined) on the Mac or from the phone.
+			if (ask?.kind === "plan") clearAsk(ask.id);
+			send({ t: "busy", busy: true });
+		}),
+	);
 	pi.on("agent_end", (event, c) =>
 		live(c, () => {
 			if (event.willContinue) return;
@@ -622,9 +766,14 @@ export default function liveExtension(pi: ExtensionAPI) {
 		live(c, () => {
 			const m = metaOf(c);
 			const json = JSON.stringify(m);
-			if (json === meta) return;
+			// /reload-plugins and the like change the session's own commands.
+			const list = commandsOf(pi);
+			const listJson = JSON.stringify(list);
+			if (json === meta && listJson === commands) return;
+			const changed = listJson !== commands;
 			meta = json;
-			send({ t: "meta", ...m });
+			commands = listJson;
+			send({ t: "meta", ...m, ...(changed ? { commands: list } : {}) });
 		}),
 	);
 
@@ -632,6 +781,7 @@ export default function liveExtension(pi: ExtensionAPI) {
 		live(c, () => {
 			const msg = event.message as unknown as Msg;
 			if (msg.role === "user") {
+				if (ask?.kind === "plan") clearAsk(ask.id);
 				for (const item of messageItems(msg, newId())) sendItem(item);
 			} else if (msg.role === "assistant") {
 				if (stream?.timer) c.clearTimer(stream.timer);
@@ -740,6 +890,15 @@ export default function liveExtension(pi: ExtensionAPI) {
 			tools.delete(event.toolCallId);
 			toolArgs.delete(event.toolCallId);
 			clearAsk(event.toolCallId);
+			// omp opens its plan review now, and nothing tells extensions when it closes; a run or a
+			// prompt after it does (see agent_start and message_start).
+			if (!event.isError) {
+				const plan = planOf(event.toolCallId, event.toolName, event.result);
+				if (plan) {
+					ask = plan;
+					send({ t: "ask", ask });
+				}
+			}
 		}),
 	);
 	pi.on("tool_approval_requested", (event, c) =>

@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:dzep/chat_images.dart';
 import 'package:dzep/live.dart';
+import 'package:dzep/live_activity.dart';
 import 'package:dzep/terminal_remote.dart';
 import 'package:dzep/terminal_view.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -100,6 +102,9 @@ class _SessionPageState extends State<SessionPage> {
     setState(() => _sending = true);
     try {
       await remote.prompt(key, text, images: [for (final i in images) i.bytes], followUp: busy && _followUp);
+      // On the Lock Screen from here on, as working.
+      final s = remote.session(key);
+      if (s != null) unawaited(remote.activities?.prompted(key, title: _title(s)));
       // Only what went: the field stays editable while it goes, and what was
       // typed or attached meanwhile is the next prompt.
       final now = _field.text;
@@ -113,6 +118,80 @@ class _SessionPageState extends State<SessionPage> {
       if (mounted) termToast(context, e);
     }
     if (mounted) setState(() => _sending = false);
+  }
+
+  String _title(LiveSummary s) => s.title.isNotEmpty ? s.title : baseName(s.cwd);
+
+  /// Puts `/name ` in the field, the cursor after it.
+  void _complete(LiveCommand c) {
+    final text = '/${c.name} ';
+    _field.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  /// Slash commands go to omp's kitty window: the [matches] while the name
+  /// is typed, or a word that they can't run without one.
+  Widget? _commands(List<LiveCommand> matches, {required bool noWindow}) {
+    if (noWindow) {
+      return const Padding(
+        key: ValueKey('commands-need-window'),
+        padding: EdgeInsets.fromLTRB(12, 2, 12, 6),
+        child: Text(
+          'Slash commands run in omp’s kitty window, and this session has none.',
+          style: TextStyle(color: C.dim, fontSize: 12),
+        ),
+      );
+    }
+    if (matches.isEmpty) return null;
+    // Part of the field for tap-outside: picking one keeps the keyboard up.
+    return TextFieldTapRegion(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final c in matches)
+              InkWell(
+                key: ValueKey('command-${c.name}'),
+                canRequestFocus: false,
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => _complete(c),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: '/${c.name}',
+                          style: const TextStyle(color: C.text, fontWeight: FontWeight.w600),
+                        ),
+                        if (c.description.isNotEmpty)
+                          TextSpan(
+                            text: '  ${c.description}',
+                            style: const TextStyle(color: C.dim),
+                          ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleFollow(LiveActivities activities, LiveSummary s) async {
+    if (activities.following(key)) return await activities.stop(key);
+    if (!await activities.follow(key, title: _title(s)) && mounted) {
+      termToast(context, 'Live Activities are off for Džep: turn them on in Settings → Džep.');
+    }
   }
 
   Future<void> _stop() async {
@@ -322,6 +401,11 @@ class _SessionPageState extends State<SessionPage> {
   Widget _composer(LiveSummary? s, {required bool online}) {
     final busy = s?.busy ?? false;
     final canSend = online && !_sending && (_field.text.trim().isNotEmpty || !_attachments.isEmpty);
+    final slash = _field.text.startsWith('/');
+    final commanding = online && s != null && slash;
+    final noWindow = commanding && _windowKey(s) == null;
+    final matches = commanding && !noWindow ? matchCommands(s.commands, _field.text) : const <LiveCommand>[];
+    final commands = _commands(matches, noWindow: noWindow);
     return Container(
       decoration: const BoxDecoration(
         color: C.bar,
@@ -334,6 +418,7 @@ class _SessionPageState extends State<SessionPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
+            ?commands,
             if (busy && online)
               TextFieldTapRegion(
                 child: Padding(
@@ -385,19 +470,29 @@ class _SessionPageState extends State<SessionPage> {
                   ),
                 ),
                 Expanded(
-                  child: TextField(
-                    key: const ValueKey('session-input'),
-                    onTapOutside: _unfocus,
-                    controller: _field,
-                    minLines: 1,
-                    maxLines: 6,
-                    enabled: online,
-                    textCapitalization: TextCapitalization.sentences,
-                    style: const TextStyle(fontSize: 16, height: 1.4),
-                    decoration: plainInput.copyWith(
-                      hintText: busy ? (_followUp ? 'Queue a prompt…' : 'Steer omp…') : 'Prompt omp…',
-                      hintStyle: const TextStyle(color: C.dim2),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  // A hardware keyboard's Tab takes the first suggestion.
+                  child: CallbackShortcuts(
+                    bindings: {
+                      if (matches.isNotEmpty)
+                        const SingleActivator(LogicalKeyboardKey.tab): () => _complete(matches.first),
+                    },
+                    child: TextField(
+                      key: const ValueKey('session-input'),
+                      onTapOutside: _unfocus,
+                      controller: _field,
+                      minLines: 1,
+                      maxLines: 6,
+                      enabled: online,
+                      // A command's name isn't a word to correct or capitalize.
+                      autocorrect: !slash,
+                      enableSuggestions: !slash,
+                      textCapitalization: slash ? TextCapitalization.none : TextCapitalization.sentences,
+                      style: const TextStyle(fontSize: 16, height: 1.4),
+                      decoration: plainInput.copyWith(
+                        hintText: busy ? (_followUp ? 'Queue a prompt…' : 'Steer omp…') : 'Prompt omp…',
+                        hintStyle: const TextStyle(color: C.dim2),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
                     ),
                   ),
                 ),
@@ -423,7 +518,7 @@ class _SessionPageState extends State<SessionPage> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: remote,
+    listenable: Listenable.merge([remote, remote.activities]),
     builder: (context, _) {
       final s = remote.session(key);
       if (s != null) _seen = true;
@@ -432,9 +527,7 @@ class _SessionPageState extends State<SessionPage> {
       final ended = online && !remote.fromCache && s == null && (_seen || !widget.starting);
       final windowKey = _windowKey(s);
       final window = windowKey == null ? null : remote.window(windowKey);
-      final title = s == null
-          ? (window?.title.isNotEmpty ?? false ? window!.title : 'omp')
-          : (s.title.isNotEmpty ? s.title : baseName(s.cwd));
+      final title = s == null ? (window?.title.isNotEmpty ?? false ? window!.title : 'omp') : _title(s);
       final note = linkNote(remote);
       final ask = s?.ask;
       void screen() => openWindow(context, remote, windowKey!);
@@ -450,6 +543,15 @@ class _SessionPageState extends State<SessionPage> {
             ],
           ),
           actions: [
+            if (remote.activities case final activities? when s != null)
+              IconButton(
+                key: const ValueKey('follow-lock-screen'),
+                tooltip: activities.following(key) ? 'Stop following on Lock Screen' : 'Follow on Lock Screen',
+                onPressed: () => unawaited(_toggleFollow(activities, s)),
+                icon: activities.following(key)
+                    ? const Icon(Icons.lock_clock, color: C.accent)
+                    : const Icon(Icons.lock_clock_outlined, color: C.dim),
+              ),
             if (windowKey != null)
               IconButton(
                 key: const ValueKey('open-screen'),
@@ -481,7 +583,14 @@ class _SessionPageState extends State<SessionPage> {
                 actions: [if (windowKey != null) TextButton(onPressed: screen, child: const Text('Screen'))],
               )
             else ...[
-              if (ask != null) _AskCard(key: ValueKey('ask-${ask.id}'), remote: remote, session: key, ask: ask),
+              if (ask != null)
+                _AskCard(
+                  key: ValueKey('ask-${ask.id}'),
+                  remote: remote,
+                  session: key,
+                  ask: ask,
+                  onScreen: windowKey == null ? null : screen,
+                ),
               _composer(s, online: online && (s != null || !widget.starting)),
             ],
           ],
@@ -661,13 +770,17 @@ class _ToolCard extends StatelessWidget {
   }
 }
 
-/// What omp asks, answered from the phone: the `ask` tool's questions, or
-/// an approval.
+/// What omp asks, answered from the phone: the `ask` tool's questions, an
+/// approval, or the plan review at the end of plan mode (its options as the
+/// Mac read them off omp's screen; the plan itself is read on the screen).
 class _AskCard extends StatefulWidget {
-  const _AskCard({required this.remote, required this.session, required this.ask, super.key});
+  const _AskCard({required this.remote, required this.session, required this.ask, this.onScreen, super.key});
   final TerminalRemote remote;
   final String session;
   final LiveAsk ask;
+
+  /// Opens the session's screen; null when it has none.
+  final VoidCallback? onScreen;
 
   @override
   State<_AskCard> createState() => _AskCardState();
@@ -679,6 +792,9 @@ class _AskCardState extends State<_AskCard> {
     for (final _ in widget.ask.questions ?? const []) TextEditingController(),
   ];
   bool _sending = false;
+
+  /// The plan review option being sent.
+  int? _planPick;
 
   /// Sent; the card stays until omp moves on.
   bool _sent = false;
@@ -700,8 +816,11 @@ class _AskCardState extends State<_AskCard> {
     return true;
   }
 
-  Future<void> _answer({bool approve = false}) async {
-    setState(() => _sending = true);
+  Future<void> _answer({bool approve = false, int? plan}) async {
+    setState(() {
+      _sending = true;
+      _planPick = plan;
+    });
     try {
       final ask = widget.ask;
       await widget.remote.answer(
@@ -709,7 +828,9 @@ class _AskCardState extends State<_AskCard> {
         ask,
         approve: approve,
         answers: [
-          if (!ask.isApproval)
+          if (plan != null)
+            LiveAnswer(picks: [plan])
+          else if (!ask.isApproval)
             for (final (i, p) in _picks.indexed)
               LiveAnswer(
                 picks: p.toList()..sort(),
@@ -797,7 +918,52 @@ class _AskCardState extends State<_AskCard> {
         : null;
     final Widget body;
     final List<Widget> buttons;
-    if (ask.isApproval) {
+    if (ask.isPlan) {
+      final screen = widget.onScreen;
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Plan ready', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+          if (ask.title.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(ask.title, style: _mono.copyWith(color: C.dim)),
+            ),
+          if (ask.options.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('omp is waiting on its screen', style: TextStyle(fontSize: 13, color: C.dim)),
+            ),
+          for (final (i, label) in ask.options.indexed)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: OutlinedButton(
+                key: ValueKey('plan-$i'),
+                style: OutlinedButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+                onPressed: busy || !online ? null : () => unawaited(_answer(plan: i)),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(label, style: const TextStyle(fontSize: 14, height: 1.3))),
+                    if (_sending && _planPick == i) ...[const SizedBox(width: 8), spinner!],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      );
+      buttons = [
+        if (screen != null)
+          TextButton.icon(
+            key: ValueKey(ask.options.isEmpty ? 'plan-screen' : 'view-plan'),
+            onPressed: screen,
+            icon: const Icon(Icons.terminal, size: 18),
+            label: Text(ask.options.isEmpty ? 'Screen' : 'View plan'),
+          ),
+      ];
+    } else if (ask.isApproval) {
       body = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

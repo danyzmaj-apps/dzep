@@ -1,3 +1,4 @@
+import ActivityKit
 import Flutter
 import UIKit
 import UserNotifications
@@ -6,6 +7,7 @@ import WidgetKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let reminders = Reminders()
+  private let activities = OmpActivities()
 
   /// Waiting for APNs to hand over this iPhone's device token (registerPush).
   private var pushWaiter: FlutterResult?
@@ -44,7 +46,9 @@ import WidgetKit
     let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "DzepNative")!
     let channel = FlutterMethodChannel(name: "dzep/native", binaryMessenger: registrar.messenger())
     reminders.channel = channel
-    channel.setMethodCallHandler { [reminders, weak self] call, result in
+    activities.channel = channel
+    activities.install()
+    channel.setMethodCallHandler { [reminders, activities, weak self] call, result in
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
       case "deviceName":
@@ -99,8 +103,134 @@ import WidgetKit
             UIApplication.shared.registerForRemoteNotifications()
           }
         }
+      case "startActivity":
+        activities.start(args, result: result)
+      case "updateActivity":
+        activities.update(args, result: result)
+      case "endActivity":
+        activities.end(args, result: result)
+      case "liveActivities":
+        result(activities.running())
       default:
         result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+}
+
+/// omp sessions on the Lock Screen and in the Dynamic Island
+/// (ios/Shared/OmpActivity.swift, drawn by the widget extension). Dart
+/// starts, updates and ends them while the app runs (lib/live_activity.dart);
+/// otherwise the server updates them by push, at each one's push token,
+/// which goes to Dart as `activityToken {key, token}`. One per session key.
+final class OmpActivities {
+  /// The app's channel, once its Flutter engine is up.
+  var channel: FlutterMethodChannel?
+
+  /// Push tokens by activity id. A token can come before Dart listens, so
+  /// Dart also takes them with [running].
+  private var tokens: [String: String] = [:]
+
+  /// Activities whose token and state are followed.
+  private var watched: Set<String> = []
+
+  /// Pushes stop making sense after this long without one (the Mac asleep,
+  /// or gone); the widget shows the activity as stale.
+  private static let staleAfter: TimeInterval = 8 * 3600
+
+  /// After a launch: the activities still running from before.
+  func install() {
+    for a in Activity<OmpActivity>.activities { watch(a) }
+  }
+
+  /// {key, token?} for each running activity.
+  func running() -> [[String: Any]] {
+    Activity<OmpActivity>.activities.filter { $0.activityState == .active }.map { a in
+      var m: [String: Any] = ["key": a.attributes.key]
+      if let token = tokens[a.id] { m["token"] = token }
+      return m
+    }
+  }
+
+  private func active(_ key: String) -> [Activity<OmpActivity>] {
+    Activity<OmpActivity>.activities.filter { $0.attributes.key == key && $0.activityState == .active }
+  }
+
+  /// {state, kind?, since: ms since 1970}; nil for anything else.
+  private func content(_ args: [String: Any]) -> ActivityContent<OmpActivity.ContentState>? {
+    guard let raw = args["state"] as? String, let state = OmpActivity.ContentState.State(rawValue: raw) else {
+      return nil
+    }
+    let since = (args["since"] as? NSNumber)?.doubleValue ?? Date().timeIntervalSince1970 * 1000
+    let kind = (args["kind"] as? String).flatMap(OmpActivity.ContentState.Kind.init(rawValue:))
+    return ActivityContent(
+      state: .init(state: state, since: since / 1000, kind: kind),
+      staleDate: Date().addingTimeInterval(Self.staleAfter))
+  }
+
+  /// {key, title, project, state, kind?, since}: starts one for the session,
+  /// or updates the one it has. true: running; false: Live Activities are
+  /// off for Džep (Settings) or iOS refused.
+  func start(_ args: [String: Any], result: @escaping FlutterResult) {
+    guard let key = args["key"] as? String, let content = content(args) else { return result(false) }
+    if !active(key).isEmpty { return update(args, result: result) }
+    guard ActivityAuthorizationInfo().areActivitiesEnabled else { return result(false) }
+    let attributes = OmpActivity(
+      key: key, title: args["title"] as? String ?? "omp", project: args["project"] as? String ?? "")
+    do {
+      watch(try Activity.request(attributes: attributes, content: content, pushType: .token))
+      result(true)
+    } catch {
+      NSLog("Džep: Live Activity: \(error)")
+      result(false)
+    }
+  }
+
+  /// {key, state, kind?, since}
+  func update(_ args: [String: Any], result: @escaping FlutterResult) {
+    guard let key = args["key"] as? String, let content = content(args) else { return result(false) }
+    let list = active(key)
+    Task { @MainActor in
+      for a in list { await a.update(content) }
+      result(!list.isEmpty)
+    }
+  }
+
+  /// {key, immediate?}: shows Ended, gone at once (the person ended it) or
+  /// after 10 minutes (the session ended on the Mac).
+  func end(_ args: [String: Any], result: @escaping FlutterResult) {
+    guard let key = args["key"] as? String else { return result(nil) }
+    let list = active(key)
+    let content = ActivityContent(
+      state: OmpActivity.ContentState(state: .ended, since: Date().timeIntervalSince1970), staleDate: nil)
+    let policy: ActivityUIDismissalPolicy =
+      args["immediate"] as? Bool == true ? .immediate : .after(Date().addingTimeInterval(600))
+    Task { @MainActor in
+      for a in list { await a.end(content, dismissalPolicy: policy) }
+      result(nil)
+    }
+  }
+
+  private func watch(_ activity: Activity<OmpActivity>) {
+    guard watched.insert(activity.id).inserted else { return }
+    let key = activity.attributes.key
+    let id = activity.id
+    Task { @MainActor in
+      for await data in activity.pushTokenUpdates {
+        let token = data.map { String(format: "%02x", $0) }.joined()
+        self.tokens[id] = token
+        self.channel?.invokeMethod("activityToken", arguments: ["key": key, "token": token])
+      }
+    }
+    Task { @MainActor in
+      for await state in activity.activityStateUpdates where state == .ended || state == .dismissed {
+        // Ended here, by a push, or swiped away: its token is no use now.
+        let token = self.tokens.removeValue(forKey: id)
+        self.watched.remove(id)
+        var args: [String: Any] = ["key": key]
+        if let token { args["token"] = token }
+        self.channel?.invokeMethod("activityEnded", arguments: args)
+        break
       }
     }
   }
