@@ -517,12 +517,21 @@ class Typed extends KeyStep {
   final String text;
 }
 
+/// Wait for omp to redraw before the next keys: closing the typed-answer
+/// editor and moving to the Submit tab take a moment, and keys sent before
+/// that are dropped.
+class Settle extends KeyStep {
+  const Settle();
+}
+
 /// The keystrokes that answer [ask] in omp's terminal UI. The ask dialog
 /// lists each question's options and then "Other"; its cursor stops at the
 /// ends, so going up past the top and then down picks a row wherever the
 /// cursor started. Enter on a single-choice row answers and moves on, Space
 /// toggles a multiple-choice row and Enter moves on; after several questions
-/// a Submit tab takes a last Enter. An approval is omp's Approve/Deny menu,
+/// a Submit tab takes a last Enter. A typed answer goes through an editor;
+/// its Enter closes it, and the next keys wait for that ([Settle]). An
+/// approval is omp's Approve/Deny menu,
 /// which opens on Approve. A plan review or a picker is answered from where
 /// its cursor is now, with [menuKeys].
 List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool approve = false}) {
@@ -563,8 +572,11 @@ List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool
     }
     if (hasCustom) {
       press([...rowKeys(q.options.length), 'enter']);
-      steps.add(Typed(custom));
+      steps
+        ..add(const Settle())
+        ..add(Typed(custom));
       press(['enter']);
+      steps.add(const Settle());
       // A lone multiple-choice question goes to its Submit tab after a typed answer.
       if (q.multi && questions.length == 1) onSubmitTab = true;
     } else if (q.multi) {
@@ -573,7 +585,10 @@ List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool
       press([...rowKeys(a.picks.single), 'enter']);
     }
   }
-  if (questions.length > 1 || onSubmitTab) press(['enter']);
+  if (questions.length > 1 || onSubmitTab) {
+    if (steps.lastOrNull is! Settle) steps.add(const Settle());
+    press(['enter']);
+  }
   return steps;
 }
 

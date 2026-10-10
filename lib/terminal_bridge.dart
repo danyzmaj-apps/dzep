@@ -700,12 +700,34 @@ class TerminalBridge {
         case Keys(:final keys):
           await _kitty.pressKeys(window, keys);
         case Typed(:final text):
-          // The typed-answer editor opens on the Enter before.
-          await Future<void>.delayed(const Duration(milliseconds: 250));
           await _kitty.type(window, text);
+        case Settle():
+          await Future<void>.delayed(const Duration(milliseconds: 450));
       }
     }
+    await _answered(s.key, window, ask);
   }
+
+  /// Waits for omp to take the answer (its extension drops the ask when the
+  /// tool ends). A dialog still waiting on its Submit tab gets one more
+  /// Enter: keys that came while it redrew were dropped.
+  Future<void> _answered(String key, String window, LiveAsk ask) async {
+    bool pending() => _hub[key]?.ask?.id == ask.id;
+    var nudged = false;
+    for (var i = 0; i < 16 && pending(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (i == 7 && pending() && !nudged && _submitTab.hasMatch(await _kitty.plainScreen(window))) {
+        nudged = true;
+        await _kitty.pressKeys(window, const ['enter']);
+      }
+    }
+    if (pending()) {
+      throw const LiveException("omp hasn't taken the answer yet. Open the screen to check what it's waiting for.");
+    }
+  }
+
+  /// omp's ask dialog on its last tab, the answers listed above Submit.
+  static final _submitTab = RegExp(r'Review answers[\s\S]*❯\s*Submit');
 }
 
 /// One session's screen followed for pickers: when it was last told to look

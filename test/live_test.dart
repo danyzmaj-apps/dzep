@@ -130,6 +130,7 @@ void main() {
         switch (s) {
           Keys(:final keys) => keys.join(' '),
           Typed(:final text) => 'type:$text',
+          Settle() => 'wait',
         },
     ];
     String to(int row, int rows) => [...List.filled(rows, 'up'), ...List.filled(row, 'down')].join(' ');
@@ -148,12 +149,42 @@ void main() {
       );
     });
 
-    test('a typed answer picks Other, types, and confirms', () {
+    test('a typed answer picks Other, waits for the editor, types, and confirms', () {
       expect(flat(answerKeys(ask([db]), answers: [const LiveAnswer(custom: ' DuckDB ')])), [
         '${to(3, 4)} enter',
+        'wait',
         'type:DuckDB',
         'enter',
+        'wait',
       ]);
+    });
+
+    test('typed answers to several questions: each editor closes before the next keys, and Submit waits too', () {
+      const q2 = LiveQuestion(id: 'wt', question: 'Worktree?', options: ['Yes', 'No']);
+      expect(
+        flat(
+          answerKeys(
+            ask([db, q2]),
+            answers: [
+              const LiveAnswer(custom: 'a'),
+              const LiveAnswer(custom: 'b'),
+            ],
+          ),
+        ),
+        [
+          '${to(3, 4)} enter',
+          'wait',
+          'type:a',
+          'enter',
+          'wait',
+          '${to(2, 3)} enter',
+          'wait',
+          'type:b',
+          'enter',
+          'wait',
+          'enter',
+        ],
+      );
     });
 
     test('multiple choice toggles each pick with Space, then Enter', () {
@@ -182,7 +213,7 @@ void main() {
             ],
           ),
         ),
-        ['${to(0, 2)} space ${to(1, 2)} enter', 'type:z', 'enter enter'],
+        ['${to(0, 2)} space ${to(1, 2)} enter', 'wait', 'type:z', 'enter', 'wait', 'enter'],
       );
     });
 
@@ -198,7 +229,7 @@ void main() {
             ],
           ),
         ),
-        ['${to(2, 4)} enter ${to(0, 3)} enter enter'],
+        ['${to(2, 4)} enter ${to(0, 3)} enter', 'wait', 'enter'],
       );
     });
 
