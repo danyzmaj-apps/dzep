@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:dzep/kitty.dart';
 import 'package:dzep/live.dart';
 import 'package:dzep/live_hub.dart';
+import 'package:dzep/terminal_channel.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -33,7 +34,11 @@ class TerminalBridge {
   /// Realtime refuses big messages; a full screen is cut to this much JSON.
   static const _maxScreenJson = 90000;
 
-  RealtimeChannel? _ch;
+  late final TerminalChannel _ch = TerminalChannel(_client, _userId, {
+    'hello': _onHello,
+    'sync': _onSync,
+    'run': (m) => unawaited(_onRun(m)),
+  }, name: 'terminal bridge');
   Process? _awake;
   Timer? _tick;
   int _ticks = 0;
@@ -71,13 +76,7 @@ class TerminalBridge {
   bool watching(String sessionKey) => _phones.values.any((p) => p.session == sessionKey);
 
   Future<void> start() async {
-    _ch = terminalTopic(_client, _userId)
-        .onBroadcast(event: 'hello', callback: _onHello)
-        .onBroadcast(event: 'sync', callback: _onSync)
-        .onBroadcast(event: 'run', callback: (m) => unawaited(_onRun(m)))
-        .subscribe((status, error) {
-          debugPrint('Džep: terminal bridge: ${status.name}${error == null ? '' : ' $error'}');
-        });
+    _ch.open();
     _subs
       ..add(_hub.ops.listen(_onOps))
       ..add(_hub.changes.listen((_) => _stateChanged()));
@@ -102,13 +101,11 @@ class TerminalBridge {
     _awake?.kill();
     _awake = null;
     _phones.clear();
-    final channel = _ch;
-    _ch = null;
-    if (channel != null) await _client.removeChannel(channel);
+    await _ch.close();
   }
 
   void _send(String event, Map<String, dynamic> payload) =>
-      unawaited(_ch?.sendBroadcastMessage(event: event, payload: payload));
+      unawaited(_ch.send(event, payload).then((_) {}, onError: (Object e) => debugPrint('Džep: terminal bridge: $e')));
 
   // ------------------------------------------------------------ phones
 

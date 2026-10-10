@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 // Terminal from the iPhone, version 2. Two kinds of things travel:
 //
 // - omp sessions, live and structured. omp's extension
@@ -47,11 +45,6 @@ const imageBucket = 'terminal';
 
 /// The extension protocol's version (its hello's `v`).
 const liveVersion = 1;
-
-/// Broadcast callbacks get the payload's fields at the top level, next to
-/// `event` and `type`.
-RealtimeChannel terminalTopic(SupabaseClient client, String userId) =>
-    client.channel('terminal:$userId', opts: const RealtimeChannelConfig(private: true));
 
 enum ItemKind { user, assistant, tool, notice }
 

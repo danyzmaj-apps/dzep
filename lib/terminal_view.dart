@@ -301,6 +301,18 @@ class TerminalList extends StatelessWidget {
                   ],
                   if (windows.isNotEmpty) ...[
                     _header('WINDOWS'),
+                    // omp running without the live extension: started before it was installed.
+                    if (windows.any((w) => w.isOmp))
+                      const Padding(
+                        key: ValueKey('omp-screens-only'),
+                        padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Text(
+                          'These omp windows show only as screens: omp in them started before its Džep '
+                          'extension (live.ts) was installed. Quit omp there and start it again (omp -c picks '
+                          'the conversation back up) to see it above, as a conversation.',
+                          style: TextStyle(fontSize: 12, color: C.dim2, height: 1.4),
+                        ),
+                      ),
                     for (final (i, w) in windows.indexed) ...[if (i > 0) divider, _window(context, w)],
                   ],
                 ],
