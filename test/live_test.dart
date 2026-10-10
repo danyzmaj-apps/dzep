@@ -280,16 +280,16 @@ void main() {
     });
 
     test('keys go down or up from the cursor to the option, then Enter', () {
-      expect(planKeys(1, 3), ['down', 'down', 'enter']);
-      expect(planKeys(3, 0), ['up', 'up', 'up', 'enter']);
-      expect(planKeys(2, 2), ['enter']);
-      expect(planKeys(4, 1, enter: false), ['up', 'up', 'up']);
+      expect(menuKeys(1, 3), ['down', 'down', 'enter']);
+      expect(menuKeys(3, 0), ['up', 'up', 'up', 'enter']);
+      expect(menuKeys(2, 2), ['enter']);
+      expect(menuKeys(4, 1, enter: false), ['up', 'up', 'up']);
     });
 
     test('keys never go above the first option', () {
-      expect(() => planKeys(2, -1), throwsArgumentError);
-      expect(() => planKeys(-1, 0), throwsArgumentError);
-      expect(planKeys(0, 0), ['enter']);
+      expect(() => menuKeys(2, -1), throwsArgumentError);
+      expect(() => menuKeys(-1, 0), throwsArgumentError);
+      expect(menuKeys(0, 0), ['enter']);
     });
 
     test('a plan ask goes through JSON with its options and cursor', () {
@@ -310,6 +310,131 @@ void main() {
       final bare = LiveAsk.fromJson(const {'kind': 'plan', 'id': 'x', 'title': 'notes-plan'});
       expect(bare.isPlan, isTrue);
       expect(bare.options, isEmpty);
+    });
+  });
+
+  group('pickers', () {
+    // /resume in a 60-column kitty, as its plain text reads.
+    const resume = '''
+ Resume Session (current folder)
+
+ > █
+
+ ❯ Build kitty socket client and live protoc…
+   i want you to review our WHOLE terminal f…
+   3 minutes ago  ·  5.2MB  ·  ✔ done
+
+   Check if mobile app rebuild needed
+   we did bunch of changes to this app, do i…
+   1 day ago  ·  239.3KB  ·  ✔ done
+
+   Fix popup notes
+   2 days ago  ·  12.1KB
+   …
+ [⌦/⌫ delete · ⏎ select · ⇥ all projects · esc cancel]''';
+
+    test('/resume: one item per block, its first line the label and the rest the detail', () {
+      final menu = parseMenu(resume);
+      expect(menu?.title, 'Resume Session (current folder)');
+      expect(menu?.filter, isTrue);
+      expect(menu?.current, 0);
+      expect(menu?.items, [
+        (
+          label: 'Build kitty socket client and live protoc…',
+          detail: 'i want you to review our WHOLE terminal f… · 3 minutes ago · 5.2MB · ✔ done',
+        ),
+        (
+          label: 'Check if mobile app rebuild needed',
+          detail: 'we did bunch of changes to this app, do i… · 1 day ago · 239.3KB · ✔ done',
+        ),
+        (label: 'Fix popup notes', detail: '2 days ago · 12.1KB'),
+      ]);
+    });
+
+    test('/resume in its box, with a scrollbar and the cursor further down', () {
+      String row(String s) => '│ ${s.padRight(54)}${s.startsWith('  ') ? '█' : '│'} │';
+      final screen = [
+        'π  earlier answer in the transcript',
+        '╭─ Resume Session (current folder) ───────────────────────╮',
+        row('> fix'),
+        row(''),
+        row('  Build kitty socket client'),
+        row('  3 minutes ago  ·  5.2MB'),
+        row(''),
+        row('❯ Fix popup notes'),
+        row('  2 days ago  ·  12.1KB'),
+        row(''),
+        row('[⌦/⌫ delete · ⏎ select · ⇥ all projects · esc cancel]'),
+        '╰${'─' * 58}╯',
+      ].join('\n');
+      final menu = parseMenu(screen);
+      expect(menu?.title, 'Resume Session (current folder)');
+      expect(menu?.filter, isTrue);
+      expect(menu?.current, 1);
+      expect(menu?.items.map((i) => i.label), ['Build kitty socket client', 'Fix popup notes']);
+      expect(menu?.items.last.detail, '2 days ago · 12.1KB');
+    });
+
+    test('a simple picker: one item per line, a described one split at its gap', () {
+      const screen = '''
+π  Theme changed.
+
+ Select theme
+
+   dark
+   light       the default
+ ❯ solarized
+   nord
+   (3/4)  Type to search
+
+ ↑/↓ navigate  ⏎ select  esc cancel''';
+      final menu = parseMenu(screen);
+      expect(menu?.title, 'Select theme');
+      expect(menu?.current, 2);
+      expect(menu?.filter, isTrue);
+      expect(menu?.items, [
+        (label: 'dark', detail: ''),
+        (label: 'light', detail: 'the default'),
+        (label: 'solarized', detail: ''),
+        (label: 'nord', detail: ''),
+      ]);
+    });
+
+    test("omp's prompt and the plan review are not pickers", () {
+      const prompt = '''
+π  Done: the popup keeps its notes now.
+   > ran 3 tests
+
+╭──────────────────────────────────────────────────────────╮
+│ > █                                                        │
+╰──────────────────────────────────────────────────────────╯
+  opus-4.5 · 12% · ~/Dev/dzep''';
+      expect(parseMenu(prompt), isNull);
+      expect(parseMenu(_planScreen()), isNull);
+    });
+
+    test('a picker is on screen while its title is', () {
+      const ask = LiveAsk.menu('m1', title: 'Resume Session (current folder)', items: []);
+      expect(askOnScreen(ask, resume), isTrue);
+      expect(askOnScreen(const LiveAsk.menu('m1', title: 'Select theme', items: []), resume), isFalse);
+    });
+
+    test('a picker goes through JSON with its items, cursor and filter', () {
+      const ask = LiveAsk.menu(
+        'menu-3',
+        title: 'Select model',
+        items: [(label: 'opus', detail: 'Anthropic · 200k'), (label: 'gpt-5', detail: '')],
+        selected: 1,
+        filter: true,
+      );
+      final back = LiveAsk.fromJson(jsonDecode(jsonEncode(ask.toJson())) as Map<String, dynamic>);
+      expect(back.isMenu, isTrue);
+      expect(back.id, 'menu-3');
+      expect(back.title, 'Select model');
+      expect(back.items, ask.items);
+      expect(back.selected, 1);
+      expect(back.filter, isTrue);
+      expect(back.text, 'Select model');
     });
   });
 

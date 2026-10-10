@@ -102,9 +102,12 @@ class _SessionPageState extends State<SessionPage> {
     setState(() => _sending = true);
     try {
       await remote.prompt(key, text, images: [for (final i in images) i.bytes], followUp: busy && _followUp);
-      // On the Lock Screen from here on, as working.
       final s = remote.session(key);
-      if (s != null) unawaited(remote.activities?.prompted(key, title: _title(s)));
+      final command = text.startsWith('/') && images.isEmpty;
+      final window = s?.window;
+      if (command && window != null) unawaited(_menuOrScreen(window));
+      // On the Lock Screen from here on, as working.
+      if (s != null && !command) unawaited(remote.activities?.prompted(key, title: _title(s)));
       // Only what went: the field stays editable while it goes, and what was
       // typed or attached meanwhile is the next prompt.
       final now = _field.text;
@@ -118,6 +121,19 @@ class _SessionPageState extends State<SessionPage> {
       if (mounted) termToast(context, e);
     }
     if (mounted) setState(() => _sending = false);
+  }
+
+  /// A command's picker (/resume, /model, /tree …) shows here as a menu once
+  /// the Mac has read it off omp's screen; when none comes (a command
+  /// without one, or one the Mac can't read), omp's screen opens instead.
+  Future<void> _menuOrScreen(String window) async {
+    final until = DateTime.now().add(const Duration(seconds: 3));
+    while (DateTime.now().isBefore(until)) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!mounted || (remote.session(key)?.ask?.isMenu ?? false)) return;
+    }
+    if (!mounted) return;
+    if (ModalRoute.of(context)?.isCurrent ?? false) openWindow(context, remote, window);
   }
 
   String _title(LiveSummary s) => s.title.isNotEmpty ? s.title : baseName(s.cwd);
@@ -583,7 +599,16 @@ class _SessionPageState extends State<SessionPage> {
                 actions: [if (windowKey != null) TextButton(onPressed: screen, child: const Text('Screen'))],
               )
             else ...[
-              if (ask != null)
+              if (ask != null && ask.isMenu)
+                _MenuCard(
+                  key: ValueKey('ask-${ask.id}'),
+                  remote: remote,
+                  session: key,
+                  window: windowKey,
+                  ask: ask,
+                  onScreen: windowKey == null ? null : screen,
+                )
+              else if (ask != null)
                 _AskCard(
                   key: ValueKey('ask-${ask.id}'),
                   remote: remote,
@@ -1024,6 +1049,198 @@ class _AskCardState extends State<_AskCard> {
             Row(mainAxisAlignment: MainAxisAlignment.end, children: buttons),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A picker a slash command opened in omp's terminal UI (/resume, /model,
+/// /tree …), as the Mac read it off the screen: its items to pick from, a
+/// search when it has one, Cancel (Esc) and the screen itself.
+class _MenuCard extends StatefulWidget {
+  const _MenuCard({
+    required this.remote,
+    required this.session,
+    required this.window,
+    required this.ask,
+    this.onScreen,
+    super.key,
+  });
+  final TerminalRemote remote;
+  final String session;
+
+  /// The kitty window omp runs in, for Esc.
+  final String? window;
+  final LiveAsk ask;
+  final VoidCallback? onScreen;
+
+  @override
+  State<_MenuCard> createState() => _MenuCardState();
+}
+
+class _MenuCardState extends State<_MenuCard> {
+  final _search = TextEditingController();
+  Timer? _searchSoon;
+
+  /// The item being picked, or -1 for Cancel.
+  int? _busy;
+
+  @override
+  void dispose() {
+    _searchSoon?.cancel();
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _do(int what, Future<void> Function() action) async {
+    setState(() => _busy = what);
+    try {
+      await action();
+    } on Object catch (e) {
+      if (mounted) termToast(context, e);
+    }
+    if (mounted) setState(() => _busy = null);
+  }
+
+  void _pick(int i) => unawaited(
+    _do(
+      i,
+      () => widget.remote.answer(
+        widget.session,
+        widget.ask,
+        answers: [
+          LiveAnswer(picks: [i]),
+        ],
+      ),
+    ),
+  );
+
+  /// What's typed goes to the picker's search once typing pauses.
+  void _searchChanged(String text) {
+    _searchSoon?.cancel();
+    _searchSoon = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        await widget.remote.answer(widget.session, widget.ask, answers: [LiveAnswer(custom: text)]);
+      } on Object catch (e) {
+        if (mounted) termToast(context, e);
+      }
+    });
+  }
+
+  Widget _item(int i, MenuItem item, {required bool enabled}) {
+    final current = i == widget.ask.selected;
+    return Material(
+      key: ValueKey('menu-$i'),
+      color: current ? C.sel : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: enabled ? () => _pick(i) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.3)),
+                    if (item.detail.isNotEmpty)
+                      Text(
+                        item.detail,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, color: C.dim, height: 1.3),
+                      ),
+                  ],
+                ),
+              ),
+              if (_busy == i)
+                const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ask = widget.ask;
+    final window = widget.window;
+    final enabled = _busy == null && widget.remote.online;
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .55),
+      decoration: const BoxDecoration(
+        color: C.win,
+        border: Border(top: BorderSide(color: C.line)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 8, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    ask.title.isEmpty ? 'omp' : ask.title,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (widget.onScreen case final screen?)
+                  TextButton(key: const ValueKey('menu-screen'), onPressed: screen, child: const Text('Screen')),
+                if (window != null)
+                  TextButton(
+                    key: const ValueKey('menu-cancel'),
+                    onPressed: enabled ? () => unawaited(_do(-1, () => widget.remote.press(window, 'esc'))) : null,
+                    child: _busy == -1
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('Cancel'),
+                  ),
+              ],
+            ),
+          ),
+          if (ask.filter)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+              child: TextField(
+                key: const ValueKey('menu-search'),
+                controller: _search,
+                enabled: widget.remote.online,
+                onTapOutside: _unfocus,
+                onChanged: _searchChanged,
+                autocorrect: false,
+                style: const TextStyle(fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Search…',
+                  hintStyle: const TextStyle(color: C.dim2),
+                  prefixIcon: const Icon(Icons.search, size: 18, color: C.dim2),
+                  isDense: true,
+                  filled: true,
+                  fillColor: C.field,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+          Flexible(
+            child: ask.items.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Text('Nothing matches.', style: TextStyle(fontSize: 13, color: C.dim)),
+                  )
+                : ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    children: [for (final (i, item) in ask.items.indexed) _item(i, item, enabled: enabled)],
+                  ),
+          ),
+        ],
       ),
     );
   }

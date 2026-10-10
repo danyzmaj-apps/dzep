@@ -83,6 +83,19 @@ class TerminalBridge {
   static const _planOpening = 6;
   static const _planEvery = Duration(seconds: 3);
 
+  /// Sessions whose screen is followed for pickers (/resume, /model …) after
+  /// a slash command from the phone, and the pickers' ids so far.
+  final _menus = <String, _MenuWatch>{};
+  int _menuIds = 0;
+
+  /// A picker's screen is read this often for [_menuOpening] after the
+  /// command or an answer, then [_menuEvery], until nothing changed for
+  /// [_menuIdle].
+  static const _menuSoon = Duration(milliseconds: 400);
+  static const _menuOpening = Duration(seconds: 3);
+  static const _menuEvery = Duration(milliseconds: 1500);
+  static const _menuIdle = Duration(minutes: 2);
+
   /// Each session's Live Activity state as last seen (lib/live_activity.dart)
   /// and as last pushed; a change goes out once it has held for
   /// [_activityWait], so a quick busy flicker between turns stays home.
@@ -121,6 +134,9 @@ class TerminalBridge {
 
   Future<void> stop() async {
     _stopped = true;
+    for (final w in _menus.values) {
+      w.wake();
+    }
     for (final s in _subs) {
       await s.cancel();
     }
@@ -380,7 +396,12 @@ class TerminalBridge {
         case 'send':
           await _kitty.send(p['window'] as String, p['text'] as String? ?? '', enter: p['enter'] != false);
         case 'key':
-          await _kitty.press(p['window'] as String, p['key'] as String);
+          final pressed = p['window'] as String;
+          await _kitty.press(pressed, p['key'] as String);
+          // Esc on a picker, say: see it go soon.
+          for (final s in _hub.sessions) {
+            if (s.window == pressed) _menus[s.key]?.arm();
+          }
         case 'close':
           await _kitty.close(p['window'] as String);
         case 'launch':
@@ -410,11 +431,14 @@ class TerminalBridge {
   /// The phone's prompt, with its images fetched from Storage (and deleted).
   Future<void> _prompt(Map<String, dynamic> p) async {
     // omp's own commands (/resume, /goal, /model …) are read by its editor,
-    // not the model: type them into its window like the person would.
+    // not the model: type them into its window like the person would, and
+    // follow the pickers they open.
     final text = (p['text'] as String? ?? '').trim();
-    final window = _hub[p['session'] as String]?.window;
+    final key = p['session'] as String;
+    final window = _hub[key]?.window;
     if (text.startsWith('/') && window != null && (p['images'] as List? ?? const []).isEmpty) {
       await _kitty.send(window, text, enter: true);
+      unawaited(_followMenus(key));
       return;
     }
     final paths = (p['images'] as List? ?? const []).cast<String>();
@@ -525,14 +549,136 @@ class TerminalBridge {
         await _kitty.pressKeys(window, const ['enter']);
         return;
       }
-      await _kitty.pressKeys(window, planKeys(review.current, pick, enter: false));
+      await _kitty.pressKeys(window, menuKeys(review.current, pick, enter: false));
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
     throw const LiveException("omp won't move to that option. Open the screen to answer it there.");
   }
 
-  /// Answers omp's question, approval or plan review with keystrokes in its
-  /// kitty window, once its screen shows that the dialog is up.
+  /// Follows session [key]'s screen for the pickers a slash command opens
+  /// (/resume, /model, /tree …) and publishes each as a menu ask: its rows,
+  /// cursor and search as they change, a new ask for each new picker (one
+  /// can open another), none once it has gone two reads running. Read often
+  /// for a while after the command or an answer, then less; it stops when
+  /// no picker is up after that while, or nothing changed for [_menuIdle].
+  /// omp's own asks come first: a picker never replaces one. Again for a
+  /// session already followed just reads sooner.
+  Future<void> _followMenus(String key) async {
+    final known = _menus[key];
+    if (known != null) {
+      known.arm();
+      return;
+    }
+    final w = _menus[key] = _MenuWatch();
+    String? published;
+    try {
+      var misses = 0;
+      while (!_stopped) {
+        var now = DateTime.now();
+        if (now.difference(w.changed) > _menuIdle) break;
+        final opening = now.difference(w.armed) < _menuOpening;
+        if (published == null && !opening) break;
+        await w.sleep(opening ? _menuSoon : _menuEvery);
+        final s = _hub[key];
+        final window = s?.window;
+        if (s == null || window == null || _stopped) break;
+        final current = s.ask;
+        // omp asks something itself, or the picker's ask went (a new session's hello).
+        if (current != null && current.id != published) break;
+        if (current == null && published != null) published = null;
+        final String screen;
+        try {
+          screen = await _kitty.plainScreen(window);
+        } on KittyException catch (e) {
+          debugPrint('Džep: picker $window: $e');
+          break;
+        }
+        now = DateTime.now();
+        final menu = parseMenu(screen);
+        if (menu == null) {
+          if (published != null && ++misses >= 2) {
+            _hub.updateAsk(key, published, null);
+            published = null;
+            w.query = '';
+          }
+          continue;
+        }
+        misses = 0;
+        final same = current != null && current.title == menu.title;
+        final ask = LiveAsk.menu(
+          same ? current.id : 'menu-${++_menuIds}',
+          title: menu.title,
+          items: menu.items,
+          selected: menu.current,
+          filter: menu.filter,
+        );
+        if (same && jsonEncode(ask.toJson()) == jsonEncode(current.toJson())) continue;
+        if (!_hub.updateAsk(key, published, ask)) break;
+        if (!same) w.query = '';
+        published = ask.id;
+        w.changed = now;
+      }
+    } finally {
+      if (identical(_menus[key], w)) _menus.remove(key);
+      if (published != null) _hub.updateAsk(key, published, null);
+    }
+  }
+
+  /// Answers a picker: a pick moves its cursor from where it is now to the
+  /// row (once that row still reads the same) and presses Enter; typed text
+  /// becomes its search, by typing what's new and erasing only what was
+  /// typed from the phone before (Backspace on an empty search can mean
+  /// something else: /resume deletes the session). The picker is then read
+  /// again soon, as is whatever it opens next.
+  Future<void> _answerMenu(String key, String window, LiveAsk ask, Map<String, dynamic> p) async {
+    final answers = [for (final a in p['answers'] as List? ?? const []) LiveAnswer.fromJson((a as Map).cast())];
+    final answer = answers.length == 1 ? answers.single : null;
+    final w = _menus[key];
+    final menu = parseMenu(await _kitty.plainScreen(window));
+    if (w == null || menu == null || menu.title != ask.title) {
+      throw const LiveException("The menu isn't on the Mac's screen anymore. Open the screen to see what is.");
+    }
+    final query = answer?.custom;
+    if (query != null && answer!.picks.isEmpty) {
+      if (!menu.filter) throw const LiveException("This menu can't be searched.");
+      var same = 0;
+      while (same < query.length && same < w.query.length && query[same] == w.query[same]) {
+        same++;
+      }
+      await _kitty.pressKeys(window, [for (var k = same; k < w.query.length; k++) 'backspace']);
+      if (same < query.length) await _kitty.type(window, query.substring(same));
+      w
+        ..query = query
+        ..arm();
+      return;
+    }
+    final pick = answer != null && answer.picks.length == 1 ? answer.picks.single : -1;
+    if (pick < 0 || pick >= ask.items.length) throw const LiveException('Pick one item.');
+    var shown = menu;
+    for (var tries = 0; tries < 4; tries++) {
+      if (pick >= shown.items.length || shown.items[pick].label != ask.items[pick].label) {
+        throw const LiveException('The menu on the Mac has changed. Pick again.');
+      }
+      if (shown.current == pick) {
+        await _kitty.pressKeys(window, const ['enter']);
+        w
+          ..query = ''
+          ..arm();
+        return;
+      }
+      await _kitty.pressKeys(window, menuKeys(shown.current, pick, enter: false));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final again = parseMenu(await _kitty.plainScreen(window));
+      if (again == null || again.title != ask.title) {
+        throw const LiveException("The menu isn't on the Mac's screen anymore. Open the screen to see what is.");
+      }
+      shown = again;
+    }
+    throw const LiveException("omp won't move to that item. Open the screen to pick it there.");
+  }
+
+  /// Answers omp's question, approval, plan review or a picker with
+  /// keystrokes in its kitty window, once its screen shows that it is up.
   Future<void> _answer(Map<String, dynamic> p) async {
     final s = _hub[p['session'] as String];
     final ask = s?.ask;
@@ -540,6 +686,7 @@ class TerminalBridge {
     final window = s.window;
     if (window == null) throw const LiveException('This omp runs outside kitty: answer it on the Mac.');
     if (ask.isPlan) return await _answerPlan(window, ask, p);
+    if (ask.isMenu) return await _answerMenu(s.key, window, ask, p);
     final steps = answerKeys(
       ask,
       answers: [for (final a in p['answers'] as List? ?? const []) LiveAnswer.fromJson((a as Map).cast())],
@@ -558,5 +705,34 @@ class TerminalBridge {
           await _kitty.type(window, text);
       }
     }
+  }
+}
+
+/// One session's screen followed for pickers: when it was last told to look
+/// soon (a command, an answer, a key) and last saw a change, and what the
+/// phone typed into the current picker's search.
+class _MenuWatch {
+  DateTime armed = DateTime.now();
+  DateTime changed = DateTime.now();
+  String query = '';
+  Completer<void>? _wake;
+
+  /// Reads soon again, for a while.
+  void arm() {
+    armed = changed = DateTime.now();
+    wake();
+  }
+
+  void wake() {
+    final c = _wake;
+    _wake = null;
+    if (c != null && !c.isCompleted) c.complete();
+  }
+
+  /// Waits [d], or less if woken.
+  Future<void> sleep(Duration d) {
+    final c = _wake = Completer<void>();
+    final timer = Timer(d, wake);
+    return c.future.whenComplete(timer.cancel);
   }
 }

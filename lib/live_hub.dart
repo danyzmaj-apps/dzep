@@ -242,12 +242,13 @@ class LiveHub {
     return s;
   }
 
-  /// Replaces session [key]'s ask [id] with what the Mac found out about it
-  /// ([ask]: a plan review's options; null: it's gone). Not a new ask, so no
-  /// event. False when the session no longer asks that.
-  bool updateAsk(String key, String id, LiveAsk? ask) {
+  /// Replaces session [key]'s ask, while it's still [id] (null: while there
+  /// is none), with what the Mac read off its screen: a plan review's
+  /// options, a picker a slash command opened, or null once it's gone. Not
+  /// omp asking, so no event. False when the session's ask has moved on.
+  bool updateAsk(String key, String? id, LiveAsk? ask) {
     final s = _byKey[key];
-    if (s == null || s.ask?.id != id || (ask != null && ask.id != id)) return false;
+    if (s == null || s.ask?.id != id) return false;
     s.ask = ask;
     _changes.add(null);
     return true;

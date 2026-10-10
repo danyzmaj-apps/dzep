@@ -194,6 +194,30 @@ void main() {
     expect(events, hasLength(1));
   });
 
+  test("a picker read off the screen takes a free ask's place, never omp's, and makes no push", () async {
+    final ext = await connect();
+    final events = <LiveEvent>[];
+    hub.events.listen(events.add);
+    ext.hello();
+    await until(() => hub['kitty-1/7'] != null);
+    const menu = LiveAsk.menu('menu-1', title: 'Select theme', items: [(label: 'dark', detail: '')]);
+    expect(hub.updateAsk('kitty-1/7', null, menu), isTrue);
+    expect(hub['kitty-1/7']!.summary.ask?.isMenu, isTrue);
+    // Another picker opened from it (/model, then its thinking level) replaces it.
+    const next = LiveAsk.menu('menu-2', title: 'Thinking level', items: [(label: 'high', detail: '')]);
+    expect(hub.updateAsk('kitty-1/7', 'menu-1', next), isTrue);
+    // omp's own question wins, and a picker doesn't push it aside.
+    ext.send({
+      't': 'ask',
+      'ask': {'kind': 'plan', 'id': 'call9', 'title': 'notes-plan'},
+    });
+    await until(() => hub['kitty-1/7']!.ask?.isPlan ?? false);
+    expect(hub.updateAsk('kitty-1/7', null, menu), isFalse);
+    expect(hub.updateAsk('kitty-1/7', 'menu-2', null), isFalse);
+    expect(hub['kitty-1/7']!.ask?.id, 'call9');
+    expect(events.whereType<LiveAsked>().map((e) => e.ask.id), ['call9']);
+  });
+
   test('a prompt reaches the extension and its reply completes it; an error reply fails it', () async {
     final ext = await connect();
     ext.hello();

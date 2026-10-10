@@ -51,6 +51,9 @@ import WidgetKit
     channel.setMethodCallHandler { [reminders, activities, weak self] call, result in
       let args = call.arguments as? [String: Any] ?? [:]
       switch call.method {
+      case "setKeepAwake":
+        UIApplication.shared.isIdleTimerDisabled = args["on"] as? Bool ?? false
+        result(nil)
       case "deviceName":
         result(UIDevice.current.name)
       case "setSharedToken":

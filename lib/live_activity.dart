@@ -23,17 +23,14 @@ enum ActivityKind { question, approval, plan }
 typedef ActivityStatus = ({ActivityState state, ActivityKind? kind});
 
 /// What a session's activity shows: omp asks something, works, or has
-/// stopped (done).
-ActivityStatus activityStatus({required bool busy, LiveAsk? ask}) => ask != null
-    ? (
-        state: ActivityState.needs,
-        kind: switch (ask.kind) {
-          AskKind.questions => ActivityKind.question,
-          AskKind.approval => ActivityKind.approval,
-          AskKind.plan => ActivityKind.plan,
-        },
-      )
-    : (state: busy ? ActivityState.working : ActivityState.done, kind: null);
+/// stopped (done). A picker the person opened from the phone isn't omp
+/// asking.
+ActivityStatus activityStatus({required bool busy, LiveAsk? ask}) => switch (ask?.kind) {
+  AskKind.questions => (state: ActivityState.needs, kind: ActivityKind.question),
+  AskKind.approval => (state: ActivityState.needs, kind: ActivityKind.approval),
+  AskKind.plan => (state: ActivityState.needs, kind: ActivityKind.plan),
+  AskKind.menu || null => (state: busy ? ActivityState.working : ActivityState.done, kind: null),
+};
 
 /// The same for a session in the Mac's state; null: it's gone (ended).
 ActivityStatus summaryStatus(LiveSummary? s) =>

@@ -138,6 +138,9 @@ class Native {
       _channel.invokeMethod('setBackend', {'url': url, 'key': key});
 
   static Future<String> deviceName() async => await _channel.invokeMethod<String>('deviceName') ?? 'Mac';
+
+  /// iPhone: keeps the screen from dimming and locking while [on].
+  static Future<void> setKeepAwake({required bool on}) => _channel.invokeMethod('setKeepAwake', {'on': on});
   static Future<bool> launchAtLogin() async => await _channel.invokeMethod<bool>('launchAtLogin') ?? false;
   static Future<bool> setLaunchAtLogin({required bool enabled}) async =>
       await _channel.invokeMethod<bool>('setLaunchAtLogin', {'enabled': enabled}) ?? false;
