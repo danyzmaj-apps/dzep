@@ -1192,8 +1192,6 @@ class _MenuCardState extends State<_MenuCard> {
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                 ),
-                if (widget.onScreen case final screen?)
-                  TextButton(key: const ValueKey('menu-screen'), onPressed: screen, child: const Text('Screen')),
                 if (window != null)
                   TextButton(
                     key: const ValueKey('menu-cancel'),
