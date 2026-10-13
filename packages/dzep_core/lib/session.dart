@@ -82,7 +82,7 @@ class Session extends ChangeNotifier {
     } on Object {
       authError =
           'That code has expired or was already used. Make a new one on your Mac '
-          '(Settings → Set up iPhone), or sign in with GitHub here.';
+          '(Settings → Set up phone), or sign in with GitHub here.';
       notifyListeners();
     }
   }

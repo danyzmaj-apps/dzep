@@ -23,7 +23,7 @@ class _SetupPageState extends State<SetupPage> {
   bool _busy = false;
   String? _error;
 
-  /// The Mac's code, read with this iPhone's camera. If the server can't be
+  /// The Mac's code, read with this phone's camera. If the server can't be
   /// reached the app stays here, so the reason shows on this page.
   Future<void> _scan() async {
     final link = await scanSetupCode(context);
@@ -80,9 +80,9 @@ class _SetupPageState extends State<SetupPage> {
                 ),
                 child: const Text(
                   '1.  On your Mac, open Džep and set up your server (it guides you).\n'
-                  '2.  Then on the Mac: Settings → Set up iPhone. A code appears.\n'
-                  '3.  Tap the button below and point this iPhone at it.\n'
-                  '4.  That\u2019s it: the iPhone connects and signs in by itself.',
+                  '2.  Then on the Mac: Settings → Set up phone. A code appears.\n'
+                  '3.  Tap the button below and point this phone at it.\n'
+                  '4.  That\u2019s it: the phone connects and signs in by itself.',
                   style: TextStyle(height: 1.7),
                 ),
               ),

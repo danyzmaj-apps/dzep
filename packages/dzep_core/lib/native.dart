@@ -1,20 +1,29 @@
+import 'dart:io';
+
 import 'package:dzep_core/remind.dart';
 import 'package:flutter/services.dart';
 
-/// The Swift side (macos/Runner/MainFlutterWindow.swift): the popup panel and
-/// the main window, menu-bar icon, global hotkey, launch at login.
+/// What functions/push calls this phone's push service: APNs on iOS, FCM on
+/// Android.
+String get pushPlatform => Platform.isAndroid ? 'android' : 'ios';
+
+/// The native side: the Mac's (macos/Runner/MainFlutterWindow.swift: the
+/// popup panel and the main window, menu-bar icon, global hotkey, launch at
+/// login), the iPhone's (ios/Runner/AppDelegate.swift) and Android's
+/// (android/app/src/main/kotlin/com/danyzmaj/dzep/MainActivity.kt).
 class Native {
   static const _channel = MethodChannel('dzep/native');
 
-  /// Events from the Swift side: hotKey, togglePopup, openMain,
+  /// Events from the native side: hotKey, togglePopup, openMain,
   /// openSettings, blur (the popup lost focus), mainClosed (⌘W), closeNote
   /// (the note window's ⌘W or red button), noteKey ({key}: the note window
   /// got or lost the keyboard), openTodo ({id}: a reminder notification was
   /// clicked), openTerminal ({session}: a terminal push was tapped; see
   /// [takeTappedSession]), pending (an action waits in [takePending], e.g. a
-  /// tick from the desktop widget), activityToken ({key, token}: a Live
-  /// Activity's push token, new or changed) and activityEnded ({key,
-  /// token?}: it ended or was swiped away).
+  /// tick from the desktop widget), activityToken ({key, token}: a followed
+  /// session's push token, new or changed), activityEnded ({key, token?}: it
+  /// ended or was swiped away) and pushToken (Android: FCM changed this
+  /// phone's token; register again).
   static void listen(void Function(String event, Map<Object?, Object?> args) onEvent) {
     _channel.setMethodCallHandler(
       (call) async => onEvent(call.method, call.arguments as Map<Object?, Object?>? ?? const {}),
@@ -41,7 +50,7 @@ class Native {
   /// Mac: seconds since the last keyboard or mouse input.
   static Future<double> idleSeconds() async => await _channel.invokeMethod<double>('idleSeconds') ?? 0;
 
-  // Mac and iPhone: todo reminders, as local notifications.
+  // Mac and phone: todo reminders, as local notifications.
   /// Replaces every pending reminder with [reminders] (lib/remind.dart picks
   /// them); the first non-empty set asks for permission.
   static Future<void> setReminders(List<Reminder> reminders) => _channel.invokeMethod('setReminders', {
@@ -50,16 +59,16 @@ class Native {
     ],
   });
 
-  /// iPhone: the todo whose reminder was tapped, once (a tap that launched
+  /// Phone: the todo whose reminder was tapped, once (a tap that launched
   /// the app lands before Dart listens, so openTodo only says "look").
   static Future<String?> takeTappedTodo() => _channel.invokeMethod<String>('takeTappedTodo');
 
-  /// iPhone: the omp session (its key) whose terminal push was tapped, once.
+  /// Phone: the omp session (its key) whose terminal push was tapped, once.
   static Future<String?> takeTappedSession() => _channel.invokeMethod<String>('takeTappedSession');
 
-  /// iPhone: asks for notification permission and this iPhone's APNs token,
-  /// with its push key (ios/Shared/DzepShared.swift). Null: not allowed, or
-  /// APNs didn't answer.
+  /// Phone: asks for notification permission and this phone's push token
+  /// (APNs on iOS, FCM on Android), with its push key. Null: not allowed, or
+  /// no token (APNs didn't answer; an Android build without Firebase).
   static Future<({String token, String key})?> registerPush() async {
     final m = await _channel.invokeMapMethod<String, String>('registerPush');
     final token = m?['token'];
@@ -67,11 +76,13 @@ class Native {
     return token == null || key == null ? null : (token: token, key: key);
   }
 
-  // iPhone: omp sessions as Live Activities (ios/Shared/OmpActivity.swift,
-  // lib/live_activity.dart). [since]: when it got into [state].
+  // Phone: followed omp sessions, as Live Activities on iOS
+  // (ios/Shared/OmpActivity.swift) and ongoing notifications on Android
+  // (OmpActivities.kt); lib/live_activity.dart. [since]: when it got into
+  // [state].
 
   /// Starts one for session [key], or updates the one it has; false when
-  /// Live Activities are off for Džep.
+  /// Live Activities (iOS) or notifications (Android) are off for Džep.
   static Future<bool> startActivity({
     required String key,
     required String title,
@@ -108,19 +119,19 @@ class Native {
       _channel.invokeMethod('endActivity', {'key': key, 'immediate': immediate});
 
   /// The running ones: their session keys and push tokens (if iOS has
-  /// handed one over yet).
+  /// handed one over yet; on Android, the phone's FCM token).
   static Future<List<({String key, String? token})>> liveActivities() async => [
     for (final m
         in await _channel.invokeListMethod<Map<Object?, Object?>>('liveActivities') ?? const <Map<Object?, Object?>>[])
       (key: m['key']! as String, token: m['token'] as String?),
   ];
 
-  // The App Group the widgets (and the iPhone's Siri intents) read:
-  // ios/Shared/DzepShared.swift.
+  // What the widgets (and the iPhone's Siri intents) read:
+  // ios/Shared/DzepShared.swift, android/…/DzepShared.kt.
   static Future<void> setSharedToken(String? token) => _channel.invokeMethod('setSharedToken', {'token': token});
 
   /// Null on the Mac's sign-out, which its widget shows as signed out (the
-  /// iPhone's goes with the token).
+  /// phone's goes with the token).
   static Future<void> setSharedTodos(List<Map<String, String>>? todos) =>
       _channel.invokeMethod('setSharedTodos', {'todos': todos});
   static Future<List<String>> takePending() async =>
@@ -130,8 +141,8 @@ class Native {
       await _channel.invokeMethod<bool>('setHotKey', {'keyCode': key.keyCode, 'modifiers': key.carbonModifiers}) ??
       false;
 
-  /// The backend (lib/backend.dart) kept in the App Group, where the
-  /// widgets and Siri intents read it.
+  /// The backend (lib/backend.dart) kept where the widgets (and the
+  /// iPhone's Siri intents) read it.
   static Future<({String url, String key})?> getBackend() async {
     final m = await _channel.invokeMapMethod<String, String>('getBackend');
     final url = m?['url'];
@@ -145,7 +156,7 @@ class Native {
 
   static Future<String> deviceName() async => await _channel.invokeMethod<String>('deviceName') ?? 'Mac';
 
-  /// iPhone: keeps the screen from dimming and locking while [on].
+  /// Phone: keeps the screen from dimming and locking while [on].
   static Future<void> setKeepAwake({required bool on}) => _channel.invokeMethod('setKeepAwake', {'on': on});
   static Future<bool> launchAtLogin() async => await _channel.invokeMethod<bool>('launchAtLogin') ?? false;
   static Future<bool> setLaunchAtLogin({required bool enabled}) async =>

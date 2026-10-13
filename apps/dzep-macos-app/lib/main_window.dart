@@ -1530,8 +1530,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
                         ),
                         _row(
                           label: 'Your server',
-                          sub: '${app.backend?.host ?? ''} · Scan a code with your iPhone to connect it',
-                          trailing: _button('Set up iPhone…', () => unawaited(showPairingQr(context, app))),
+                          sub: '${app.backend?.host ?? ''} · Scan a code with your phone to connect it',
+                          trailing: _button('Set up phone…', () => unawaited(showPairingQr(context, app))),
                         ),
                         _row(
                           label: 'Delete account',
@@ -1587,9 +1587,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
                           ),
                         ),
                         _row(
-                          label: 'Terminal from iPhone',
+                          label: 'Terminal from phone',
                           sub: !app.terminalOn
-                              ? 'Your iPhone sees omp sessions and kitty, and types into them, while this Mac is awake'
+                              ? 'Your phone sees omp sessions and kitty, and types into them, while this Mac is awake'
                               : _kitty?.error ??
                                     (_kitty == null
                                         ? 'Looking for kitty…'

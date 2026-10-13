@@ -412,7 +412,7 @@ class _SetupWizardState extends State<SetupWizard> {
         finished ? 'Your server is ready' : '5. Setting up your server',
         finished
             ? 'Connect, then sign in with GitHub. The first account to sign in owns this server. '
-                  'To add your iPhone afterwards: Settings → Set up iPhone, and scan the code.'
+                  'To add your phone afterwards: Settings → Set up phone, and scan the code.'
             : 'This takes about a minute.',
       ),
       for (final s in ProvisionStep.values)

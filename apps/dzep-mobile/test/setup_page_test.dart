@@ -15,7 +15,7 @@ void main() {
     );
   }
 
-  testWidgets('the iPhone offers the Mac’s code or a pasted link, never a server setup of its own', (tester) async {
+  testWidgets('the phone offers the Mac’s code or a pasted link, never a server setup of its own', (tester) async {
     await pumpSetup(tester);
     expect(find.text('Scan the code from your Mac'), findsOneWidget);
     expect(find.text('Paste a setup link instead'), findsOneWidget);

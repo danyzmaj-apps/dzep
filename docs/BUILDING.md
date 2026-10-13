@@ -2,23 +2,26 @@
 
 ## Tools
 
-- Xcode 26 or newer, with your Apple ID signed in (Xcode → Settings → Accounts)
+- Xcode 26 or newer, with your Apple ID signed in (Xcode → Settings → Accounts), for the Mac and iPhone apps
 - [fvm](https://fvm.app): the Flutter version is pinned in `.fvmrc` (`fvm install` fetches it)
 - CocoaPods: `brew install cocoapods`
+- For Android: [Android Studio](https://developer.android.com/studio) (or the command-line Android SDK) with a JDK 17; `fvm flutter doctor` says what's missing
 - For the backend: the Supabase CLI and Docker (only to run Supabase locally)
 
 ```sh
+# at the repo root
 fvm install
-fvm flutter pub get   # at the repo root: resolves the whole workspace
+fvm flutter pub get   # resolves the whole workspace
 ```
 
-The repo is a Dart pub workspace: the Mac app in `apps/dzep-macos-app`, the iPhone app in `apps/dzep-mobile`, the shared code in `packages/dzep_core`. Run each app's commands in its own directory.
+The repo is a Dart pub workspace: the Mac app in `apps/dzep-macos-app`, the phone app (iPhone and Android) in `apps/dzep-mobile`, the shared code in `packages/dzep_core`. Each command below says which directory it runs in.
 
 ## Your signing identity
 
 Every Xcode target takes its team, bundle id and App Group from [config/Dzep.xcconfig](../config/Dzep.xcconfig). The values there belong to the upstream project, and Apple only lets their owner sign with them. To build under your own account:
 
 ```sh
+# at the repo root
 cp config/Local.xcconfig.example config/Local.xcconfig   # git-ignored
 ```
 
@@ -47,7 +50,7 @@ A free Apple ID can build and run the Mac app for yourself. Notarized releases n
 
 ## iPhone
 
-The iPhone app has no public build: install it on your own phone from source. It needs a **paid** Apple Developer account, because its widget and Siri intents share data through an App Group.
+Install it on your own phone from source until the TestFlight build is out. It needs a **paid** Apple Developer account, because its widgets and Siri intents share data through an App Group.
 
 ```sh
 cd apps/dzep-mobile
@@ -55,7 +58,37 @@ open ios/Runner.xcworkspace   # once: pick your phone, let Xcode register the de
 fvm flutter run -d <your-iphone> --release
 ```
 
-Then scan the Mac's setup code with it, or open your setup link on the phone ([SELF_HOSTING.md](SELF_HOSTING.md#connect-the-apps)).
+Then pair it: on the Mac, **Settings → Set up phone…**, and scan the code with the app ([SELF_HOSTING.md](SELF_HOSTING.md#connect-the-apps)).
+
+## Android
+
+```sh
+cd apps/dzep-mobile
+fvm flutter run -d <your-android-device>          # debug build, debug signing
+fvm flutter build apk --release                   # → build/app/outputs/flutter-apk/app-release.apk
+fvm flutter build appbundle --release             # → build/app/outputs/bundle/release/app-release.aab (for Google Play)
+```
+
+**Release signing.** Release builds are signed with an upload key described in `apps/dzep-mobile/android/key.properties` (git-ignored); a release build without it fails. Start from the example:
+
+```sh
+# in apps/dzep-mobile
+cp android/key.properties.example android/key.properties
+```
+
+and point it at your own keystore (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). To make one:
+
+```sh
+keytool -genkeypair -v -keystore ~/keys/dzep-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+```
+
+Keep the keystore and its password outside the repo.
+
+**Push (optional).** Android push goes through Firebase Cloud Messaging. Put your Firebase project's `google-services.json` (Firebase console → Project settings → your Android app, package `com.danyzmaj.dzep` or your own) in `apps/dzep-mobile/android/app/` (git-ignored). Without it the app builds and works, push is off, and reminders are scheduled on the phone instead. Pushes only arrive if the relay your server uses holds the service account of that same Firebase project ([SELF_HOSTING.md](SELF_HOSTING.md#your-own-app-id-and-relay)).
+
+**Your own package name.** The application id is `com.danyzmaj.dzep` in `apps/dzep-mobile/android/app/build.gradle.kts`. Google Play needs it to be unique, so a fork that publishes changes it there (and registers that id in its Firebase project).
+
+Then pair the phone as above.
 
 ## Backend, locally
 

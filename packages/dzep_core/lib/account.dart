@@ -38,7 +38,7 @@ class SignInPage extends StatelessWidget {
           const Text('Džep', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           const Text(
-            'Sign in to sync your ideas across your Mac and iPhone.',
+            'Sign in to sync your ideas across your Mac and phone.',
             textAlign: TextAlign.center,
             style: TextStyle(color: C.dim),
           ),

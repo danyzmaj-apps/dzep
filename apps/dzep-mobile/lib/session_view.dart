@@ -6,6 +6,7 @@ import 'package:dzep_core/live_activity.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_mobile/terminal_view.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -106,7 +107,7 @@ class _SessionPageState extends State<SessionPage> {
       final command = text.startsWith('/') && images.isEmpty;
       final window = s?.window;
       if (command && window != null) unawaited(_menuOrScreen(window));
-      // On the Lock Screen from here on, as working.
+      // Followed from here on (Lock Screen, Android's notifications), as working.
       if (s != null && !command) unawaited(remote.activities?.prompted(key, title: _title(s)));
       // Only what went: the field stays editable while it goes, and what was
       // typed or attached meanwhile is the next prompt.
@@ -206,7 +207,12 @@ class _SessionPageState extends State<SessionPage> {
   Future<void> _toggleFollow(LiveActivities activities, LiveSummary s) async {
     if (activities.following(key)) return await activities.stop(key);
     if (!await activities.follow(key, title: _title(s)) && mounted) {
-      termToast(context, 'Live Activities are off for Džep: turn them on in Settings → Džep.');
+      termToast(
+        context,
+        defaultTargetPlatform == TargetPlatform.iOS
+            ? 'Live Activities are off for Džep: turn them on in Settings → Džep.'
+            : 'Notifications are off for Džep: turn them on in Settings → Apps → Džep.',
+      );
     }
   }
 
@@ -289,7 +295,7 @@ class _SessionPageState extends State<SessionPage> {
           ? 'Nothing yet. Prompt omp below.'
           : remote.online
           ? 'Loading…'
-          : 'Not on this iPhone yet.';
+          : 'Not on this phone yet.';
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -562,7 +568,12 @@ class _SessionPageState extends State<SessionPage> {
             if (remote.activities case final activities? when s != null)
               IconButton(
                 key: const ValueKey('follow-lock-screen'),
-                tooltip: activities.following(key) ? 'Stop following on Lock Screen' : 'Follow on Lock Screen',
+                tooltip: switch ((defaultTargetPlatform == TargetPlatform.iOS, activities.following(key))) {
+                  (true, true) => 'Stop following on Lock Screen',
+                  (true, false) => 'Follow on Lock Screen',
+                  (false, true) => 'Stop following in notifications',
+                  (false, false) => 'Follow in notifications',
+                },
                 onPressed: () => unawaited(_toggleFollow(activities, s)),
                 icon: activities.following(key)
                     ? const Icon(Icons.lock_clock, color: C.accent)

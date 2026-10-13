@@ -88,7 +88,7 @@ Widget? linkNote(TerminalRemote r) {
     TerminalLink.waiting => ('asking the Mac…', true),
     TerminalLink.offline => (
       "the Mac isn't answering. It has to be awake (lid open), with Džep running and "
-          'Settings → Terminal from iPhone on.',
+          'Settings → Terminal from phone on.',
       false,
     ),
     TerminalLink.online => (r.error, false),

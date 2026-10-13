@@ -7,13 +7,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// omp sessions as iPhone Live Activities (Lock Screen, Dynamic Island):
-// ios/Shared/OmpActivity.swift. The app starts one when a prompt goes out
-// from the phone or on "Follow on Lock Screen", and updates it itself while
-// it's in front; otherwise the Mac tells the server (functions/push
-// {action: activity}) and the server pushes to the activity's token. A push
+// omp sessions followed on the phone: iPhone Live Activities (Lock Screen,
+// Dynamic Island; ios/Shared/OmpActivity.swift) and Android ongoing
+// notifications (OmpActivities.kt). The app starts one when a prompt goes
+// out from the phone or on "Follow", and updates it itself while it's in
+// front; otherwise the Mac tells the server (functions/push {action:
+// activity}) and the server pushes to the token: the activity's own on iOS,
+// the phone's FCM token (one per followed session) on Android. A push
 // carries only what's below, never text: a Live Activity push can't be
-// decrypted on the phone, so the relay would read it.
+// decrypted on the iPhone, so the relay would read it.
 
 enum ActivityState { working, needs, done, ended }
 
@@ -39,9 +41,8 @@ ActivityStatus summaryStatus(LiveSummary? s) =>
 /// The `state` and `kind` of a push or a channel call.
 Map<String, dynamic> activityJson(ActivityStatus s) => {'state': s.state.name, 'kind': ?s.kind?.name};
 
-/// iPhone: the sessions followed on the Lock Screen, kept current from
-/// [TerminalRemote] while the app is in front, and their push tokens handed
-/// to the server.
+/// Phone: the followed sessions, kept current from [TerminalRemote] while
+/// the app is in front, and their push tokens handed to the server.
 class LiveActivities extends ChangeNotifier {
   LiveActivities(this._client, this._remote) {
     _remote.addListener(_sync);
@@ -60,7 +61,8 @@ class LiveActivities extends ChangeNotifier {
   final _prompted = <String, DateTime>{};
   static const _promptWait = Duration(seconds: 30);
 
-  /// Push tokens already given to the server.
+  /// Sessions whose push token the server has, as `key\ntoken`: on Android
+  /// one token serves every followed session.
   final _registered = <String>{};
 
   bool following(String key) => _shown.containsKey(key);
@@ -75,7 +77,7 @@ class LiveActivities extends ChangeNotifier {
         if (token != null) unawaited(_register(a.key, token));
       }
     } on MissingPluginException {
-      return; // Not on an iPhone.
+      return; // Not on a phone.
     }
     _sync();
     notifyListeners();
@@ -121,7 +123,7 @@ class LiveActivities extends ChangeNotifier {
     await Native.endActivity(key, immediate: true);
   }
 
-  /// From ios/Runner/AppDelegate.swift: activityToken, activityEnded.
+  /// From the native side: activityToken, activityEnded.
   void onNative(String event, Map<Object?, Object?> args) {
     final key = args['key'] as String?;
     final token = args['token'] as String?;
@@ -131,8 +133,8 @@ class LiveActivities extends ChangeNotifier {
         unawaited(_register(key, token));
       case 'activityEnded':
         if (token != null) {
-          _registered.remove(token);
-          unawaited(_push({'action': 'activity_end', 'token': token}));
+          _registered.remove('$key\n$token');
+          unawaited(_push({'action': 'activity_end', 'token': token, 'session': key}));
         }
         _shown.remove(key);
         _prompted.remove(key);
@@ -141,8 +143,9 @@ class LiveActivities extends ChangeNotifier {
   }
 
   Future<void> _register(String key, String token) async {
-    if (!_registered.add(token)) return;
-    if (!await _push({'action': 'activity_register', 'token': token, 'session': key})) _registered.remove(token);
+    if (!_registered.add('$key\n$token')) return;
+    final body = {'action': 'activity_register', 'token': token, 'session': key, 'platform': pushPlatform};
+    if (!await _push(body)) _registered.remove('$key\n$token');
   }
 
   Future<bool> _push(Map<String, dynamic> body) async {

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Todos widget's +: a filled accent circle with a plus. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="26dp"
+    android:height="26dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/dzep_accent"
+        android:pathData="M12,2a10,10 0,1 1,0 20a10,10 0,1 1,0 -20z" />
+    <path
+        android:fillColor="@color/dzep_win"
+        android:pathData="M11,7h2v4h4v2h-4v4h-2v-4h-4v-2h4z" />
+</vector>

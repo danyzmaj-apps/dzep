@@ -1,25 +1,44 @@
-// The push relay: the one function that can reach Apple's push service for
-// Džep, because it holds the publisher's APNs key. Deployed ONLY to the
-// publisher's project (tool/deploy-relay.sh), never by the setup wizard or
-// tool/setup-backend.sh. Every Džep server sends its pushes through it
-// (functions/push), already encrypted for the iPhone, so all this sees is a
-// device token and ciphertext. Deployed --no-verify-jwt.
+// The push relay: the one function that can reach Apple's push service and
+// Firebase Cloud Messaging for Džep, because it holds the publisher's APNs key
+// and Firebase service account. Deployed ONLY to the publisher's project
+// (tool/deploy-relay.sh), never by the setup wizard or tool/setup-backend.sh.
+// Every Džep server sends its pushes through it (functions/push), already
+// encrypted for the phone, so all this sees is a device token and ciphertext.
+// Deployed --no-verify-jwt.
 //
+// iPhones (APNs; no platform field):
 //   POST {"token": hex, "kind": "reminder"|"terminal", "enc": base64, "collapse"?: string}
 //   POST {"token": hex, "kind": "liveactivity", "event": "update"|"end",
 //         "state": {"state": "working"|"needs"|"done"|"ended", "since": unix seconds,
 //                   "kind"?: "question"|"approval"|"plan"}}
-//   → 200 sent · 410 the iPhone is gone (uninstalled, signed out): forget it · 4xx/5xx otherwise
+// Android phones (FCM HTTP v1, a data-only message the app decrypts and shows):
+//   POST {"platform": "android", "token": FCM registration token,
+//         "kind": "reminder"|"terminal"|"activity", "enc": base64, "collapse"?: string}
+//   → 200 sent · 410 the phone is gone (uninstalled, signed out): forget it ·
+//     501 FCM not configured here · 4xx/5xx otherwise
 //
 // A Live Activity push (an omp session on the Lock Screen) can't be
-// encrypted: the phone's notification extension never sees it. So it carries
+// encrypted: the iPhone's notification extension never sees it. So it carries
 // only a state, rebuilt here from checked fields, never anything passed
-// through.
+// through. Android's ongoing notification for a session is the app's own, so
+// its state travels sealed like everything else (kind "activity").
 //
-// Secrets: APNS_KEY (the .p8's contents), APNS_KEY_ID, APNS_TEAM_ID, APNS_TOPIC (bundle id).
+// Secrets: APNS_KEY (the .p8's contents), APNS_KEY_ID, APNS_TEAM_ID, APNS_TOPIC (bundle id),
+// FCM_SERVICE_ACCOUNT (the Firebase service account's JSON key).
 
 import { decodeBase64 } from "jsr:@std/encoding@1/base64";
 import { encodeBase64Url } from "jsr:@std/encoding@1/base64url";
+import {
+  assertion,
+  exchange,
+  fcmGone,
+  fcmKinds,
+  fcmMessage,
+  fcmToken,
+  importPrivateKey,
+  parseServiceAccount,
+  type ServiceAccount,
+} from "./fcm.ts";
 
 const keyId = Deno.env.get("APNS_KEY_ID")!;
 const teamId = Deno.env.get("APNS_TEAM_ID")!;
@@ -54,6 +73,58 @@ async function providerToken(): Promise<string> {
   const token = `${unsigned}.${encodeBase64Url(new Uint8Array(sig))}`;
   jwt = { token, at: now };
   return token;
+}
+
+// Google's access tokens last an hour; one per 50 min, reused while warm.
+let fcm: { sa: ServiceAccount; key: CryptoKey; token?: string; until?: number } | null = null;
+
+/** The service account and a live access token, or what's missing (a 501). */
+type FcmAccess = { sa: ServiceAccount; token: string } | string;
+
+async function fcmAccess(): Promise<FcmAccess> {
+  if (!fcm) {
+    const raw = Deno.env.get("FCM_SERVICE_ACCOUNT");
+    if (!raw) return "FCM_SERVICE_ACCOUNT is not set: this relay can't reach Android phones";
+    const sa = parseServiceAccount(raw);
+    if (typeof sa === "string") return sa;
+    fcm = { sa, key: await importPrivateKey(sa.private_key) };
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (!fcm.token || !fcm.until || now >= fcm.until) {
+    const got = await exchange(await assertion(fcm.sa, fcm.key, now));
+    fcm.token = got.token;
+    fcm.until = now + Math.min(50 * 60, got.expiresIn - 60);
+  }
+  return { sa: fcm.sa, token: fcm.token };
+}
+
+/** An Android phone's push, through FCM. */
+async function android(body: Record<string, unknown>): Promise<Response> {
+  if (!fcmToken(body.token)) return json(400, { error: "token must be an FCM registration token" });
+  const kind = fcmKinds.find((k) => k === body.kind);
+  if (!kind) return json(400, { error: `kind must be ${fcmKinds.join(", ")}` });
+  // FCM takes 4 KB of data in all.
+  if (typeof body.enc !== "string" || body.enc.length > 3000) return json(400, { error: "enc missing or too long" });
+  const collapse = typeof body.collapse === "string" && body.collapse.length <= 64 ? body.collapse : undefined;
+
+  let access: FcmAccess;
+  try {
+    access = await fcmAccess();
+  } catch (e) {
+    return json(502, { error: `${e instanceof Error ? e.message : e}` });
+  }
+  if (typeof access === "string") return json(501, { error: access });
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${access.sa.project_id}/messages:send`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${access.token}`, "content-type": "application/json" },
+    body: JSON.stringify(fcmMessage(body.token, kind, body.enc, collapse)),
+  });
+  if (res.ok) return json(200, { ok: true });
+  const answer: unknown = await res.json().catch(() => null);
+  // A token Google no longer takes: the next request mints a new one.
+  if (res.status === 401 && fcm) fcm.token = undefined;
+  if (fcmGone(res.status, answer)) return json(410, { gone: true });
+  return json(502, { error: `FCM ${res.status} ${JSON.stringify(answer)}`.slice(0, 500) });
 }
 
 // What shows if the iPhone can't decrypt (shouldn't happen): no content.
@@ -93,6 +164,8 @@ function liveActivity(body: Record<string, unknown>): { payload: string; priorit
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "POST only" });
   const body = await req.json().catch(() => ({}));
+  if (body.platform === "android") return android(body);
+  if (body.platform !== undefined && body.platform !== "ios") return json(400, { error: "platform must be ios or android" });
   const live = body.kind === "liveactivity";
   // A Live Activity's token is longer than a device's.
   if (typeof body.token !== "string" || !new RegExp(`^[0-9a-f]{64,${live ? 400 : 200}}$`).test(body.token)) {

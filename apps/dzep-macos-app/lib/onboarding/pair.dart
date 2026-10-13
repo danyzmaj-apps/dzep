@@ -8,10 +8,11 @@ import 'package:qr_flutter/qr_flutter.dart';
 /// How long a pairing code works (the project's OTP expiry, config.toml).
 const pairingLifetime = Duration(minutes: 10);
 
-/// A QR the iPhone's Camera opens in Džep: the server's address plus a
-/// one-time sign-in code, so the iPhone is set up and signed in by the scan
-/// alone. Anyone who scans it in time gets into the account, so it is made
-/// fresh when shown, works once, and hides itself when it runs out.
+/// A QR the phone opens in Džep (its Scan button, or the iPhone's Camera):
+/// the server's address plus a one-time sign-in code, so the phone is set up
+/// and signed in by the scan alone. Anyone who scans it in time gets into the
+/// account, so it is made fresh when shown, works once, and hides itself
+/// when it runs out.
 class PairingQr extends StatefulWidget {
   const PairingQr({required this.session, super.key});
   final Session session;
@@ -77,8 +78,8 @@ class _PairingQrState extends State<PairingQr> {
       ),
       const SizedBox(height: 14),
       const Text(
-        'On your iPhone: install Džep, point the Camera at this code and tap "Open in Džep". '
-        'It connects and signs in; nothing to type.',
+        'On your phone: install Džep and scan this code with its Scan button '
+        '(on iPhone the Camera works too). It connects and signs in; nothing to type.',
         textAlign: TextAlign.center,
         style: TextStyle(color: C.dim, height: 1.45),
       ),
@@ -105,12 +106,12 @@ class _PairingQrState extends State<PairingQr> {
   );
 }
 
-/// Mac Settings → "Set up iPhone".
+/// Mac Settings → "Set up phone".
 Future<void> showPairingQr(BuildContext context, Session session) => showDialog<void>(
   context: context,
   builder: (dialog) => AlertDialog(
     backgroundColor: C.bar,
-    title: const Text('Set up your iPhone'),
+    title: const Text('Set up your phone'),
     content: SizedBox(width: 320, child: PairingQr(session: session)),
     actions: [TextButton(onPressed: () => Navigator.of(dialog).pop(), child: const Text('Done'))],
   ),

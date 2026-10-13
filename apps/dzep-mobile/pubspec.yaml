@@ -1,5 +1,5 @@
 name: dzep_mobile
-description: "Džep for iPhone: your ideas, todos, notes and omp sessions, synced through your own Supabase."
+description: "Džep for iPhone and Android: your ideas, todos, notes and omp sessions, synced through your own Supabase."
 publish_to: 'none'
 version: 0.2.0+2
 resolution: workspace
@@ -27,9 +27,13 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-# `swift ../dzep-macos-app/tool/make_icon.swift` (run in apps/dzep-macos-app), then `fvm dart run flutter_launcher_icons`
+# `swift tool/make_icon.swift` (run in apps/dzep-macos-app), then `fvm dart run flutter_launcher_icons`
 flutter_launcher_icons:
   image_path: assets/icon/ios.png
   ios: true
   remove_alpha_ios: true
-  android: false
+  android: true
+  # Android 8+: the gradient behind, the pocket in front, shaped by the launcher's mask.
+  adaptive_icon_background: assets/icon/android-background.png
+  adaptive_icon_foreground: assets/icon/android-foreground.png
+  adaptive_icon_foreground_inset: 0

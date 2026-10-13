@@ -20,15 +20,21 @@ import 'package:dzep_core/ui.dart';
 import 'package:dzep_mobile/setup_page.dart';
 import 'package:dzep_mobile/terminal_view.dart';
 import 'package:flutter/cupertino.dart' show CupertinoDatePicker;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// The iPhone side of [Session]: registers a device token for the Siri /
-/// Action Button intents and the Todos widget, keeps the widget's todo
-/// snapshot current, and replays what those queued while offline. All of it
-/// travels through the App Group (ios/Shared/DzepShared.swift).
+/// Siri and the Action Button add to Džep on iOS (ios/Runner/AddIdeaIntent.swift);
+/// Android has no voice-assistant integration.
+bool get _siri => defaultTargetPlatform == TargetPlatform.iOS;
+
+/// The phone side of [Session]: registers a device token for the Todos
+/// widget (and the iPhone's Siri / Action Button intents), keeps the
+/// widget's todo snapshot current, and replays what those queued while
+/// offline. All of it travels through what the native side shares with them
+/// (ios/Shared/DzepShared.swift, android/…/DzepShared.kt).
 class MobileSession extends Session {
   MobileSession(this._prefs, super.device);
 
@@ -66,7 +72,7 @@ class MobileSession extends Session {
       await _prefs.setString(_tokenUserKey, store.userId);
       await Native.setSharedToken(token);
     } on Object catch (e) {
-      // Siri and the widget can't save directly until this works; retried on next launch.
+      // The widget (and Siri) can't save directly until this works; retried on next launch.
       debugPrint('Džep: device token registration failed: $e');
     }
   }
@@ -74,10 +80,11 @@ class MobileSession extends Session {
   static const _pushTokenKey = 'dzep_push_token';
   static const _pushUserKey = 'dzep_push_user';
 
-  /// Hands this iPhone's APNs token and push key to the user's server, which
-  /// from then on pushes the reminders (functions/push). Until that has
-  /// worked once for this user, reminders stay local; a server without the
-  /// push function (not updated yet) keeps them local for good.
+  /// Hands this phone's push token (APNs on iOS, FCM on Android) and push
+  /// key to the user's server, which from then on pushes the reminders
+  /// (functions/push). Until that has worked once for this user, reminders
+  /// stay local; a server without the push function (not updated yet) keeps
+  /// them local for good.
   Future<void> _registerPush(String userId) async {
     if (_prefs.getString(_pushUserKey) == userId) remindersByPush = true;
     try {
@@ -85,7 +92,7 @@ class MobileSession extends Session {
       if (push == null || user?.id != userId) return;
       await client.functions.invoke(
         'push',
-        body: {'action': 'register', 'token': push.token, 'key': push.key, 'label': device},
+        body: {'action': 'register', 'token': push.token, 'key': push.key, 'label': device, 'platform': pushPlatform},
       );
       await _prefs.setString(_pushTokenKey, push.token);
       await _prefs.setString(_pushUserKey, userId);
@@ -93,6 +100,12 @@ class MobileSession extends Session {
     } on Object catch (e) {
       debugPrint('Džep: push registration failed: $e');
     }
+  }
+
+  /// Android: FCM handed over a new token (`pushToken`); the server needs it.
+  Future<void> pushTokenChanged() async {
+    final store = this.store;
+    if (store != null) await _registerPush(store.userId);
   }
 
   @override
@@ -243,7 +256,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     // The widgets open dzep://add, dzep://add?kind=todo and dzep://todos, a
-    // Live Activity dzep://session?key=…. The stream also carries the link
+    // followed session (Live Activity, Android's ongoing notification)
+    // dzep://session?key=…. The stream also carries the link
     // that cold-started the app, so getInitialLink() would handle it twice.
     _links = AppLinks().uriLinkStream.listen(_onLink);
     Native.listen(_onNative);
@@ -281,9 +295,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  /// From ios/Runner/AppDelegate.swift: a reminder was tapped, or its Done
-  /// couldn't reach the server and waits in the App Group, or a terminal
-  /// push was tapped, or a Live Activity has news.
+  /// From the native side (ios/Runner/AppDelegate.swift, android/…/
+  /// MainActivity.kt): a reminder was tapped, or its Done couldn't reach the
+  /// server and waits to be replayed, or a terminal push was tapped, or a
+  /// followed session has news, or (Android) FCM changed this phone's token.
   void _onNative(String event, Map<Object?, Object?> args) {
     if (!mounted) return;
     switch (event) {
@@ -298,6 +313,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         unawaited(widget.session.drainPending());
       case 'activityToken' || 'activityEnded':
         _terminal?.activities?.onNative(event, args);
+      case 'pushToken':
+        unawaited(widget.session.pushTokenChanged());
     }
   }
 
@@ -561,7 +578,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _query.isNotEmpty
             ? 'No matches.'
             : !_filter.project
-            ? 'No ideas yet.\nTap + or say “Hey Siri, add an idea to Džep”.'
+            ? 'No ideas yet.\nTap +${_siri ? ' or say “Hey Siri, add an idea to Džep”' : ' to add one'}.'
             : 'Nothing here yet.',
       );
     }
@@ -577,7 +594,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _notesList() {
     final notes = store.notes.where(_searchHit).toList();
     if (notes.isEmpty) {
-      return _empty(_query.isNotEmpty ? 'No matches.' : 'No notes yet.\nTap ✎ or say “Hey Siri, add a note to Džep”.');
+      return _empty(
+        _query.isNotEmpty
+            ? 'No matches.'
+            : 'No notes yet.\nTap ✎${_siri ? ' or say “Hey Siri, add a note to Džep”' : ' to write one'}.',
+      );
     }
     return ListView.builder(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -647,7 +668,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final open = store.openTodos.where(_searchHit).toList();
     final done = store.doneTodos.where(_searchHit).toList();
     if (open.isEmpty && done.isEmpty) {
-      return _empty(_query.isNotEmpty ? 'No matches.' : 'All done 🎉\nTap + or say “Hey Siri, add a todo to Džep”.');
+      return _empty(
+        _query.isNotEmpty
+            ? 'No matches.'
+            : 'All done 🎉\nTap +${_siri ? ' or say “Hey Siri, add a todo to Džep”' : ' to add one'}.',
+      );
     }
     return ListView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -867,11 +892,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             const SizedBox(height: 18),
             const Text('Capture without opening the app', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
-            const Text(
-              '• Say “Hey Siri, add a todo to Džep” (or “an idea”).\n'
-              '• Action Button: Settings → Action Button → Shortcut → Džep → Add Todo.\n'
-              '• Widgets: “Todos” ticks todos off from the Home Screen; “New idea” opens the add field.',
-              style: TextStyle(color: C.dim, height: 1.6),
+            Text(
+              _siri
+                  ? '• Say “Hey Siri, add a todo to Džep” (or “an idea”).\n'
+                        '• Action Button: Settings → Action Button → Shortcut → Džep → Add Todo.\n'
+                        '• Widgets: “Todos” ticks todos off from the Home Screen; “New idea” opens the add field.'
+                  : '• Widgets: “Todos” ticks todos off from the home screen; “New idea” opens the add field.',
+              style: const TextStyle(color: C.dim, height: 1.6),
             ),
             const SizedBox(height: 18),
             OutlinedButton(

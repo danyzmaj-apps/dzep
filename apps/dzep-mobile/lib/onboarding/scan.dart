@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 /// Opens the camera to read the setup code the Mac shows (Settings → Set up
-/// iPhone). Pops with the setup link, or null when cancelled.
+/// phone). Pops with the setup link, or null when cancelled.
 Future<Uri?> scanSetupCode(BuildContext context) =>
     Navigator.of(context).push<Uri>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const _ScanPage()));
 
@@ -101,7 +101,7 @@ class _ScanPageState extends State<_ScanPage> {
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(32, box + 80, 32, 0),
                           child: Text(
-                            _notOurs ?? 'On your Mac: Settings → Set up iPhone.\nPoint this camera at the code.',
+                            _notOurs ?? 'On your Mac: Settings → Set up phone.\nPoint this camera at the code.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: _notOurs == null ? Colors.white : C.warn,
