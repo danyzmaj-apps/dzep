@@ -233,6 +233,56 @@ class ChatList extends StatelessWidget {
   );
 }
 
+/// Ask's place for the question field while the server has no AI connected
+/// ([ChatStore.aiMissing]): what to do about it. The Mac connects one with
+/// [onConnect]; a phone, with none, says where to go.
+class NoAiNotice extends StatelessWidget {
+  const NoAiNotice({this.onConnect, super.key});
+
+  final VoidCallback? onConnect;
+
+  @override
+  Widget build(BuildContext context) {
+    final connect = onConnect;
+    return Row(
+      children: [
+        const Icon(Icons.auto_awesome, size: 16, color: C.dim2),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('No AI connected yet', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(
+                connect == null
+                    ? 'To ask questions, connect an AI from Džep on your Mac: Settings → AI.'
+                    : 'Ask answers with an AI service you choose. Connect one to start asking.',
+                style: const TextStyle(fontSize: 13, color: C.dim, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        if (connect != null) ...[
+          const SizedBox(width: 12),
+          Hoverable(
+            onTap: connect,
+            builder: (hover) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: hover ? C.hover : null,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: C.accent),
+              ),
+              child: const Text('Connect an AI…', style: TextStyle(fontSize: 12.5, color: C.accent)),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// The main window's detail pane in Chats: one conversation, continued from
 /// the field at the bottom (null: a new one).
 class ChatThread extends StatefulWidget {
@@ -241,6 +291,7 @@ class ChatThread extends StatefulWidget {
     required this.conversation,
     required this.onSent,
     required this.onContinue,
+    required this.onConnectAi,
     super.key,
   });
 
@@ -252,6 +303,9 @@ class ChatThread extends StatefulWidget {
 
   /// Opens [conversation] in the ⇧⌘Space popup.
   final ValueChanged<Conversation> onContinue;
+
+  /// Opens the sheet that connects an AI, while there is none.
+  final VoidCallback onConnectAi;
 
   @override
   State<ChatThread> createState() => _ChatThreadState();
@@ -283,7 +337,7 @@ class _ChatThreadState extends State<ChatThread> {
     if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && !keys.isShiftPressed) {
       final text = _field.text;
       final chat = widget.chat;
-      if ((text.trim().isNotEmpty || !_attachments.isEmpty) && !chat.busy) {
+      if ((text.trim().isNotEmpty || !_attachments.isEmpty) && !chat.busy && !chat.aiMissing) {
         _field.clear();
         unawaited(chat.send(text, into: widget.conversation, images: _attachments.take()));
         widget.onSent(chat.current!);
@@ -344,9 +398,12 @@ class _ChatThreadState extends State<ChatThread> {
         ),
         Expanded(
           child: c == null || c.messages.isEmpty
-              ? const Center(
-                  child: Text('Ask a quick question below.', style: TextStyle(color: C.dim)),
-                )
+              // The notice below says it all.
+              ? chat.aiMissing
+                    ? const SizedBox.shrink()
+                    : const Center(
+                        child: Text('Ask a quick question below.', style: TextStyle(color: C.dim)),
+                      )
               : ChatTranscript(chat: chat, conversation: c, padding: const EdgeInsets.fromLTRB(22, 10, 22, 16)),
         ),
         Container(
@@ -354,37 +411,39 @@ class _ChatThreadState extends State<ChatThread> {
           decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: C.line)),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AttachmentStrip(attachments: _attachments),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 2),
-                    child: Icon(Icons.auto_awesome, size: 16, color: C.accent),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _field,
-                      focusNode: _focus,
-                      selectionWidthStyle: selectionWidth,
-                      minLines: 1,
-                      maxLines: 8,
-                      style: const TextStyle(fontSize: 14, height: 1.45),
-                      decoration: plainInput.copyWith(
-                        hintText: c == null ? 'Ask a quick question…  ↵' : 'Follow up…  ↵',
-                        hintStyle: const TextStyle(color: C.dim2),
-                      ),
+          child: chat.aiMissing
+              ? NoAiNotice(onConnect: widget.onConnectAi)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    AttachmentStrip(attachments: _attachments),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Icon(Icons.auto_awesome, size: 16, color: C.accent),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _field,
+                            focusNode: _focus,
+                            selectionWidthStyle: selectionWidth,
+                            minLines: 1,
+                            maxLines: 8,
+                            style: const TextStyle(fontSize: 14, height: 1.45),
+                            decoration: plainInput.copyWith(
+                              hintText: c == null ? 'Ask a quick question…  ↵' : 'Follow up…  ↵',
+                              hintStyle: const TextStyle(color: C.dim2),
+                            ),
+                          ),
+                        ),
+                        AttachButton(attachments: _attachments, size: 16),
+                      ],
                     ),
-                  ),
-                  AttachButton(attachments: _attachments, size: 16),
-                ],
-              ),
-            ],
-          ),
+                  ],
+                ),
         ),
       ],
     );

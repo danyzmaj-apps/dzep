@@ -20,33 +20,24 @@ class _SetupPageState extends State<SetupPage> {
   final _flow = SetupFlow();
   bool _existing = false;
 
-  /// Why connecting to the server the wizard made failed; the connect form
-  /// shows it.
-  String? _error;
-
   @override
   void dispose() {
     _flow.dispose();
     super.dispose();
   }
 
-  /// The wizard's finished server, already checked while it was set up.
-  Future<void> _connectNew() async {
-    try {
-      await widget.session.connect(_flow.backend!);
-    } on Object catch (e) {
-      if (mounted) setState(() => _error = 'Could not connect: $e');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!_existing) {
-      return SetupWizard(flow: _flow, onConnect: _connectNew, onExisting: () => setState(() => _existing = true));
+      // The wizard's server was checked while it was set up.
+      return SetupWizard(
+        flow: _flow,
+        onConnect: widget.session.connect,
+        onExisting: () => setState(() => _existing = true),
+      );
     }
     return ConnectServerForm(
       session: widget.session,
-      error: _error,
       back: (label: '← Set up a new server instead', onPressed: () => setState(() => _existing = false)),
     );
   }

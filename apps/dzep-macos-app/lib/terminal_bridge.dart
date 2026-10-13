@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/live.dart';
 import 'package:dzep_core/live_activity.dart';
@@ -11,16 +12,19 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The Mac side of Terminal from the iPhone (protocol: lib/live.dart): the
-/// omp sessions [LiveHub] knows and kitty's windows go out on the user's
+/// coding sessions [LiveHub] knows and kitty's windows go out on the user's
 /// private topic; what the phone asks for is done here. kitty is polled only
 /// while a phone has said hello lately.
 class TerminalBridge {
-  TerminalBridge(this._client, this._userId, this._kitty, this._hub);
+  TerminalBridge(this._client, this._userId, this._kitty, this._hub, this._agent);
 
   final SupabaseClient _client;
   final String _userId;
   final Kitty _kitty;
   final LiveHub _hub;
+
+  /// The agent a new session from the phone starts (the Mac's setting).
+  final Agent Function() _agent;
 
   /// A phone that hasn't said hello for this long has left.
   static const _gone = Duration(seconds: 12);
@@ -73,15 +77,16 @@ class TerminalBridge {
   final _pendingOps = <String, ({String epoch, List<LiveOp> ops})>{};
   Timer? _flush;
 
-  /// Plan reviews (their ask ids) whose screen is being followed.
-  final _plans = <String>{};
+  /// Asks (their ids) whose screen is being followed: plan reviews, and
+  /// Claude Code's approvals, which its plugin can't see answered.
+  final _followed = <String>{};
   bool _stopped = false;
 
-  /// How often a plan review's screen is read: often while it opens, then
+  /// How often a followed ask's screen is read: often while it opens, then
   /// now and then to follow its cursor and notice it go.
-  static const _planSoon = Duration(milliseconds: 500);
-  static const _planOpening = 6;
-  static const _planEvery = Duration(seconds: 3);
+  static const _askSoon = Duration(milliseconds: 500);
+  static const _askOpening = 6;
+  static const _askEvery = Duration(seconds: 3);
 
   /// Sessions whose screen is followed for pickers (/resume, /model …) after
   /// a slash command from the phone, and the pickers' ids so far.
@@ -120,7 +125,9 @@ class TerminalBridge {
       )
       ..add(
         _hub.events.listen((e) {
-          if (e is LiveAsked && e.ask.isPlan) unawaited(_followPlan(e.session.key, e.ask.id));
+          if (e is LiveAsked && (e.ask.isPlan || (e.ask.isApproval && e.session.agent == Agent.claude))) {
+            unawaited(_followAsk(e.session.key, e.ask.id));
+          }
         }),
       );
     // Away from the Mac, an idle sleep would end the bridge; the lid still
@@ -290,6 +297,7 @@ class TerminalBridge {
       'sessions': sessions,
       'projects': _projects,
       'home': _kitty.home,
+      'agent': _agent().name,
       'error': ?_kittyError,
     };
     final key = jsonEncode({
@@ -327,7 +335,7 @@ class TerminalBridge {
           _kittyError = null;
         } on KittyException catch (e) {
           _windows = const [];
-          // No kitty is fine while omp sessions come in some other way.
+          // No kitty is fine while coding sessions come in some other way.
           _kittyError = _hub.sessions.isEmpty ? e.message : null;
         }
         if (_projectsAt == null || now.difference(_projectsAt!) > const Duration(minutes: 5)) {
@@ -405,7 +413,9 @@ class TerminalBridge {
         case 'close':
           await _kitty.close(p['window'] as String);
         case 'launch':
-          window = await _kitty.launch(p['cwd'] as String, omp: p['omp'] == true);
+          // An older phone says `omp` for "start the coding agent".
+          final start = p['agent'] == true || p['omp'] == true;
+          window = await _kitty.launch(p['cwd'] as String, agent: start ? _agent() : null);
         case 'prompt':
           await _prompt(p);
         case 'abort':
@@ -430,7 +440,7 @@ class TerminalBridge {
 
   /// The phone's prompt, with its images fetched from Storage (and deleted).
   Future<void> _prompt(Map<String, dynamic> p) async {
-    // omp's own commands (/resume, /goal, /model …) are read by its editor,
+    // The agent's own commands (/resume, /model …) are read by its editor,
     // not the model: type them into its window like the person would, and
     // follow the pickers they open.
     final text = (p['text'] as String? ?? '').trim();
@@ -463,48 +473,48 @@ class TerminalBridge {
 
   /// PNG and JPEG go as they are; anything else (HEIC from Photos) becomes
   /// PNG first, which every model reads.
-  static Future<({String data, String mimeType})> _image(Uint8List bytes) async {
+  static Future<({Uint8List bytes, String mimeType})> _image(Uint8List bytes) async {
     bool starts(List<int> magic) =>
         bytes.length > magic.length && Iterable<int>.generate(magic.length).every((i) => bytes[i] == magic[i]);
-    if (starts(const [0x89, 0x50, 0x4E, 0x47])) return (data: base64Encode(bytes), mimeType: 'image/png');
-    if (starts(const [0xFF, 0xD8, 0xFF])) return (data: base64Encode(bytes), mimeType: 'image/jpeg');
+    if (starts(const [0x89, 0x50, 0x4E, 0x47])) return (bytes: bytes, mimeType: 'image/png');
+    if (starts(const [0xFF, 0xD8, 0xFF])) return (bytes: bytes, mimeType: 'image/jpeg');
     final dir = await Directory.systemTemp.createTemp('dzep-image');
     try {
       final input = File('${dir.path}/in')..writeAsBytesSync(bytes);
       final png = '${dir.path}/out.png';
       final conv = await Process.run('/usr/bin/sips', ['-s', 'format', 'png', input.path, '--out', png]);
       if (conv.exitCode != 0) throw const LiveException("The Mac couldn't read that image.");
-      return (data: base64Encode(await File(png).readAsBytes()), mimeType: 'image/png');
+      return (bytes: await File(png).readAsBytes(), mimeType: 'image/png');
     } finally {
       await dir.delete(recursive: true);
     }
   }
 
-  /// Follows the plan review omp shows for ask [id] on its screen while omp
-  /// still asks it: its options are published once it has rendered, and
-  /// again when its cursor moves. A review gone from the screen twice
-  /// running was dismissed on the Mac (Esc), which omp's extension can't
-  /// see: the ask goes too.
-  Future<void> _followPlan(String key, String id) async {
-    if (!_plans.add(id)) return;
+  /// Follows on its screen an ask whose end the agent's extension can't
+  /// see: a plan review (dismissed with Esc on the Mac), or Claude Code's
+  /// approval (its plugin hears only once the tool has run). A plan's
+  /// options are published once it has rendered, and again when its cursor
+  /// moves. An ask gone from the screen twice running goes from the hub too.
+  Future<void> _followAsk(String key, String id) async {
+    if (!_followed.add(id)) return;
     try {
       var misses = 0;
       for (var n = 0; !_stopped; n++) {
-        final opening = n < _planOpening;
-        await Future<void>.delayed(opening ? _planSoon : _planEvery);
+        final opening = n < _askOpening;
+        await Future<void>.delayed(opening ? _askSoon : _askEvery);
         final s = _hub[key];
         final ask = s?.ask;
         final window = s?.window;
-        if (ask == null || ask.id != id || window == null) return;
+        if (s == null || ask == null || ask.id != id || window == null) return;
         final String screen;
         try {
           screen = await _kitty.plainScreen(window);
         } on KittyException catch (e) {
-          debugPrint('Džep: plan review $window: $e');
+          debugPrint('Džep: ask on screen $window: $e');
           if (opening) continue;
           return;
         }
-        final review = parsePlanReview(screen);
+        final review = ask.isPlan ? parsePlanReview(screen, agent: s.agent) : null;
         if (review != null) {
           misses = 0;
           if (!listEquals(review.options, ask.options) || review.current != ask.selected) {
@@ -514,7 +524,7 @@ class TerminalBridge {
               LiveAsk.plan(id, title: ask.title, options: review.options, selected: review.current),
             );
           }
-        } else if (askOnScreen(ask, screen)) {
+        } else if (askOnScreen(ask, screen, agent: s.agent)) {
           misses = 0;
         } else if (!opening && ++misses >= 2) {
           _hub.updateAsk(key, id, null);
@@ -522,21 +532,22 @@ class TerminalBridge {
         }
       }
     } finally {
-      _plans.remove(id);
+      _followed.remove(id);
     }
   }
 
-  /// Picks the plan review option [p] names: from where the cursor is now
-  /// (someone may have moved it on the Mac) down or up to it, and Enter once
-  /// the screen shows the cursor there. ↓/↑ skip an option omp has disabled,
-  /// which plain text doesn't show; a cursor that won't land on the option
-  /// means omp won't take it.
-  Future<void> _answerPlan(String window, LiveAsk ask, Map<String, dynamic> p) async {
+  /// Picks the plan review option [p] names, once the screen still lists it
+  /// there. Claude Code's rows go by their number. omp's cursor moves from
+  /// where it is now (someone may have moved it on the Mac) down or up to
+  /// it, and Enter goes once the screen shows the cursor there: ↓/↑ skip an
+  /// option omp has disabled, which plain text doesn't show, and a cursor
+  /// that won't land on the option means omp won't take it.
+  Future<void> _answerPlan(String window, LiveAsk ask, Agent agent, Map<String, dynamic> p) async {
     final answers = [for (final a in p['answers'] as List? ?? const []) LiveAnswer.fromJson((a as Map).cast())];
     final pick = answers.length == 1 && answers.single.picks.length == 1 ? answers.single.picks.single : -1;
     if (pick < 0) throw const LiveException('Pick one option.');
     for (var tries = 0; tries < 4; tries++) {
-      final review = parsePlanReview(await _kitty.plainScreen(window));
+      final review = parsePlanReview(await _kitty.plainScreen(window), agent: agent);
       if (review == null) {
         throw const LiveException(
           "The plan review isn't ready on the Mac's screen. Open the screen to answer it there.",
@@ -544,6 +555,10 @@ class TerminalBridge {
       }
       if (pick >= review.options.length || (pick < ask.options.length && review.options[pick] != ask.options[pick])) {
         throw const LiveException('The plan review on the Mac has changed. Open the screen to answer it there.');
+      }
+      if (agent == Agent.claude) {
+        await _kitty.pressKeys(window, [claudeRowKey(pick)]);
+        return;
       }
       if (review.current == pick) {
         await _kitty.pressKeys(window, const ['enter']);
@@ -561,7 +576,7 @@ class TerminalBridge {
   /// can open another), none once it has gone two reads running. Read often
   /// for a while after the command or an answer, then less; it stops when
   /// no picker is up after that while, or nothing changed for [_menuIdle].
-  /// omp's own asks come first: a picker never replaces one. Again for a
+  /// The agent's own asks come first: a picker never replaces one. Again for a
   /// session already followed just reads sooner.
   Future<void> _followMenus(String key) async {
     final known = _menus[key];
@@ -583,7 +598,7 @@ class TerminalBridge {
         final window = s?.window;
         if (s == null || window == null || _stopped) break;
         final current = s.ask;
-        // omp asks something itself, or the picker's ask went (a new session's hello).
+        // The agent asks something itself, or the picker's ask went (a new session's hello).
         if (current != null && current.id != published) break;
         if (current == null && published != null) published = null;
         final String screen;
@@ -674,25 +689,26 @@ class TerminalBridge {
       }
       shown = again;
     }
-    throw const LiveException("omp won't move to that item. Open the screen to pick it there.");
+    throw const LiveException("The agent won't move to that item. Open the screen to pick it there.");
   }
 
-  /// Answers omp's question, approval, plan review or a picker with
+  /// Answers the agent's question, approval, plan review or a picker with
   /// keystrokes in its kitty window, once its screen shows that it is up.
   Future<void> _answer(Map<String, dynamic> p) async {
     final s = _hub[p['session'] as String];
     final ask = s?.ask;
-    if (s == null || ask == null || ask.id != p['ask']) throw const LiveException('omp is no longer asking that.');
+    if (s == null || ask == null || ask.id != p['ask']) throw const LiveException('That is no longer being asked.');
     final window = s.window;
-    if (window == null) throw const LiveException('This omp runs outside kitty: answer it on the Mac.');
-    if (ask.isPlan) return await _answerPlan(window, ask, p);
+    if (window == null) throw const LiveException('This session runs outside kitty: answer it on the Mac.');
+    if (ask.isPlan) return await _answerPlan(window, ask, s.agent, p);
     if (ask.isMenu) return await _answerMenu(s.key, window, ask, p);
     final steps = answerKeys(
       ask,
       answers: [for (final a in p['answers'] as List? ?? const []) LiveAnswer.fromJson((a as Map).cast())],
       approve: p['approve'] == true,
+      agent: s.agent,
     );
-    if (!askOnScreen(ask, await _kitty.plainScreen(window))) {
+    if (!askOnScreen(ask, await _kitty.plainScreen(window), agent: s.agent)) {
       throw const LiveException("The question isn't on the Mac's screen. Open the screen to answer it there.");
     }
     for (final step in steps) {
@@ -705,24 +721,37 @@ class TerminalBridge {
           await Future<void>.delayed(const Duration(milliseconds: 450));
       }
     }
-    await _answered(s.key, window, ask);
+    await _answered(s, window, ask);
   }
 
-  /// Waits for omp to take the answer (its extension drops the ask when the
-  /// tool ends). A dialog still waiting on its Submit tab gets one more
-  /// Enter: keys that came while it redrew were dropped.
-  Future<void> _answered(String key, String window, LiveAsk ask) async {
-    bool pending() => _hub[key]?.ask?.id == ask.id;
+  /// Waits for the agent to take the answer: its extension drops the ask
+  /// (omp's when the tool ends, Claude Code's once the tool has run), or the
+  /// dialog leaves the screen, which comes first for an approved long
+  /// command; the ask goes then. omp's dialog still waiting on its Submit
+  /// tab gets one more Enter: keys that came while it redrew were dropped.
+  Future<void> _answered(LiveSession s, String window, LiveAsk ask) async {
+    bool pending() => _hub[s.key]?.ask?.id == ask.id;
     var nudged = false;
+    var gone = 0;
     for (var i = 0; i < 16 && pending(); i++) {
       await Future<void>.delayed(const Duration(milliseconds: 250));
-      if (i == 7 && pending() && !nudged && _submitTab.hasMatch(await _kitty.plainScreen(window))) {
+      if (i < 2 || !pending()) continue;
+      final screen = await _kitty.plainScreen(window);
+      if (!askOnScreen(ask, screen, agent: s.agent)) {
+        if (++gone < 2) continue;
+        _hub.updateAsk(s.key, ask.id, null);
+        return;
+      }
+      gone = 0;
+      if (i >= 7 && !nudged && s.agent == Agent.omp && _submitTab.hasMatch(screen)) {
         nudged = true;
         await _kitty.pressKeys(window, const ['enter']);
       }
     }
     if (pending()) {
-      throw const LiveException("omp hasn't taken the answer yet. Open the screen to check what it's waiting for.");
+      throw LiveException(
+        "${s.agent.label} hasn't taken the answer yet. Open the screen to check what it's waiting for.",
+      );
     }
   }
 

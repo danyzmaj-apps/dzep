@@ -88,12 +88,20 @@ class Session extends ChangeNotifier {
   }
 
   /// A setup link that also signs a new device in (functions/pair): works
-  /// once, for 10 minutes. Only while signed in.
+  /// once, for 10 minutes. Only while signed in. Fails with a
+  /// [PairingException] that says why.
   Future<Uri> pairingLink() async {
-    final res = await client.functions.invoke('pair');
-    final hash = (res.data as Map)['token_hash'] as String;
-    final link = _backend!.link;
-    return link.replace(queryParameters: {...link.queryParameters, 'pair': hash});
+    final Object? data;
+    try {
+      data = (await client.functions.invoke('pair')).data;
+    } on Object catch (e) {
+      throw PairingException(pairingProblem(e));
+    }
+    if (data case {'token_hash': final String hash}) {
+      final link = _backend!.link;
+      return link.replace(queryParameters: {...link.queryParameters, 'pair': hash});
+    }
+    throw const PairingException("The server didn't send a code. Update it (docs/SELF_HOSTING.md), then retry.");
   }
 
   /// Opens [backend] (and remembers it): the one saved at launch, the setup
@@ -337,3 +345,23 @@ class Session extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// Why a pairing code couldn't be made, worded for the person.
+class PairingException implements Exception {
+  const PairingException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// What a failed call to functions/pair means: the function's own reason
+/// (not signed in, no email on the account), an older server without it, or
+/// no connection.
+String pairingProblem(Object error) => switch (error) {
+  FunctionsFetchException() => "Couldn't reach your server. Check your connection.",
+  FunctionException(details: {'error': final String message}) => message,
+  FunctionException(status: 404) => 'Your server is older than this app. Update it (docs/SELF_HOSTING.md), then retry.',
+  FunctionException(:final status) => 'Your server failed ($status).',
+  _ => "Couldn't make a code: $error",
+};

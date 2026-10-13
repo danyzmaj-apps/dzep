@@ -1,6 +1,6 @@
 # Džep for Mac
 
-The menu-bar app: the ⇧⌘Space popup, the main and note windows, the Todos widget, the local terminal API, the bridge that lets a phone reach omp and kitty, and the setup wizard that creates a user's server.
+The menu-bar app: the ⇧⌘Space popup, the main and note windows, the Todos widget, the local terminal API, the bridge that lets a phone reach omp, Claude Code and kitty, and the setup wizard that creates a user's server.
 
 It also carries the backend, because the wizard bundles it as app assets and deploys it:
 
@@ -14,6 +14,7 @@ It also carries the backend, because the wizard bundles it as app assets and dep
 | `tool/deploy-relay.sh` | Deploy the publisher's push relay (APNs and FCM) |
 | `tool/release.sh` | Build, notarize and publish a release |
 | `integrations/omp/` | omp extensions: `idea.ts` (`/idea`, `/todo`, `/note`) and `live.ts` (sessions for the phone) |
+| `integrations/claude/` | Claude Code marketplace with Džep's `dzep` plugin: `/idea`, `/todo`, `/note` and sessions for the phone (`plugins/dzep/hooks/`); `claude plugin test integrations/claude/plugins/dzep` runs its tests |
 
 Run it from this directory:
 

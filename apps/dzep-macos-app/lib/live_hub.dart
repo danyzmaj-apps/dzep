@@ -1,19 +1,44 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/live.dart';
 import 'package:flutter/foundation.dart';
 
-/// One omp session, as its extension (integrations/omp/live.ts) reports it.
-class LiveSession {
-  LiveSession._(this._ws, this.key, this.log);
+/// One extension's connection, whatever carries it (lib/local_api.dart): a
+/// WebSocket (omp) or HTTP long polls (Claude Code).
+abstract interface class LiveLink {
+  /// A JSON frame to the extension.
+  void send(String frame);
 
+  Future<void> close();
+}
+
+/// A WebSocket as a [LiveLink].
+class SocketLink implements LiveLink {
+  SocketLink(this._ws);
   final WebSocket _ws;
+
+  @override
+  void send(String frame) => _ws.add(frame);
+
+  @override
+  Future<void> close() => _ws.close();
+}
+
+/// One coding session, as its agent's extension reports it (integrations/:
+/// omp's live.ts, the Claude Code plugin).
+class LiveSession {
+  LiveSession._(this._link, this.key, this.log);
+
+  final LiveLink _link;
 
   /// The kitty window it runs in (`kitty-<pid>/<id>`), or `pid:<pid>`.
   final String key;
   LiveLog log;
+  Agent agent = Agent.omp;
   String? window;
   String id = '';
   String title = '';
@@ -35,6 +60,7 @@ class LiveSession {
   LiveSummary get summary => LiveSummary(
     key: key,
     id: id,
+    agent: agent,
     window: window,
     title: title,
     cwd: cwd,
@@ -53,14 +79,14 @@ class LiveSession {
   Future<Map<String, dynamic>> _request(String type, Map<String, dynamic> payload, Duration timeout) async {
     final req = ++_req;
     final done = _pending[req] = Completer();
-    _ws.add(jsonEncode({'t': type, 'req': req, ...payload}));
+    _link.send(jsonEncode({'t': type, 'req': req, ...payload}));
     try {
       final reply = await done.future.timeout(timeout);
       final error = reply['error'] as String?;
       if (error != null) throw LiveException(error);
       return reply;
     } on TimeoutException {
-      throw const LiveException('omp did not answer.');
+      throw LiveException('${agent.label} did not answer.');
     } finally {
       _pending.remove(req);
     }
@@ -68,7 +94,7 @@ class LiveSession {
 
   void _fail() {
     for (final c in _pending.values) {
-      c.completeError(const LiveException('The omp session ended.'));
+      c.completeError(LiveException('The ${agent.label} session ended.'));
     }
     _pending.clear();
   }
@@ -94,15 +120,15 @@ class LiveFinished extends LiveEvent {
   final String summary;
 }
 
-/// omp asks a question, wants a tool approved, or has a plan for review.
+/// The agent asks a question, wants a tool approved, or has a plan for review.
 class LiveAsked extends LiveEvent {
   const LiveAsked(super.session, this.ask);
   final LiveAsk ask;
 }
 
-/// The omp sessions on this Mac: their extensions connect to the local API
-/// (`/v1/live`, lib/local_api.dart) and keep it up to date; the terminal
-/// bridge passes them on to the iPhone.
+/// The coding sessions on this Mac: their extensions connect to the local
+/// API (lib/local_api.dart) and keep it up to date; the terminal bridge
+/// passes them on to the iPhone.
 class LiveHub {
   final _byKey = <String, LiveSession>{};
 
@@ -120,12 +146,12 @@ class LiveHub {
   Iterable<LiveSession> get sessions => _byKey.values;
   LiveSession? operator [](String key) => _byKey[key];
 
-  /// Serves one extension until it disconnects.
-  Future<void> accept(WebSocket ws) async {
+  /// Serves one extension, whose JSON [frames] come in order over [link],
+  /// until they end.
+  Future<void> accept(Stream<String> frames, LiveLink link) async {
     LiveSession? session;
     try {
-      await for (final frame in ws) {
-        if (frame is! String) continue;
+      await for (final frame in frames) {
         final Map<String, dynamic> m;
         try {
           m = jsonDecode(frame) as Map<String, dynamic>;
@@ -133,7 +159,7 @@ class LiveHub {
           continue;
         }
         if (m['t'] == 'hello') {
-          session = _hello(ws, session, m);
+          session = _hello(link, session, m);
         } else if (session != null && identical(_byKey[session.key], session)) {
           _handle(session, m);
         }
@@ -151,7 +177,7 @@ class LiveHub {
     }
   }
 
-  LiveSession _hello(WebSocket ws, LiveSession? current, Map<String, dynamic> m) {
+  LiveSession _hello(LiveLink link, LiveSession? current, Map<String, dynamic> m) {
     final s = (m['session'] as Map?)?.cast<String, dynamic>() ?? const {};
     final window = m['window'] as String?;
     final key = window ?? 'pid:${m['pid']}';
@@ -160,17 +186,18 @@ class LiveHub {
     ], older: m['older'] == true);
     final LiveSession session;
     if (current != null && current.key == key && identical(_byKey[key], current)) {
-      // Another session in the same omp (/new, /resume): a new transcript.
+      // Another session in the same agent (/new, /resume, /clear): a new transcript.
       session = current..log = log;
     } else {
       if (current != null && identical(_byKey[current.key], current)) _byKey.remove(current.key);
-      session = LiveSession._(ws, key, log);
-      // The same window's previous omp, if its socket hasn't closed yet.
+      session = LiveSession._(link, key, log);
+      // The same window's previous agent, if its connection hasn't closed yet.
       final old = _byKey[key];
-      if (old != null && !identical(old._ws, ws)) unawaited(old._ws.close());
+      if (old != null && !identical(old._link, link)) unawaited(old._link.close());
       _byKey[key] = session;
     }
     session
+      ..agent = Agent.parse(m['agent'])
       ..window = window
       ..id = s['id'] as String? ?? ''
       ..title = s['title'] as String? ?? ''
@@ -238,14 +265,15 @@ class LiveHub {
 
   LiveSession _session(String key) {
     final s = _byKey[key];
-    if (s == null) throw const LiveException('That omp session has ended.');
+    if (s == null) throw const LiveException('That session has ended.');
     return s;
   }
 
   /// Replaces session [key]'s ask, while it's still [id] (null: while there
   /// is none), with what the Mac read off its screen: a plan review's
   /// options, a picker a slash command opened, or null once it's gone. Not
-  /// omp asking, so no event. False when the session's ask has moved on.
+  /// the agent asking, so no event. False when the session's ask has moved
+  /// on.
   bool updateAsk(String key, String? id, LiveAsk? ask) {
     final s = _byKey[key];
     if (s == null || s.ask?.id != id) return false;
@@ -254,20 +282,53 @@ class LiveHub {
     return true;
   }
 
-  /// Sends [text] (and [images]) as the person's prompt; while omp works it
-  /// steers the run, or waits for the run to end with [followUp].
+  /// Where images for an agent that reads them from disk (Claude Code) wait
+  /// for it; the ones older than a day go when more come.
+  @visibleForTesting
+  static Directory imageDir = Directory('${Directory.systemTemp.path}/dzep-images');
+
+  /// Sends [text] (and [images]) as the person's prompt. While omp works it
+  /// steers the run, or waits for the run to end with [followUp]; Claude
+  /// Code always waits, and gets the images as files.
   Future<void> prompt(
     String key,
     String text, {
-    List<({String data, String mimeType})> images = const [],
+    List<({Uint8List bytes, String mimeType})> images = const [],
     bool followUp = false,
-  }) => _session(key)._request('prompt', {
-    'text': text,
-    'images': [
-      for (final i in images) {'data': i.data, 'mimeType': i.mimeType},
-    ],
-    'deliver': followUp ? 'followUp' : 'steer',
-  }, const Duration(seconds: 15));
+  }) async {
+    final s = _session(key);
+    final steers = s.agent.steers;
+    await s._request('prompt', {
+      'text': text,
+      'images': [
+        if (steers)
+          for (final i in images) {'data': base64Encode(i.bytes), 'mimeType': i.mimeType},
+      ],
+      if (!steers) 'files': await _saveImages(images),
+      'deliver': followUp || !steers ? 'followUp' : 'steer',
+    }, const Duration(seconds: 15));
+  }
+
+  static Future<List<String>> _saveImages(List<({Uint8List bytes, String mimeType})> images) async {
+    if (images.isEmpty) return const [];
+    final dir = imageDir;
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+      await Process.run('chmod', ['700', dir.path]);
+    }
+    final dayAgo = DateTime.now().subtract(const Duration(days: 1));
+    for (final f in dir.listSync().whereType<File>()) {
+      if (f.statSync().modified.isBefore(dayAgo)) f.deleteSync();
+    }
+    final random = Random.secure();
+    return [
+      for (final i in images)
+        (File(
+          '${dir.path}/${List.generate(12, (_) => random.nextInt(36).toRadixString(36)).join()}'
+          '.${i.mimeType == 'image/jpeg' ? 'jpg' : 'png'}',
+        )..writeAsBytesSync(i.bytes)).path,
+    ];
+  }
 
   /// Esc: stops what the agent is doing.
   Future<void> abort(String key) => _session(key)._request('abort', const {}, const Duration(seconds: 5));

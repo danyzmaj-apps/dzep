@@ -243,6 +243,11 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
       } else if (k == LogicalKeyboardKey.keyC && _cmd && _shift) {
         copyAnswer(context, chat.current?.lastAnswer);
         return true;
+      } else if (chat.aiMissing) {
+        // No AI yet, so no field to type into: ↵ connects one.
+        final enter = k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter;
+        if (enter) unawaited(app.connectAi());
+        return enter;
       } else if (isPasteKey(e)) {
         // An image on the clipboard is attached; text still pastes as usual.
         unawaited(_attachments.paste());
@@ -872,6 +877,7 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
   /// The quick-question chat: the conversation above, the question field
   /// below. It continues where it was left; ⌘N starts a new one and the old
   /// one stays in the main window's Quick questions (and on the iPhone).
+  /// With no AI connected, the field gives way to the way to connect one.
   Widget _askPane(ChatStore chat) => ListenableBuilder(
     listenable: chat,
     builder: (context, _) {
@@ -890,42 +896,48 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
                 child: ChatTranscript(chat: chat, conversation: c, shrinkWrap: true),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AttachmentStrip(attachments: _attachments),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 3),
-                      child: Icon(Icons.auto_awesome, size: 20, color: C.accent),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                        controller: _question,
-                        focusNode: _questionFocus,
-                        onTapOutside: _keepFocus,
-                        selectAllOnFocus: false,
-                        selectionWidthStyle: selectionWidth,
-                        minLines: 1,
-                        maxLines: 6,
-                        style: const TextStyle(fontSize: 18, height: 1.4),
-                        decoration: plainInput.copyWith(
-                          hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
-                          hintStyle: const TextStyle(color: C.dim2),
+          if (chat.aiMissing)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+              child: NoAiNotice(onConnect: () => unawaited(app.connectAi())),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AttachmentStrip(attachments: _attachments),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 3),
+                        child: Icon(Icons.auto_awesome, size: 20, color: C.accent),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: _question,
+                          focusNode: _questionFocus,
+                          onTapOutside: _keepFocus,
+                          selectAllOnFocus: false,
+                          selectionWidthStyle: selectionWidth,
+                          minLines: 1,
+                          maxLines: 6,
+                          style: const TextStyle(fontSize: 18, height: 1.4),
+                          decoration: plainInput.copyWith(
+                            hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
+                            hintStyle: const TextStyle(color: C.dim2),
+                          ),
                         ),
                       ),
-                    ),
-                    AttachButton(attachments: _attachments, size: 20, around: app.pickFromPopup),
-                  ],
-                ),
-              ],
+                      AttachButton(attachments: _attachments, size: 20, around: app.pickFromPopup),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       );
     },
@@ -946,13 +958,22 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
         const Spacer(),
         if (s == null)
           const KeyHint('esc', 'hide')
-        else if (_asking) ...const [
-          KeyHint('↵', 'ask'),
-          KeyHint('⇧↵', 'newline'),
-          KeyHint('⌘N', 'new chat'),
-          KeyHint('⌘O', 'chats'),
-          KeyHint('esc', 'hide'),
-        ] else if (_mode == PopupMode.note) ...const [
+        else if (_asking)
+          ListenableBuilder(
+            listenable: app.chats!,
+            builder: (_, _) => Row(
+              children: app.chats!.aiMissing
+                  ? const [KeyHint('↵', 'connect AI'), KeyHint('⌘O', 'chats'), KeyHint('esc', 'hide')]
+                  : const [
+                      KeyHint('↵', 'ask'),
+                      KeyHint('⇧↵', 'newline'),
+                      KeyHint('⌘N', 'new chat'),
+                      KeyHint('⌘O', 'chats'),
+                      KeyHint('esc', 'hide'),
+                    ],
+            ),
+          )
+        else if (_mode == PopupMode.note) ...const [
           KeyHint('⌘↵', 'save'),
           KeyHint('⌘O', 'notes'),
           KeyHint('⌘P', 'window'),

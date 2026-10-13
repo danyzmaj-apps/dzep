@@ -9,11 +9,13 @@ import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 // (with images), interrupt, and page back through older history. The protocol is described in lib/live.dart.
 //
 // Only the top-level interactive session talks, and only to Džep's local API on 127.0.0.1 (port and token
-// from ~/.config/dzep/cli.json). While Džep isn't running it quietly tries again every few seconds.
+// from ~/.config/dzep/cli.json, or the file DZEP_CLI_JSON names). While Džep isn't running it quietly tries
+// again every few seconds.
 //
-// Install: copy this file to ~/.omp/agent/extensions/live.ts and restart omp.
+// Install: copy this file to ~/.omp/agent/extensions/live.ts and restart omp (or use Install in Džep's
+// Settings).
 
-const CLI_FILE = join(homedir(), ".config", "dzep", "cli.json");
+const CLI_FILE = process.env.DZEP_CLI_JSON || join(homedir(), ".config", "dzep", "cli.json");
 const VERSION = 1;
 const HELLO_ITEMS = 300;
 const RETRY_MS = 3000;
@@ -511,6 +513,7 @@ export default function liveExtension(pi: ExtensionAPI) {
 		send({
 			t: "hello",
 			v: VERSION,
+			agent: "omp",
 			session: { id: c.sessionManager.getSessionId(), title: m.title, cwd: c.cwd, model: m.model },
 			window: windowKey(),
 			pid: process.pid,

@@ -10,7 +10,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 //
 // Install: copy this file to ~/.omp/agent/extensions/idea.ts and restart omp.
 
-const CLI_FILE = join(homedir(), ".config", "dzep", "cli.json");
+const CLI_FILE = process.env.DZEP_CLI_JSON || join(homedir(), ".config", "dzep", "cli.json");
 const USAGE = "Usage: /idea <text> | /idea list | /idea do <n|text>";
 const NOT_RUNNING = "Džep isn't running. Open it (it lives in the menu bar), then try again.";
 

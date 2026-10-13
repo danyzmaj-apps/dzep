@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dzep_core/agent.dart';
+
 /// One kitty window, as the iPhone sees it (kitty's `ls`, minus everything
 /// the phone has no business seeing, like the window's environment).
 class TermWindow {
@@ -34,13 +36,14 @@ class TermWindow {
   /// The foreground program's working directory.
   final String cwd;
 
-  /// The foreground program's name: `omp`, `zsh`, `nvim`.
+  /// The foreground program's name: `omp`, `claude`, `zsh`, `nvim`.
   final String program;
 
   /// The window kitty has focused.
   final bool focused;
 
-  bool get isOmp => program == 'omp';
+  /// The coding agent running in it, if one is.
+  Agent? get agent => Agent.ofProgram(program);
 
   Map<String, dynamic> toJson() => {
     'key': key,
@@ -303,9 +306,9 @@ class Kitty {
   }
 
   /// A new kitty OS window in [cwd] (a session of its own, like one opened by
-  /// hand) running the login shell, which then starts omp if [omp]; returns
-  /// the new window's key. kitty keeps its current focus.
-  Future<String> launch(String cwd, {required bool omp}) async {
+  /// hand) running the login shell, which then starts [agent] if given;
+  /// returns the new window's key. kitty keeps its current focus.
+  Future<String> launch(String cwd, {Agent? agent}) async {
     if (!Directory(cwd).existsSync()) throw KittyException('No such folder: $cwd');
     final sockets = _sockets();
     if (sockets.isEmpty) throw const KittyException(notListening);
@@ -326,7 +329,7 @@ class Kitty {
       }
       final key = '$socket/$id';
       // The shell reads it once it's up: the terminal holds what's typed.
-      if (omp) await send(key, 'omp', enter: true);
+      if (agent != null) await send(key, agent.command, enter: true);
       return key;
     }
     throw last ?? const KittyException(notListening);

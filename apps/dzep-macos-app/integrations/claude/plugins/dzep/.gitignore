@@ -1,0 +1,3 @@
+# Written by Claude Code when it loads the plugin with --plugin-dir: the mods API's types for its version.
+.claude-plugin/types/
+tsconfig.json

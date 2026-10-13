@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// omp sessions followed on the phone: iPhone Live Activities (Lock Screen,
+// Coding sessions followed on the phone: iPhone Live Activities (Lock Screen,
 // Dynamic Island; ios/Shared/OmpActivity.swift) and Android ongoing
 // notifications (OmpActivities.kt). The app starts one when a prompt goes
 // out from the phone or on "Follow", and updates it itself while it's in
@@ -19,13 +19,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 enum ActivityState { working, needs, done, ended }
 
-/// What omp waits for, when it needs you.
+/// What the agent waits for, when it needs you.
 enum ActivityKind { question, approval, plan }
 
 typedef ActivityStatus = ({ActivityState state, ActivityKind? kind});
 
-/// What a session's activity shows: omp asks something, works, or has
-/// stopped (done). A picker the person opened from the phone isn't omp
+/// What a session's activity shows: its agent asks something, works, or has
+/// stopped (done). A picker the person opened from the phone isn't the agent
 /// asking.
 ActivityStatus activityStatus({required bool busy, LiveAsk? ask}) => switch (ask?.kind) {
   AskKind.questions => (state: ActivityState.needs, kind: ActivityKind.question),
@@ -56,7 +56,7 @@ class LiveActivities extends ChangeNotifier {
   /// still running from before this launch, which only pushes have updated.
   final _shown = <String, ({ActivityStatus status, DateTime since})?>{};
 
-  /// When a prompt last went to a session: omp may not have reported busy
+  /// When a prompt last went to a session: its agent may not have reported busy
   /// yet, so for a while "done" is taken to be from before it.
   final _prompted = <String, DateTime>{};
   static const _promptWait = Duration(seconds: 30);

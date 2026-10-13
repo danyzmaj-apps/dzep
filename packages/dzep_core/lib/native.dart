@@ -63,7 +63,7 @@ class Native {
   /// the app lands before Dart listens, so openTodo only says "look").
   static Future<String?> takeTappedTodo() => _channel.invokeMethod<String>('takeTappedTodo');
 
-  /// Phone: the omp session (its key) whose terminal push was tapped, once.
+  /// Phone: the coding session (its key) whose terminal push was tapped, once.
   static Future<String?> takeTappedSession() => _channel.invokeMethod<String>('takeTappedSession');
 
   /// Phone: asks for notification permission and this phone's push token
@@ -76,7 +76,7 @@ class Native {
     return token == null || key == null ? null : (token: token, key: key);
   }
 
-  // Phone: followed omp sessions, as Live Activities on iOS
+  // Phone: followed coding sessions, as Live Activities on iOS
   // (ios/Shared/OmpActivity.swift) and ongoing notifications on Android
   // (OmpActivities.kt); lib/live_activity.dart. [since]: when it got into
   // [state].

@@ -106,20 +106,61 @@ class Conversation {
   };
 }
 
-/// The signed-in user's quick-question chats, on the Mac and the iPhone.
+/// Whether the server can answer questions: the `ask` function has an AI
+/// key. Its `{"action": "status"}` answer, also as cached.
+@immutable
+class AiStatus {
+  const AiStatus({required this.connected, this.model, this.baseUrl});
+
+  /// Null when [json] isn't a status (an older server answers the status
+  /// request with an error).
+  static AiStatus? fromJson(Object? json) => switch (json) {
+    {'configured': final bool connected} => AiStatus(
+      connected: connected,
+      model: json['model'] as String?,
+      baseUrl: json['base_url'] as String?,
+    ),
+    _ => null,
+  };
+
+  final bool connected;
+  final String? model;
+
+  /// The provider's API, e.g. `https://api.deepseek.com`.
+  final String? baseUrl;
+
+  Map<String, dynamic> toJson() => {'configured': connected, 'model': ?model, 'base_url': ?baseUrl};
+
+  @override
+  bool operator ==(Object other) =>
+      other is AiStatus && other.connected == connected && other.model == model && other.baseUrl == baseUrl;
+
+  @override
+  int get hashCode => Object.hash(connected, model, baseUrl);
+}
+
+/// The signed-in user's quick-question chats, on the Mac and the phone.
 /// Questions go to the `ask` edge function (supabase/functions/ask), which
-/// holds the DeepSeek key, saves both turns and streams the answer back; this
-/// store shows the stream and keeps every chat current through a cursor pull
-/// on `chats` (a new message moves its chat's `updated_at`) and realtime. A
-/// local cache shows them offline.
+/// holds the AI provider's key, saves both turns and streams the answer back;
+/// this store shows the stream and keeps every chat current through a cursor
+/// pull on `chats` (a new message moves its chat's `updated_at`) and
+/// realtime. A local cache shows them offline.
 class ChatStore extends ChangeNotifier {
   ChatStore._(this._client, this.userId, this._file);
 
   static Future<ChatStore> open(SupabaseClient client, String userId) async {
     final dir = await getApplicationSupportDirectory();
-    final store = ChatStore._(client, userId, File('${dir.path}/chats-$userId.json'));
-    await store._load();
+    final store = await cached(client, userId, File('${dir.path}/chats-$userId.json'));
     store._start();
+    return store;
+  }
+
+  /// The store as its cache [file] has it, not syncing yet ([open] starts
+  /// that).
+  @visibleForTesting
+  static Future<ChatStore> cached(SupabaseClient client, String userId, File file) async {
+    final store = ChatStore._(client, userId, file);
+    await store._load();
     return store;
   }
 
@@ -159,6 +200,36 @@ class ChatStore extends ChangeNotifier {
 
   bool get busy => _streaming != null;
 
+  /// What the server last said about its AI; null until it has said (an
+  /// older server never does, and Ask then works as it always did).
+  AiStatus? get ai => _ai;
+  AiStatus? _ai;
+
+  /// The server has no AI connected: Ask shows how to connect one instead
+  /// of a question field that would fail.
+  bool get aiMissing => _ai?.connected == false;
+
+  /// Asks the server whether Ask is set up; when it can't be reached (or
+  /// can't say) the last answer stands.
+  Future<AiStatus?> checkAi() async {
+    if (_closed) return _ai;
+    try {
+      final res = await _client.functions.invoke('ask', body: {'action': 'status'});
+      final status = AiStatus.fromJson(res.data);
+      if (status != null) _setAi(status);
+    } on Object catch (e) {
+      debugPrint('Džep: AI status unknown: $e');
+    }
+    return _ai;
+  }
+
+  void _setAi(AiStatus status) {
+    if (status == _ai || _closed) return;
+    _ai = status;
+    notifyListeners();
+    _scheduleSave();
+  }
+
   /// The popup starts over; the old conversation stays in the list.
   void newChat() {
     _current = null;
@@ -185,7 +256,7 @@ class ChatStore extends ChangeNotifier {
   /// conversation, or a new one), which becomes the current conversation.
   Future<void> send(String text, {Conversation? into, List<ChatImage> images = const []}) async {
     final question = text.trim();
-    if (busy || (question.isEmpty && images.isEmpty) || _closed) return;
+    if (busy || (question.isEmpty && images.isEmpty) || _closed || aiMissing) return;
     final now = DateTime.now().toUtc();
     final c = into ?? _current ?? Conversation(id: const Uuid().v4(), createdAt: now, updatedAt: now);
     _chats[c.id] = c;
@@ -250,6 +321,11 @@ class ChatStore extends ChangeNotifier {
         FunctionException(:final status) => 'The server failed ($status).',
         _ => 'Couldn’t get an answer: $e',
       };
+      if (e case FunctionException(details: {'configured': false})) {
+        // The server saved nothing, so the images it would have kept go.
+        if (paths.isNotEmpty) unawaited(_removeImages(paths));
+        _setAi(const AiStatus(connected: false));
+      }
     } finally {
       if (_abort == abort) {
         _abort = null;
@@ -269,6 +345,14 @@ class ChatStore extends ChangeNotifier {
     _abort = null;
     _streaming = null;
     if (abort != null && !abort.isCompleted) abort.complete();
+  }
+
+  Future<void> _removeImages(List<String> paths) async {
+    try {
+      await _client.storage.from(chatImageBucket).remove(paths);
+    } on Object catch (e) {
+      debugPrint('Džep: unused chat images not removed: $e');
+    }
   }
 
   /// Image bytes by bucket path, fetched once per run (with the user's
@@ -294,6 +378,7 @@ class ChatStore extends ChangeNotifier {
       final cursor = json['cursor'] as String?;
       _cursor = cursor == null ? null : DateTime.parse(cursor);
       _deletes.addAll([for (final id in json['deletes'] as List? ?? const []) id as String]);
+      _ai = AiStatus.fromJson(json['ai']);
       for (final raw in json['chats'] as List) {
         final c = Conversation.fromJson(raw as Map<String, dynamic>);
         _chats[c.id] = c;
@@ -316,6 +401,7 @@ class ChatStore extends ChangeNotifier {
       'cursor': _cursor?.toUtc().toIso8601String(),
       'deletes': _deletes.toList(),
       'chats': [for (final c in _chats.values) c.toJson()],
+      'ai': ?_ai?.toJson(),
     });
     await _file.parent.create(recursive: true);
     final tmp = File('${_file.path}.tmp');
@@ -342,8 +428,14 @@ class ChatStore extends ChangeNotifier {
         .subscribe((status, _) {
           if (status == RealtimeSubscribeStatus.subscribed) unawaited(syncNow());
         });
-    _pullTimer = Timer.periodic(const Duration(minutes: 2), (_) => unawaited(syncNow()));
+    // Until an AI is connected, each round also asks again: one set up
+    // elsewhere (another Mac, the CLI) shows up by itself.
+    _pullTimer = Timer.periodic(const Duration(minutes: 2), (_) {
+      unawaited(syncNow());
+      if (aiMissing) unawaited(checkAi());
+    });
     unawaited(syncNow());
+    unawaited(checkAi());
   }
 
   Future<void> syncNow() async {

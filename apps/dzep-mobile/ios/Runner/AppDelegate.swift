@@ -179,7 +179,7 @@ final class OmpActivities {
     if !active(key).isEmpty { return update(args, result: result) }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return result(false) }
     let attributes = OmpActivity(
-      key: key, title: args["title"] as? String ?? "omp", project: args["project"] as? String ?? "")
+      key: key, title: args["title"] as? String ?? "Session", project: args["project"] as? String ?? "")
     do {
       watch(try Activity.request(attributes: attributes, content: content, pushType: .token))
       result(true)
@@ -251,7 +251,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
   /// launched the app arrives before Dart listens.
   private var tapped: String?
 
-  /// The same for a terminal push: the omp session it is about.
+  /// The same for a terminal push: the coding session it is about.
   private var tappedSession: String?
 
   func install() {

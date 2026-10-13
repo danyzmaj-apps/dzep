@@ -82,7 +82,7 @@ object OmpActivities {
         if (!Notifications.allowed(c)) return false
         val old = load(c, key)
         val s = Shown(
-            title = args["title"] as? String ?: old?.title ?: "omp",
+            title = args["title"] as? String ?: old?.title ?: "Session",
             project = args["project"] as? String ?: old?.project ?: "",
             state = state,
             kind = args["kind"] as? String,

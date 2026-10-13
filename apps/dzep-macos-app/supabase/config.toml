@@ -427,3 +427,11 @@ verify_jwt = false
 
 [functions.ask]
 verify_jwt = false
+
+# The user's token is checked in the function (see its header).
+[functions.pair]
+verify_jwt = false
+
+# Checks the user's token or the scheduler's secret itself (see its header).
+[functions.push]
+verify_jwt = false

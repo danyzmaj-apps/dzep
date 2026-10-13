@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' show FlutterView, Scene, SemanticsUpdate;
 
 import 'package:dzep_core/backend.dart';
@@ -105,10 +107,30 @@ class FakeStore extends ChangeNotifier implements IdeaStore {
   Future<void> close() async {}
 }
 
-/// A [ChatStore] with no chats that never sends.
+/// A [ChatStore] with no chats that never sends; the server's AI is [ai].
 class FakeChats extends ChangeNotifier implements ChatStore {
   @override
   String get userId => 'user';
+
+  @override
+  AiStatus? get ai => _ai;
+  AiStatus? _ai;
+  set ai(AiStatus? status) {
+    _ai = status;
+    notifyListeners();
+  }
+
+  @override
+  bool get aiMissing => ai?.connected == false;
+
+  /// What [checkAi] finds on the server; null: it can't be reached.
+  AiStatus? server;
+
+  @override
+  Future<AiStatus?> checkAi() async {
+    if (server case final s?) ai = s;
+    return ai;
+  }
 
   @override
   List<Conversation> get conversations => const [];
@@ -183,6 +205,46 @@ class FakeApp extends AppController {
   /// No kitty sockets here.
   @override
   Kitty get kitty => Kitty(socketDir: '/nonexistent-dzep-test');
+}
+
+/// A `claude` that answers from [list] (its `plugin list --json`) and records
+/// what it's asked; [fail] makes that command fail as `--json` reports it,
+/// [modsOff] has its `plugin test` refuse as with mods switched off.
+class FakeClaude {
+  FakeClaude(this.path);
+  final String path;
+  String version = '2.1.296 (Claude Code)';
+  List<Map<String, Object?>> list = [];
+  String? fail;
+  bool modsOff = false;
+
+  /// What a login shell's `command -v claude` prints; null: nothing found.
+  String? onPath;
+  final calls = <String>[];
+
+  Future<ProcessResult> run(String exe, List<String> args) async {
+    if (exe == '/bin/zsh') {
+      return ProcessResult(0, onPath == null ? 1 : 0, onPath ?? '', '');
+    }
+    expect(exe, path);
+    final call = args.join(' ');
+    calls.add(call);
+    if (call == fail) {
+      return ProcessResult(0, 1, '{"outcome":"failed","message":"Plugin \\"dzep\\" not found"}\n', '✘ Failed');
+    }
+    if (call == '--version') return ProcessResult(0, 0, '$version\n', '');
+    if (args.take(2).join(' ') == 'plugin test' && modsOff) {
+      return ProcessResult(
+        0,
+        1,
+        '',
+        'claude plugin test: hooks modules are turned off in this process: the rollout switch was saved off '
+            'by an earlier session and is not refreshed yet.\n',
+      );
+    }
+    if (call == 'plugin list --json') return ProcessResult(0, 0, jsonEncode(list), '');
+    return ProcessResult(0, 0, '{"outcome":"ok"}\n', '');
+  }
 }
 
 /// [child] as main.dart hosts a window: a [MaterialApp] with Džep's theme and

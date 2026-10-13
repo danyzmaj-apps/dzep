@@ -19,6 +19,15 @@
 //   data: {"error": "message"}   failed (also saved, as the answer's error)
 //
 // The answer is saved even if the app goes away mid-stream (waitUntil).
+// With no AI_API_KEY a question fails before anything is saved, with
+// {"error": …, "configured": false}.
+//
+//   POST /functions/v1/ask  {"action": "status"}
+//   → {"configured": false}, or {"configured": true, "model": …, "base_url": …}
+//
+// Whether Ask can answer, so the apps say so before a question fails. The
+// key itself never leaves the server.
+//
 // Deployed with --no-verify-jwt: the token is checked here with
 // auth.getUser, which works with the project's signing keys.
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -125,6 +134,10 @@ Deno.serve(async (req) => {
   });
 
   const body = await req.json().catch(() => ({}));
+  const key = Deno.env.get("AI_API_KEY");
+  if (body.action === "status") {
+    return json(200, key ? { configured: true, model: MODEL, base_url: BASE_URL } : { configured: false });
+  }
   const chatId = typeof body.chat_id === "string" && uuid.test(body.chat_id) ? body.chat_id : null;
   const question = typeof body.question === "string" ? body.question.trim() : "";
   // Images the app uploaded to the `chat` bucket: only from the user's own folder.
@@ -143,8 +156,13 @@ Deno.serve(async (req) => {
     return json(400, { error: `Attach at most ${IMAGES_PER_QUESTION} images.` });
   }
 
-  const key = Deno.env.get("AI_API_KEY");
-  if (!key) return json(500, { error: "The server has no AI key yet (secret AI_API_KEY; see docs/SELF_HOSTING.md)." });
+  // `configured: false` tells the apps to show Ask as not connected.
+  if (!key) {
+    return json(500, {
+      error: "No AI is connected yet. Connect one from Džep on your Mac: Settings → AI.",
+      configured: false,
+    });
+  }
 
   // New chat, or one of this user's (RLS hides everyone else's: the insert
   // below then fails on the primary key or the policy).

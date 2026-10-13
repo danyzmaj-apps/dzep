@@ -12,14 +12,11 @@ const selfHostingGuide = 'https://github.com/danyzmaj-apps/dzep/blob/main/docs/S
 /// Connects this device to a server that already exists: its setup link
 /// (pairing code and all), or its URL and publishable key.
 class ConnectServerForm extends StatefulWidget {
-  const ConnectServerForm({required this.session, this.back, this.error, super.key});
+  const ConnectServerForm({required this.session, this.back, super.key});
   final Session session;
 
   /// The way back to where the form was opened from, if any.
   final ({String label, VoidCallback onPressed})? back;
-
-  /// Shown until the next try, e.g. why a scanned code didn't connect.
-  final String? error;
 
   @override
   State<ConnectServerForm> createState() => _ConnectServerFormState();
@@ -29,7 +26,7 @@ class _ConnectServerFormState extends State<ConnectServerForm> {
   final _url = TextEditingController();
   final _key = TextEditingController();
   bool _busy = false;
-  late String? _error = widget.error;
+  String? _error;
 
   @override
   void dispose() {

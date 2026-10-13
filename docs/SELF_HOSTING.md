@@ -7,10 +7,10 @@ Džep has no central server. Your ideas, todos and chats live in a Supabase proj
 Install Džep and open it. With no server yet, it starts a setup wizard:
 
 1. **Supabase access token.** Create one at [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) (`sbp_…`) and paste it. It's used for this setup only and never saved.
-2. **Project.** Pick an existing project or let Džep create one (region guessed from your time zone).
+2. **Project.** Let Džep create one (region guessed from your time zone), or pick one you have. A project of its own is best: Džep won't go on one that already has accounts or tables of the same names, and says which of its settings it would replace. The free plan allows two active projects; pause one you don't use if it's full.
 3. **GitHub sign-in.** Džep opens GitHub's "new OAuth app" form with the name and callback URL filled in; paste back the client ID and secret.
 4. **AI (optional).** DeepSeek, OpenAI, OpenRouter or any OpenAI-compatible API, with its key.
-5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in, private sign-up and the `dzep://` redirect, deploys the `ask`, `device`, `pair` and `push` functions and stores the AI key as a function secret. If a step fails, **Try again** resumes from it. Push notifications need nothing more: each phone registers itself, and your server sends through the app publisher's relay, encrypted so only that phone can read them ([Push](#push)).
+5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in, private sign-up and the `dzep://` redirect, deploys the `ask`, `device`, `pair` and `push` functions and stores the AI key as a function secret. If a step fails, **Retry** resumes from it, and redoes any step whose values you changed after **← Back**. Push notifications need nothing more: each phone registers itself, and your server sends through the app publisher's relay, encrypted so only that phone can read them ([Push](#push)).
 
 Then sign in with GitHub. For your phones, see [Connect the apps](#connect-the-apps).
 
@@ -57,23 +57,27 @@ The first account that signs in **owns the server**.
 
 ## AI provider
 
-Quick questions work with any OpenAI-compatible chat API. Set these as edge function secrets (the setup script does it for you):
+Quick questions work with any OpenAI-compatible chat API. Set these as edge function secrets (the setup wizard and the setup script do it for you):
 
 | Secret | Default | Examples |
 | --- | --- | --- |
-| `AI_API_KEY` | (none: Ask says the server has no key) | your provider's key |
+| `AI_API_KEY` | (none: Ask shows "No AI connected yet" and how to connect one) | your provider's key |
 | `AI_BASE_URL` | `https://api.deepseek.com` | `https://api.openai.com/v1`, `https://openrouter.ai/api/v1`, `https://api.groq.com/openai/v1`, `http://<your-host>:11434/v1` (Ollama) |
 | `AI_MODEL` | `deepseek-flash` | `gpt-5-mini`, `anthropic/claude-haiku-4.5`, `llama-3.3-70b-versatile` |
 | `AI_EXTRA_BODY` | `{"thinking":{"type":"disabled"}}` on DeepSeek, else `{}` | any JSON object merged into each request, e.g. `{"temperature":0.3}` |
 
-To switch providers later:
+### Connect or switch it later
+
+Skipped it during setup, or want another provider? On the Mac, open **Settings → AI → Connect…** (or **Connect an AI…** in Ask). Pick DeepSeek, OpenAI, OpenRouter or **Other** (any OpenAI-compatible URL and model), paste the API key, and paste a Supabase [access token](https://supabase.com/dashboard/account/tokens). Džep uses the token once to save the three secrets on your project and doesn't keep it; you can delete the token afterwards. The Mac and your phones pick up the change by themselves (a phone when it next comes to the front). This works for projects on supabase.com; on a server you run yourself, use the CLI.
+
+From a terminal:
 
 ```sh
 # in apps/dzep-macos-app (linked to your project by the setup script)
 supabase secrets set AI_BASE_URL=https://api.openai.com/v1 AI_MODEL=gpt-5-mini AI_API_KEY=sk-…
 ```
 
-No redeploy is needed. The key never leaves your server, and the apps never see it.
+No redeploy is needed. The key never leaves your server, and the apps never see it: they only ask the `ask` function whether a key is set and which model it uses.
 
 ## Sharing
 

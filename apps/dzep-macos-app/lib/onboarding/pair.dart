@@ -63,8 +63,11 @@ class _PairingQrState extends State<PairingQr> {
             : FutureBuilder<Uri>(
                 future: _link,
                 builder: (context, snap) {
-                  if (snap.hasError) {
-                    return _placeholder("Couldn't make a code. Check your connection.", action: 'Retry');
+                  if (snap.error case final e?) {
+                    return _placeholder(
+                      e is PairingException ? e.message : "Couldn't make a code: $e",
+                      action: 'Retry',
+                    );
                   }
                   final link = snap.data;
                   if (link == null) return const Center(child: CircularProgressIndicator(strokeWidth: 2));

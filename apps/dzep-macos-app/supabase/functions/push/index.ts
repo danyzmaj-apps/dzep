@@ -10,16 +10,17 @@
 //                                                           (token: the FCM registration token); key: its
 //                                                           AES-256 key, base64
 //   POST {"action": "unregister", "token"}                  user token: signed out
-//   POST {"action": "notify", "title", "body"?, "session"?}  user token: e.g. an omp session finished on the Mac;
-//                                                            session: the omp session a tap opens (its Live
-//                                                            Activities, if any, turn done or needs too)
+//   POST {"action": "notify", "title", "body"?, "session"?, "state"?}
+//                                                           user token: e.g. a coding session finished on the
+//                                                           Mac; session: the one a tap opens, whose Live
+//                                                           Activities move to state (done | needs)
 //   POST {"action": "tick"}                                 x-dzep-cron: the scheduler, reminders now due
 //
 // Sealed messages (AES-256-GCM, base64(nonce ‖ ciphertext ‖ tag)):
-//   {"kind": "reminder"|"terminal", "title", "body", "id"?: todo, "session"?: omp session}
+//   {"kind": "reminder"|"terminal", "title", "body", "id"?: todo, "session"?: coding session}
 //   {"kind": "activity", "session", "state", "since": unix ms, "akind"?}  Android only, see below
 //
-// Live Activities (an omp session followed on the phone). An iPhone's has
+// Live Activities (a coding session followed on the phone). An iPhone's has
 // its own push token and its pushes can't be encrypted (the notification
 // extension never sees them), so they carry a state and nothing else: no
 // title, no text. An Android phone follows each session with its FCM token
@@ -43,7 +44,7 @@ const relay = Deno.env.get("PUSH_RELAY_URL") ?? "https://tgqmhieundubwtyvsnih.su
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-/** The omp session a push is about: `kitty-<pid>/<window id>` or `pid:<pid>` (at most 64: also a collapse id). */
+/** The coding session a push is about: `kitty-<pid>/<window id>` or `pid:<pid>` (at most 64: also a collapse id). */
 const sessionKey = (v: unknown) => (typeof v === "string" && /^[\w.:/-]{1,64}$/.test(v) ? v : undefined);
 
 /** APNs tokens are hex; a Live Activity's is longer than a device's. */
@@ -75,7 +76,7 @@ const activityKinds = ["question", "approval", "plan"] as const;
 type ActivityState = (typeof activityStates)[number];
 type ActivityKind = (typeof activityKinds)[number];
 
-/** Moves every Live Activity of [userId]'s omp [session] to [state] (ended: ends them). */
+/** Moves every Live Activity of [userId]'s coding [session] to [state] (ended: ends them). */
 async function activity(userId: string, session: string, state: ActivityState, kind?: ActivityKind): Promise<number> {
   const { data: rows } = await admin
     .from("activity_tokens")
@@ -123,9 +124,9 @@ async function activity(userId: string, session: string, state: ActivityState, k
   return sent;
 }
 
-/** id: the todo (reminders); session: the omp session (terminal). */
+/** id: the todo (reminders); session: the coding session (terminal). */
 type Notice = { kind: "reminder" | "terminal"; title: string; body: string; id?: string; session?: string };
-/** An omp session's state for an Android phone; since: unix ms. */
+/** A coding session's state for an Android phone; since: unix ms. */
 type ActivityMessage = { kind: "activity"; session: string; state: ActivityState; since: number; akind?: ActivityKind };
 type Message = Notice | ActivityMessage;
 
@@ -152,7 +153,7 @@ async function send(userId: string, message: Notice): Promise<number> {
       token: d.token,
       kind: message.kind,
       enc: await seal(d.key, message),
-      // Lets a newer push for the same todo, or the same omp session,
+      // Lets a newer push for the same todo, or the same coding session,
       // replace an older one.
       collapse: message.id ?? message.session,
     });
@@ -225,9 +226,12 @@ Deno.serve(async (req) => {
     const text = typeof body.body === "string" ? body.body.trim().slice(0, 400) : "";
     const session = sessionKey(body.session);
     const sent = await send(user, { kind: "terminal", title, body: text, session });
-    // The Mac's omp alerts (lib/controller.dart) also move the session's Live Activities.
+    // The Mac's session alerts (lib/controller.dart) also move the session's Live Activities. A Mac
+    // from before `state` says it in the title.
     if (session) {
-      const state = title.startsWith("omp finished") ? "done" : title.startsWith("omp needs you") ? "needs" : null;
+      const state: ActivityState | null = body.state === "done" || body.state === "needs"
+        ? body.state
+        : title.startsWith("omp finished") ? "done" : title.startsWith("omp needs you") ? "needs" : null;
       if (state) await activity(user, session, state);
     }
     return json(200, { sent });
@@ -238,7 +242,7 @@ Deno.serve(async (req) => {
     if (platform === "android") {
       if (!fcmToken(body.token)) return json(400, { error: "token must be the FCM registration token" });
     } else if (!apnsToken(body.token, 400)) return json(400, { error: "token must be the activity's push token (hex)" });
-    if (!session) return json(400, { error: "session must be an omp session key" });
+    if (!session) return json(400, { error: "session must be a coding session key" });
     // A token another user registered stays theirs.
     const { data: other } = await admin
       .from("activity_tokens")
@@ -273,7 +277,7 @@ Deno.serve(async (req) => {
 
   if (body.action === "activity") {
     const session = sessionKey(body.session);
-    if (!session) return json(400, { error: "session must be an omp session key" });
+    if (!session) return json(400, { error: "session must be a coding session key" });
     const state = activityStates.find((s) => s === body.state);
     if (!state) return json(400, { error: `state must be ${activityStates.join(", ")}` });
     const kind = body.kind == null ? undefined : activityKinds.find((k) => k === body.kind);

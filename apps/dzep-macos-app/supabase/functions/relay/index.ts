@@ -17,7 +17,7 @@
 //   → 200 sent · 410 the phone is gone (uninstalled, signed out): forget it ·
 //     501 FCM not configured here · 4xx/5xx otherwise
 //
-// A Live Activity push (an omp session on the Lock Screen) can't be
+// A Live Activity push (a coding session on the Lock Screen) can't be
 // encrypted: the iPhone's notification extension never sees it. So it carries
 // only a state, rebuilt here from checked fields, never anything passed
 // through. Android's ongoing notification for a session is the app's own, so

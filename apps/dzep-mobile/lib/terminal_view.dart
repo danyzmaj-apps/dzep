@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/ansi.dart';
 import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/live.dart';
@@ -50,7 +51,8 @@ String ago(DateTime t) {
 
 /// Asks, then closes [w] on the Mac; true once it's closed.
 Future<bool> closeWindow(BuildContext context, TerminalRemote remote, TermWindow w) async {
-  final what = w.isOmp ? 'the omp session' : (w.program.isEmpty ? 'what runs in it' : w.program);
+  final agent = w.agent;
+  final what = agent != null ? 'the ${agent.label} session' : (w.program.isEmpty ? 'what runs in it' : w.program);
   final sure = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -116,8 +118,8 @@ Widget? linkNote(TerminalRemote r) {
   );
 }
 
-/// Opens omp session [key]; [starting]: it was just launched and omp may
-/// not have reported yet.
+/// Opens coding session [key]; [starting]: it was just launched and its agent
+/// may not have reported yet.
 void openSession(BuildContext context, TerminalRemote remote, String key, {bool starting = false}) =>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -134,7 +136,7 @@ void openWindow(BuildContext context, TerminalRemote remote, String window) => N
 
 /// Asks where to start a session, starts it and opens it.
 Future<void> openNewSession(BuildContext context, TerminalRemote remote) async {
-  final launched = await showModalBottomSheet<({String window, bool omp})>(
+  final launched = await showModalBottomSheet<({String window, bool agent})>(
     context: context,
     isScrollControlled: true,
     backgroundColor: C.bar,
@@ -142,8 +144,8 @@ Future<void> openNewSession(BuildContext context, TerminalRemote remote) async {
     builder: (_) => NewSessionSheet(remote: remote),
   );
   if (launched == null || !context.mounted) return;
-  if (launched.omp) {
-    // omp in kitty: its session's key is its window's.
+  if (launched.agent) {
+    // An agent in kitty: its session's key is its window's.
     openSession(context, remote, launched.window, starting: true);
   } else {
     openWindow(context, remote, launched.window);
@@ -170,7 +172,7 @@ String sessionState(LiveSummary s) => s.ask != null
 
 Color sessionColor(LiveSummary s) => s.ask != null ? C.warn : (s.busy ? C.accent : C.dim2);
 
-/// The Terminal tab's body: the Mac's omp sessions, and its other kitty
+/// The Terminal tab's body: the Mac's coding sessions, and its other kitty
 /// windows.
 class TerminalList extends StatelessWidget {
   const TerminalList({required this.remote, super.key});
@@ -249,7 +251,11 @@ class TerminalList extends StatelessWidget {
     ListTile(
       key: ValueKey('term-${w.key}'),
       onTap: () => openWindow(context, remote, w.key),
-      leading: Icon(w.isOmp ? Icons.auto_awesome : Icons.terminal, size: 18, color: w.focused ? C.accent : C.dim2),
+      leading: Icon(
+        w.agent != null ? Icons.auto_awesome : Icons.terminal,
+        size: 18,
+        color: w.focused ? C.accent : C.dim2,
+      ),
       title: Text(
         w.title.isEmpty ? w.program : w.title,
         maxLines: 1,
@@ -293,29 +299,36 @@ class TerminalList extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.all(40),
                       child: Text(
-                        remote.online && remote.error == null ? 'Nothing runs in kitty. Tap + to start omp.' : '',
+                        remote.online && remote.error == null
+                            ? 'Nothing runs in kitty. Tap + to start ${remote.agent.label}.'
+                            : '',
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: C.dim, height: 1.5),
                       ),
                     ),
                   if (sessions.isNotEmpty) ...[
-                    _header('OMP'),
+                    _header('SESSIONS'),
                     for (final (i, s) in sessions.indexed) ...[if (i > 0) divider, _session(context, s)],
                   ],
                   if (windows.isNotEmpty) ...[
                     _header('WINDOWS'),
-                    // omp running without the live extension: started before it was installed.
-                    if (windows.any((w) => w.isOmp))
-                      const Padding(
-                        key: ValueKey('omp-screens-only'),
-                        padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                        child: Text(
-                          'These omp windows show only as screens: omp in them started before its Džep '
-                          'extension (live.ts) was installed. Quit omp there and start it again (omp -c picks '
-                          'the conversation back up) to see it above, as a conversation.',
-                          style: TextStyle(fontSize: 12, color: C.dim2, height: 1.4),
+                    // An agent running without Džep's integration: started before it was installed.
+                    for (final agent in Agent.values)
+                      if (windows.any((w) => w.agent == agent))
+                        Padding(
+                          key: ValueKey('${agent.command}-screens-only'),
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                          child: Text(switch (agent) {
+                            Agent.omp =>
+                              'These omp windows show only as screens: omp in them started before its Džep '
+                                  'extension (live.ts) was installed. Quit omp there and start it again (omp -c '
+                                  'picks the conversation back up) to see it above, as a conversation.',
+                            Agent.claude =>
+                              'These Claude windows show only as screens: Claude in them started before '
+                                  'Džep’s Claude Code plugin was installed. Quit Claude there and start it again '
+                                  '(claude -c picks the conversation back up) to see it above, as a conversation.',
+                          }, style: const TextStyle(fontSize: 12, color: C.dim2, height: 1.4)),
                         ),
-                      ),
                     for (final (i, w) in windows.indexed) ...[if (i > 0) divider, _window(context, w)],
                   ],
                 ],
@@ -356,7 +369,7 @@ class _KeepAwakeState extends State<_KeepAwake> {
 }
 
 /// One kitty window: its screen as text, live, plus a composer and the keys
-/// a terminal program needs (omp's menus: arrows, Enter, Esc).
+/// a terminal program needs (a coding agent's menus: arrows, Enter, Esc).
 class TerminalPage extends StatefulWidget {
   const TerminalPage({required this.remote, required this.window, super.key});
   final TerminalRemote remote;
@@ -372,8 +385,8 @@ class _TerminalPageState extends State<TerminalPage> {
   late final VoidCallback _unwatch;
 
   /// A shell's long lines reflow to the phone's width; a full-screen program
-  /// (omp) lays out to its own width, so its lines stay whole.
-  late bool _wrap = !(remote.window(widget.window)?.isOmp ?? false);
+  /// (a coding agent) lays out to its own width, so its lines stay whole.
+  late bool _wrap = remote.window(widget.window)?.agent == null;
   bool _sending = false;
 
   /// Lines numbered from the first one the phone saw: the ones from
@@ -672,8 +685,8 @@ class _TerminalPageState extends State<TerminalPage> {
 }
 
 /// A new kitty window in one of the Mac's projects (or any folder typed in),
-/// running omp unless turned off. Pops the new window's key and whether omp
-/// runs in it.
+/// starting the Mac's coding agent unless turned off. Pops the new window's
+/// key and whether the agent runs in it.
 class NewSessionSheet extends StatefulWidget {
   const NewSessionSheet({required this.remote, super.key});
   final TerminalRemote remote;
@@ -684,7 +697,7 @@ class NewSessionSheet extends StatefulWidget {
 
 class _NewSessionSheetState extends State<NewSessionSheet> {
   final _query = TextEditingController();
-  bool _omp = true;
+  bool _agent = true;
   String? _launching;
 
   TerminalRemote get remote => widget.remote;
@@ -712,9 +725,9 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
     if (_launching != null) return;
     setState(() => _launching = cwd);
     try {
-      final omp = _omp;
-      final window = await remote.launch(cwd, omp: omp);
-      if (mounted) Navigator.of(context).pop((window: window, omp: omp));
+      final agent = _agent;
+      final window = await remote.launch(cwd, startAgent: agent);
+      if (mounted) Navigator.of(context).pop((window: window, agent: agent));
     } on Object catch (e) {
       if (mounted) {
         setState(() => _launching = null);
@@ -755,10 +768,10 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   child: Text('New session', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                 ),
                 SwitchListTile(
-                  key: const ValueKey('start-omp'),
-                  value: _omp,
-                  onChanged: (v) => setState(() => _omp = v),
-                  title: const Text('Start omp', style: TextStyle(fontSize: 15)),
+                  key: const ValueKey('start-agent'),
+                  value: _agent,
+                  onChanged: (v) => setState(() => _agent = v),
+                  title: Text('Start ${remote.agent.label}', style: const TextStyle(fontSize: 15)),
                   subtitle: const Text('Off: just a shell', style: TextStyle(fontSize: 12, color: C.dim)),
                 ),
                 Padding(

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/idea.dart';
 import 'package:dzep_core/kitty.dart';
@@ -70,6 +72,10 @@ class AppController extends Session {
   /// The next popup open goes straight to the chat (Continue in popup).
   bool askNext = false;
 
+  /// The main window should open the sheet that connects an AI next (the
+  /// popup's Ask, which has no room for it).
+  bool pendingConnectAi = false;
+
   /// What the popup opens on: the mode it was last used in.
   PopupMode get popupMode => PopupMode.values.asNameMap()[_prefs.getString('popup_mode')] ?? PopupMode.idea;
 
@@ -81,14 +87,34 @@ class AppController extends Session {
 
   static const _terminalKey = 'terminal_bridge';
 
-  /// The iPhone may see and type into kitty and omp (lib/terminal_bridge.dart).
-  /// Off until turned on in Settings: whoever holds the account can then type
-  /// here.
+  /// The iPhone may see and type into kitty and the coding sessions
+  /// (lib/terminal_bridge.dart). Off until turned on in Settings: whoever
+  /// holds the account can then type here.
   bool get terminalOn => _prefs.getBool(_terminalKey) ?? false;
   TerminalBridge? _bridge;
-  final kitty = Kitty();
 
-  /// The omp sessions reporting to the local API (integrations/omp/live.ts).
+  /// kitty's remote control, through the sockets in [kittyDir].
+  final kitty = Kitty(socketDir: kittyDir(Platform.environment));
+
+  /// Where kitty's sockets are: /tmp, or the directory `DZEP_KITTY_DIR`
+  /// names, so a second Džep under test talks to a kitty of its own.
+  @visibleForTesting
+  static String kittyDir(Map<String, String> env) {
+    final dir = env['DZEP_KITTY_DIR'];
+    return dir != null && dir.isNotEmpty ? dir : '/tmp';
+  }
+
+  static const _agentKey = 'coding_agent';
+
+  /// The coding agent a new session from the phone starts.
+  Agent get codingAgent => Agent.parse(_prefs.getString(_agentKey));
+
+  Future<void> setCodingAgent(Agent agent) async {
+    await _prefs.setString(_agentKey, agent.name);
+    notifyListeners();
+  }
+
+  /// The coding sessions reporting to the local API (integrations/).
   late final live = LiveHub()..events.listen((e) => unawaited(_onLive(e)));
 
   Future<void> setTerminal({required bool on}) async {
@@ -105,19 +131,19 @@ class AppController extends Session {
     final old = _bridge;
     _bridge = null;
     await old?.stop();
-    if (want) await (_bridge = TerminalBridge(client, user.id, kitty, live)).start();
+    if (want) await (_bridge = TerminalBridge(client, user.id, kitty, live, () => codingAgent)).start();
   }
 
-  /// An omp run ended, or omp waits for an answer: the iPhone hears about it,
-  /// unless it's showing that session right now.
+  /// A run ended, or the agent waits for an answer: the iPhone hears about
+  /// it, unless it's showing that session right now.
   Future<void> _onLive(LiveEvent e) async {
     final s = e.session;
     if (_bridge?.watching(s.key) ?? false) return;
-    final (title, body) = switch (e) {
-      LiveFinished(:final summary) => ('omp finished · ${s.project}', summary),
-      LiveAsked(:final ask) => ('omp needs you · ${s.project}', ask.text),
+    final (title, body, state) = switch (e) {
+      LiveFinished(:final summary) => ('${s.agent.label} finished · ${s.project}', summary, 'done'),
+      LiveAsked(:final ask) => ('${s.agent.label} needs you · ${s.project}', ask.text, 'needs'),
     };
-    await notifyPhone(title, body, session: s.key);
+    await notifyPhone(title, body, session: s.key, activity: state);
   }
 
   @override
@@ -247,6 +273,12 @@ class AppController extends Session {
     await Native.showMain();
   }
 
+  /// The main window on Ask, with the sheet that connects an AI.
+  Future<void> connectAi() {
+    pendingConnectAi = true;
+    return openMain(chats: true);
+  }
+
   /// Shows note [id] (null: a new one) in the note window. From the main
   /// window ([fromMain]) the app hides until the note window closes; from
   /// the popup it stays as it was.
@@ -284,14 +316,15 @@ class AppController extends Session {
 
   /// Pushes [title] / [body] to the user's iPhones (functions/push) when
   /// nobody has touched this Mac for a minute: at the desk, the Mac's own
-  /// screen says it already. [session]: the omp session a tap opens. False if
-  /// it didn't go.
-  Future<bool> notifyPhone(String title, String body, {String? session}) async {
+  /// screen says it already. [session]: the coding session a tap opens,
+  /// whose Live Activities move to [activity] (done, needs). False if it
+  /// didn't go.
+  Future<bool> notifyPhone(String title, String body, {String? session, String? activity}) async {
     if (store == null || await Native.idleSeconds() < 60) return false;
     try {
       final res = await client.functions.invoke(
         'push',
-        body: {'action': 'notify', 'title': title, 'body': body, 'session': ?session},
+        body: {'action': 'notify', 'title': title, 'body': body, 'session': ?session, 'state': ?activity},
       );
       final data = res.data;
       return data is Map && (data['sent'] as int? ?? 0) > 0;

@@ -48,7 +48,10 @@ void main() {
   setUp(() async {
     hub = LiveHub();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0)
-      ..listen((req) async => await hub.accept(await WebSocketTransformer.upgrade(req)));
+      ..listen((req) async {
+        final ws = await WebSocketTransformer.upgrade(req);
+        await hub.accept(ws.cast<String>(), SocketLink(ws));
+      });
   });
 
   tearDown(() => server.close(force: true));
