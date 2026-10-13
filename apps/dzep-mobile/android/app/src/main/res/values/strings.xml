@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_todos_description">Your open todos. Tap a circle to tick one off.</string>
+    <string name="widget_new_idea_description">Opens Džep ready to type.</string>
+</resources>

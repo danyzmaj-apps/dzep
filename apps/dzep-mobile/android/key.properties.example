@@ -1,0 +1,7 @@
+# Release signing for `fvm flutter build appbundle --release` (docs/RELEASING.md).
+# Copy to android/key.properties (git-ignored) and fill in your own upload keystore.
+# Keep the keystore outside the repo; storeFile is an absolute path or relative to android/app.
+storeFile=/absolute/path/to/your-upload.jks
+storePassword=your-keystore-password
+keyAlias=upload
+keyPassword=your-key-password

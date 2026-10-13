@@ -1,50 +1,15 @@
-name: dzep
-description: "Džep: a hotkey idea inbox for macOS, synced through Supabase."
+name: dzep_workspace
+description: "Džep: the workspace of the Mac app, the iPhone app and the code they share."
 publish_to: 'none'
-version: 0.2.0+2
 
 environment:
   sdk: ^3.13.4
 
-dependencies:
-  app_links: ^7.2.2
-  crypto: ^3.0.7
-  flutter:
-    sdk: flutter
-  flutter_markdown_plus: ^1.0.12
-  http: ^1.5.0
-  image_picker: ^1.2.4
-  mobile_scanner: ^7.4.2
-  pasteboard: ^0.5.0
-  path_provider: ^2.1.6
-  qr_flutter: ^4.1.0
-  shared_preferences: ^2.5.6
-  supabase_flutter: ^2.18.0
-  url_launcher: ^6.3.3
-  uuid: ^4.6.0
+workspace:
+  - packages/dzep_core
+  - apps/dzep-macos-app
+  - apps/dzep-mobile
+
+# The shared analysis_options.yaml includes very_good_analysis.
 dev_dependencies:
-  flutter_launcher_icons: ^0.14.4
-  flutter_test:
-    sdk: flutter
   very_good_analysis: ^11.0.0
-
-flutter:
-  uses-material-design: true
-  # The backend, for the in-app setup (lib/onboarding/): it applies these to
-  # the user's Supabase project.
-  assets:
-    - supabase/migrations/
-    - supabase/functions/ask/
-    - supabase/functions/device/
-    - supabase/functions/pair/
-    - supabase/functions/push/
-
-# `swift tool/make_icon.swift && fvm dart run flutter_launcher_icons`
-flutter_launcher_icons:
-  image_path: assets/icon/ios.png
-  ios: true
-  remove_alpha_ios: true
-  android: false
-  macos:
-    generate: true
-    image_path: assets/icon/macos.png

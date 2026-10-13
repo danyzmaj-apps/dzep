@@ -14,18 +14,18 @@ body:
     attributes:
       label: Where
       multiple: true
-      options: [Mac app, iPhone app, Widget / Siri, Backend setup, Quick questions (AI), Terminal from iPhone]
+      options: [Mac app, iPhone app, Android app, Widget, Siri, Notifications / push, Backend setup, Pairing a phone, Quick questions (AI), Terminal from phone]
     validations:
       required: true
   - type: input
     id: versions
     attributes:
       label: Versions
-      description: Džep version (Mac → Džep → About), macOS / iOS version.
+      description: Džep version (Mac → Džep → About; phone → Settings), macOS / iOS / Android version, phone model.
     validations:
       required: true
   - type: textarea
     id: logs
     attributes:
       label: Errors or logs
-      description: Any message the app showed. Leave out your project URL and keys.
+      description: Any message the app showed. Leave out your project URL, keys and tokens.

@@ -10,9 +10,11 @@ Install Džep and open it. With no server yet, it starts a setup wizard:
 2. **Project.** Pick an existing project or let Džep create one (region guessed from your time zone).
 3. **GitHub sign-in.** Džep opens GitHub's "new OAuth app" form with the name and callback URL filled in; paste back the client ID and secret.
 4. **AI (optional).** DeepSeek, OpenAI, OpenRouter or any OpenAI-compatible API, with its key.
-5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in, private sign-up and the `dzep://` redirect, deploys the `ask`, `device`, `pair` and `push` functions and stores the AI key as a function secret. If a step fails, **Try again** resumes from it. Push notifications need nothing more: the iPhone registers itself, and your server sends through the app publisher's relay, encrypted so only your phone can read them.
+5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in, private sign-up and the `dzep://` redirect, deploys the `ask`, `device`, `pair` and `push` functions and stores the AI key as a function secret. If a step fails, **Try again** resumes from it. Push notifications need nothing more: each phone registers itself, and your server sends through the app publisher's relay, encrypted so only that phone can read them ([Push](#push)).
 
-Then sign in with GitHub. For the iPhone, see [Connect the apps](#connect-the-apps).
+Then sign in with GitHub. For your phones, see [Connect the apps](#connect-the-apps).
+
+Servers are set up from the Mac (or the script below), never from a phone: the iPhone and Android apps only pair with a server that exists.
 
 ## The script
 
@@ -31,13 +33,14 @@ At [supabase.com/dashboard](https://supabase.com/dashboard), choose **New projec
 ### 2. Run the setup script
 
 ```sh
-tool/setup-backend.sh <project-ref>
+# in the repo root
+apps/dzep-macos-app/tool/setup-backend.sh <project-ref>
 ```
 
 It walks you through the rest:
 
 1. It links the repo to your project.
-2. It asks you to **create a GitHub OAuth app** at [github.com/settings/applications/new](https://github.com/settings/applications/new), with the callback URL `https://<project-ref>.supabase.co/auth/v1/callback`, and to paste its client ID and secret. They are stored in `supabase/.env`, which git ignores.
+2. It asks you to **create a GitHub OAuth app** at [github.com/settings/applications/new](https://github.com/settings/applications/new), with the callback URL `https://<project-ref>.supabase.co/auth/v1/callback`, and to paste its client ID and secret. They are stored in `apps/dzep-macos-app/supabase/.env`, which git ignores.
 3. It creates the tables, security rules and storage (`supabase db push`).
 4. It turns on GitHub sign-in, the `dzep://` redirect and private sign-up (`supabase config push`).
 5. It deploys the edge functions: `ask`, `device`, `pair` and `push`.
@@ -48,7 +51,7 @@ At the end it prints a **setup link**: `dzep://setup?url=…&key=…`. It holds 
 ## Connect the apps
 
 - **Mac**: install Džep from [Releases](https://github.com/danyzmaj-apps/dzep/releases/latest), then open the setup link (the script offers to) or paste it into Džep's setup screen (**I already have one: connect it**). Sign in with GitHub.
-- **iPhone**: on the Mac, **Settings → Set up iPhone…** shows a QR code. In the iPhone app, tap **Scan the code from your Mac**. The code carries the server address, its publishable key and a one-time sign-in code, so the phone signs in as you without GitHub. It works once and expires after 10 minutes; anyone who scans it gets into your account, so only show it to your own phone. No camera? **Paste a setup link instead** takes the same link.
+- **iPhone and Android**: on the Mac, **Settings → Set up phone…** shows a QR code. In the phone app, tap **Scan the code from your Mac**. The code carries the server address, its publishable key and a one-time sign-in code, so the phone signs in as you without GitHub. It works once and expires after 10 minutes; anyone who scans it gets into your account, so only show it to your own phone. No camera? **Paste a setup link instead** takes the same link.
 
 The first account that signs in **owns the server**.
 
@@ -66,6 +69,7 @@ Quick questions work with any OpenAI-compatible chat API. Set these as edge func
 To switch providers later:
 
 ```sh
+# in apps/dzep-macos-app (linked to your project by the setup script)
 supabase secrets set AI_BASE_URL=https://api.openai.com/v1 AI_MODEL=gpt-5-mini AI_API_KEY=sk-…
 ```
 
@@ -86,10 +90,23 @@ Each person sees only their own data, but they share your AI key and your Supaba
 After pulling a new version of this repo, run the setup script again. It applies new migrations and redeploys the functions, and it leaves your GitHub app and AI key as they are:
 
 ```sh
-git pull && tool/setup-backend.sh <project-ref>
+# in the repo root
+git pull && apps/dzep-macos-app/tool/setup-backend.sh <project-ref>
 ```
 
 The Mac app updates itself. Release notes say when a new app version needs a backend update.
+
+## Push
+
+Your server pushes reminders, omp notifications and omp session state to your phones. Only the app's publisher holds the credentials that reach Džep's installs (the APNs key for iPhones, the Firebase service account for Android), so your server's `push` function hands each notification to the publisher's **relay**, which passes it to Apple's APNs or Google's Firebase Cloud Messaging.
+
+- Each phone makes its own AES-256 key and registers it with your server (`push_devices`, with the device's push token and its `platform`, `ios` or `android`). Your server encrypts every notification with that key; the relay sees the push token, the kind of notification (reminder, terminal or activity), a collapse id and ciphertext, and stores nothing. iPhone Live Activity updates are the exception: iOS can't decrypt them, so they carry the omp session's state (working, needs you, finished) in the clear, and no text.
+- Android messages are FCM data messages the app decrypts itself; iPhone messages are decrypted by its notification service extension.
+- No setup on your side: the default `PUSH_RELAY_URL` is the publisher's relay.
+
+### Your own app id and relay
+
+A relay only reaches apps signed with the publisher's ids. A fork that ships its own app (its own bundle id or Android package) runs its own relay on a Supabase project of its own: an APNs key from its Apple team, a Firebase project with its Android app (its `google-services.json` goes into its Android build) and that project's service account as the relay's `FCM_SERVICE_ACCOUNT` secret. `apps/dzep-macos-app/tool/deploy-relay.sh` deploys it ([RELEASING.md](RELEASING.md#push-relay-once-and-after-relay-changes)). Then set `PUSH_RELAY_URL=https://<relay-project-ref>.supabase.co/functions/v1/relay` as a function secret on each server that serves those apps.
 
 ## Troubleshooting
 

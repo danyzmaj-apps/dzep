@@ -1,0 +1,42 @@
+name: dzep_macos
+description: "Džep: a hotkey idea inbox for macOS, synced through Supabase."
+publish_to: 'none'
+version: 0.2.0+2
+resolution: workspace
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  dzep_core: any
+  flutter:
+    sdk: flutter
+  http: ^1.5.0
+  qr_flutter: ^4.1.0
+  shared_preferences: ^2.5.6
+  supabase_flutter: ^2.18.0
+  url_launcher: ^6.3.3
+dev_dependencies:
+  flutter_launcher_icons: ^0.14.4
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^11.0.0
+
+flutter:
+  uses-material-design: true
+  # The backend, for the in-app setup (lib/onboarding/): it applies these to
+  # the user's Supabase project.
+  assets:
+    - supabase/migrations/
+    - supabase/functions/ask/
+    - supabase/functions/device/
+    - supabase/functions/pair/
+    - supabase/functions/push/
+
+# `swift tool/make_icon.swift && fvm dart run flutter_launcher_icons`
+flutter_launcher_icons:
+  android: false
+  ios: false
+  macos:
+    generate: true
+    image_path: assets/icon/macos.png
