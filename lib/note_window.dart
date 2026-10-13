@@ -10,7 +10,7 @@ import 'package:flutter/services.dart';
 
 /// The note window (`NotePanel` in MainFlutterWindow.swift): one note, apart
 /// from the app, saved as it's typed. Opened from a note in the main window
-/// (which hides until it closes) or with ⌘6 in the popup.
+/// (which hides until it closes) or with ⌘P in the popup's Note mode.
 class NoteWindow extends StatelessWidget {
   const NoteWindow({required this.app, super.key});
   final AppController app;
@@ -37,7 +37,7 @@ class _NotePad extends StatefulWidget {
   State<_NotePad> createState() => _NotePadState();
 }
 
-class _NotePadState extends State<_NotePad> {
+class _NotePadState extends State<_NotePad> with WidgetsBindingObserver {
   /// Null for a new note, made once something is written.
   late Idea? _note = switch (app.noteId) {
     final id? => store.byId(id),
@@ -57,6 +57,7 @@ class _NotePadState extends State<_NotePad> {
     _text.selection = TextSelection.collapsed(offset: _text.text.length);
     store.addListener(_onStore);
     app.addListener(_onApp);
+    WidgetsBinding.instance.addObserver(this);
     _onApp();
     WidgetsBinding.instance.addPostFrameCallback((_) => _takeFocus());
   }
@@ -65,6 +66,7 @@ class _NotePadState extends State<_NotePad> {
   void dispose() {
     store.removeListener(_onStore);
     app.removeListener(_onApp);
+    WidgetsBinding.instance.removeObserver(this);
     _text.dispose();
     _focus.dispose();
     super.dispose();
@@ -80,6 +82,14 @@ class _NotePadState extends State<_NotePad> {
 
   void _takeFocus() {
     if (mounted && !_focus.hasFocus) _focus.requestFocus();
+  }
+
+  /// Like the popup, this window has the keyboard while Džep isn't the
+  /// active app; the engine then reports it inactive or hidden and Flutter
+  /// puts the focus away. While it has the keyboard, the editor takes it back.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && app.noteKey) _takeFocus();
   }
 
   /// Edited elsewhere: shown unless it's being typed in here. Deleted
@@ -173,6 +183,9 @@ class _NotePadState extends State<_NotePad> {
               child: TextField(
                 controller: _text,
                 focusNode: _focus,
+                // Focus coming back (window clicked, popup gone) never
+                // selects it all, so the next key can't wipe the note.
+                selectAllOnFocus: false,
                 selectionWidthStyle: selectionWidth,
                 maxLines: null,
                 keyboardType: TextInputType.multiline,

@@ -241,7 +241,7 @@ class _LibraryState extends State<Library> {
     });
   }
 
-  /// The popup asked to open a specific item, the notes or a chat.
+  /// The popup asked to open a specific item, a list or a chat.
   void _takePendingSelect() {
     final app = widget.app;
     final chat = app.pendingChat;
@@ -252,10 +252,20 @@ class _LibraryState extends State<Library> {
         _chat = chat;
       });
     }
-    if (app.pendingNotes) {
-      app.pendingNotes = false;
+    if (app.pendingChats) {
+      app.pendingChats = false;
       _beforePopup = null;
-      _setView(_notes);
+      _setView(_chats);
+    }
+    final section = app.pendingSection;
+    if (section != null) {
+      app.pendingSection = null;
+      _beforePopup = null;
+      _setView(switch (section) {
+        Kind.todo => _todos,
+        Kind.note => _notes,
+        Kind.idea => _all,
+      });
     }
     final id = app.pendingSelect;
     if (id == null) return;
@@ -1085,6 +1095,7 @@ class _NoteEditorState extends State<NoteEditor> {
             child: TextField(
               controller: _text,
               focusNode: _focus,
+              selectAllOnFocus: false,
               selectionWidthStyle: selectionWidth,
               maxLines: null,
               keyboardType: TextInputType.multiline,

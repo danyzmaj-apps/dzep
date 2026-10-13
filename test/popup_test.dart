@@ -140,10 +140,10 @@ void main() {
     expect(app.calls.last, 'hidePopup');
   }, variant: mac);
 
-  testWidgets('⌘6 takes the note being written into the note window', (tester) async {
+  testWidgets('⌘P takes the note being written into the note window', (tester) async {
     final app = await pumpPopup(tester, mode: 'note');
     await tester.enterText(find.byType(EditableText).first, 'Reps\n12');
-    await cmd(tester, LogicalKeyboardKey.digit6);
+    await cmd(tester, LogicalKeyboardKey.keyP);
     await tester.pumpAndSettle();
 
     final note = app.fakeStore.notes.single;
