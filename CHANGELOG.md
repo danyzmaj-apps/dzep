@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - **Note window** (Mac): a note in a small window of its own, floating over everything (a video, a full-screen app), moved and resized as you like. Open it from a note's header in the main window, which steps aside until you close it and then comes back on that note, or with ⌘P in the popup's Note mode, which takes the note you were writing (or starts a new one) and leaves the app closed when you're done.
 - **Smaller main window** (Mac): it now goes down to 480×360; when narrow, the sidebar folds into icons and the list gets narrower before the note does.
