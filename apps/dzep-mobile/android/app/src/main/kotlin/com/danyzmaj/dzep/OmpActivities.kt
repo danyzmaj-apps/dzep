@@ -1,5 +1,6 @@
 package com.danyzmaj.dzep
 
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -19,14 +20,19 @@ import org.json.JSONObject
 object OmpActivities {
     private const val PREFS = "dzep_activities"
 
-    /** What a followed session shows; [since] in ms since 1970. */
+    /** What a followed session shows; [since] and [updated] in ms since 1970. */
     private data class Shown(
         val title: String,
         val project: String,
         val state: String,
         val kind: String?,
         val since: Long,
+        /** When the Mac last said anything about it (start, update, push). */
+        val updated: Long = System.currentTimeMillis(),
     )
+
+    /** As the iPhone's staleDate: Working with no word for this long reads "No word lately". */
+    private const val STALE_AFTER = 8 * 3600 * 1000L
 
     private val states = setOf("working", "needs", "done", "ended")
 
@@ -41,12 +47,15 @@ object OmpActivities {
                 j.getString("state"),
                 j.optString("kind").ifEmpty { null },
                 j.getLong("since"),
+                j.optLong("updated", System.currentTimeMillis()),
             )
         }.getOrNull()
     }
 
     private fun save(c: Context, key: String, s: Shown) {
-        val j = JSONObject().put("title", s.title).put("project", s.project).put("state", s.state).put("since", s.since)
+        val j = JSONObject()
+            .put("title", s.title).put("project", s.project).put("state", s.state).put("since", s.since)
+            .put("updated", s.updated)
         if (s.kind != null) j.put("kind", s.kind)
         prefs(c).edit().putString(key, j.toString()).commit()
     }
@@ -81,6 +90,7 @@ object OmpActivities {
         )
         save(c, key, s)
         show(c, key, s)
+        staleLater(c, key)
         return true
     }
 
@@ -98,9 +108,11 @@ object OmpActivities {
             state = state,
             kind = args["kind"] as? String,
             since = (args["since"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+            updated = System.currentTimeMillis(),
         )
         save(c, key, s)
         show(c, key, s)
+        staleLater(c, key)
         return true
     }
 
@@ -144,11 +156,35 @@ object OmpActivities {
         NativeEvents.emit("activityEnded", if (token == null) mapOf("key" to key) else mapOf("key" to key, "token" to token))
     }
 
-    /** Working with the time since it started, Needs you with what for, Finished, or Ended. */
-    private fun show(c: Context, key: String, s: Shown) {
+    /** Checks [key] again once it could have gone [STALE_AFTER] without word. */
+    private fun staleLater(c: Context, key: String) {
+        val pi = PendingIntent.getBroadcast(
+            c,
+            0,
+            Intent(c, ActivityStaleReceiver::class.java)
+                .setData(Uri.fromParts("dzep-stale", key, null))
+                .putExtra("key", key),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        // Inexact is fine: it only changes the wording.
+        c.getSystemService(AlarmManager::class.java)
+            .set(AlarmManager.RTC, System.currentTimeMillis() + STALE_AFTER, pi)
+    }
+
+    /** The stale check came due: a session still Working with no word since shows "No word lately". */
+    @Synchronized
+    fun checkStale(c: Context, key: String) {
+        val s = load(c, key) ?: return
+        if (s.state == "working" && System.currentTimeMillis() - s.updated >= STALE_AFTER - 60_000) {
+            show(c, key, s, stale = true)
+        }
+    }
+
+    /** Working with the time since it started (or No word lately), Needs you with what for, Finished, or Ended. */
+    private fun show(c: Context, key: String, s: Shown, stale: Boolean = false) {
         Notifications.ensureChannels(c)
         val (text, color) = when (s.state) {
-            "working" -> "Working" to R.color.dzep_accent
+            "working" -> (if (stale) "No word lately" else "Working") to (if (stale) R.color.dzep_dim else R.color.dzep_accent)
             "needs" -> when (s.kind) {
                 "question" -> "Needs you · Question"
                 "approval" -> "Needs you · Approval"
@@ -179,8 +215,8 @@ object OmpActivities {
             .setContentIntent(open)
             // Working counts up from when it started, like the iPhone's timer.
             .setWhen(s.since)
-            .setShowWhen(s.state == "working")
-            .setUsesChronometer(s.state == "working")
+            .setShowWhen(s.state == "working" && !stale)
+            .setUsesChronometer(s.state == "working" && !stale)
         if (s.project.isNotEmpty()) b.setSubText(s.project)
         if (live) {
             b.setDeleteIntent(
@@ -202,5 +238,12 @@ object OmpActivities {
 class ActivityDismissReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, intent: Intent) {
         OmpActivities.dismissed(c, intent.getStringExtra("key") ?: return)
+    }
+}
+
+/** A followed session may have gone quiet (OmpActivities.staleLater). */
+class ActivityStaleReceiver : BroadcastReceiver() {
+    override fun onReceive(c: Context, intent: Intent) {
+        OmpActivities.checkStale(c, intent.getStringExtra("key") ?: return)
     }
 }

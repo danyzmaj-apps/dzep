@@ -50,7 +50,7 @@ The same as the iPhone app, except Siri: there is no voice-assistant integration
 
 ### Mac
 
-Download `Dzep-x.y.z.dmg` from [GitHub Releases](https://github.com/danyzmaj-apps/dzep/releases/latest) and drag Džep to Applications. It is notarized by Apple and updates itself.
+Download `Dzep-x.y.z.dmg` from [GitHub Releases](https://github.com/danyzmaj-apps/dzep/releases/latest) and drag Džep to Applications. It is notarized by Apple and updates itself. The first notarized release is being prepared; until it's there, [build it from source](docs/BUILDING.md#mac).
 
 ### iPhone
 
@@ -78,6 +78,7 @@ Phones don't set up servers: they only pair with one a Mac has set up.
 - **Terminal from the phone** lets anyone signed in to your account type into your terminals. It is off by default and runs over a Realtime channel only your account can join; nothing it carries is stored.
 - Delete your account and everything in it from Settings, on any device.
 - Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
+- The full privacy policy (also the one the app stores link to): [docs/PRIVACY.md](docs/PRIVACY.md).
 
 ## Repository
 

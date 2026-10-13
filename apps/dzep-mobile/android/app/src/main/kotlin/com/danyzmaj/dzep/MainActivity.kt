@@ -136,10 +136,17 @@ class MainActivity : FlutterActivity() {
             }
             "setReminders" -> {
                 val list = (args["reminders"] as? List<*> ?: emptyList<Any>()).filterIsInstance<Map<*, *>>()
-                Reminders.schedule(this, list)
-                // The first non-empty set asks for permission (once; Android remembers the answer).
-                if (list.isNotEmpty()) askNotifications {}
-                result.success(null)
+                if (list.isEmpty()) {
+                    Reminders.schedule(this, list)
+                    return result.success(null)
+                }
+                // Like iOS: ask first (once; Android remembers the answer), then
+                // schedule only if they can show. An alarm set before the answer
+                // could go off while notifications were still off, and be lost.
+                askNotifications { granted ->
+                    Reminders.schedule(this, if (granted) list else emptyList())
+                    result.success(null)
+                }
             }
             "takeTappedTodo" -> {
                 result.success(NativeEvents.tappedTodo)

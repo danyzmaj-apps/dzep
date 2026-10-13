@@ -66,6 +66,7 @@
 
         <!-- Followed omp sessions (OmpActivities.kt). -->
         <receiver android:name=".ActivityDismissReceiver" android:exported="false" />
+        <receiver android:name=".ActivityStaleReceiver" android:exported="false" />
 
         <!-- Pushes from the user's server through the relay (PushService.kt). -->
         <service android:name=".PushService" android:exported="false">
