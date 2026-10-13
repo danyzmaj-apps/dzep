@@ -139,4 +139,19 @@ void main() {
     expect(app.popupOpen, isFalse);
     expect(app.calls.last, 'hidePopup');
   }, variant: mac);
+
+  testWidgets('⌘6 takes the note being written into the note window', (tester) async {
+    final app = await pumpPopup(tester, mode: 'note');
+    await tester.enterText(find.byType(EditableText).first, 'Reps\n12');
+    await cmd(tester, LogicalKeyboardKey.digit6);
+    await tester.pumpAndSettle();
+
+    final note = app.fakeStore.notes.single;
+    expect(note.notes, 'Reps\n12');
+    expect((app.noteOpen, app.noteId, app.popupOpen), (true, note.id, false));
+    // The draft went with it.
+    await app.openPopup();
+    await tester.pumpAndSettle();
+    expect(field(tester).controller.text, isEmpty);
+  }, variant: mac);
 }

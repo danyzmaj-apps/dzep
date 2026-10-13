@@ -25,7 +25,8 @@ typedef _Field = ({TextEditingController text, FocusNode focus});
 
 /// The ⇧⌘Space panel. It opens straight into the mode it was last used in,
 /// field focused: an idea, a todo, a note or a quick question (⌘1–⌘4 or the
-/// strip at the top switch; ⌘5 opens the app). ↵ saves and gets out of the way.
+/// strip at the top switch; ⌘5 opens the app, ⌘6 a note window). ↵ saves and
+/// gets out of the way.
 class Popup extends StatefulWidget {
   const Popup({required this.app, super.key});
   final AppController app;
@@ -215,6 +216,10 @@ class _PopupState extends State<Popup> {
       unawaited(app.openMain());
       return true;
     }
+    if (_cmd && !_shift && k == LogicalKeyboardKey.digit6 && store != null) {
+      _openNoteWindow();
+      return true;
+    }
     // ⌘W hides it, as it closes any window.
     if (_cmd && !_shift && k == LogicalKeyboardKey.keyW) {
       unawaited(app.closePopup());
@@ -394,6 +399,17 @@ class _PopupState extends State<Popup> {
     unawaited(app.closePopup());
   }
 
+  /// ⌘6: a note in its own window, apart from the app (which stays as it
+  /// is). The note being written here goes there; otherwise it's a new one.
+  void _openNoteWindow() {
+    final s = store;
+    if (s == null) return;
+    final text = _mode == PopupMode.note ? _note.text.trim() : '';
+    final note = text.isEmpty ? null : s.addNote(text);
+    if (note != null) _note.clear();
+    unawaited(app.openNoteWindow(id: note?.id));
+  }
+
   /// Tab right after `@pro` completes it to a known project.
   bool _completeProject() {
     final m = RegExp(r'@([\w.-]*)$').firstMatch(_title.text);
@@ -565,7 +581,7 @@ class _PopupState extends State<Popup> {
   );
 
   /// The strip on top: which mode ↵ saves in (⌘1–⌘4), and the way to the app
-  /// (⌘5).
+  /// (⌘5) and to a note window (⌘6).
   Widget _modes() {
     Widget button(IconData icon, String label, int n, {required bool on, required VoidCallback onTap}) => Hoverable(
       onTap: onTap,
@@ -593,12 +609,23 @@ class _PopupState extends State<Popup> {
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
       child: Row(
         children: [
-          tab(PopupMode.idea, Icons.lightbulb_outline, 'Idea', 1),
-          tab(PopupMode.todo, Icons.check_circle_outline, 'Todo', 2),
-          tab(PopupMode.note, Icons.sticky_note_2_outlined, 'Note', 3),
-          tab(PopupMode.ask, Icons.auto_awesome, 'Ask', 4),
-          const Spacer(),
+          // The tabs give way (scroll) before the buttons on the right do,
+          // should the strip ever be too narrow for all of it.
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  tab(PopupMode.idea, Icons.lightbulb_outline, 'Idea', 1),
+                  tab(PopupMode.todo, Icons.check_circle_outline, 'Todo', 2),
+                  tab(PopupMode.note, Icons.sticky_note_2_outlined, 'Note', 3),
+                  tab(PopupMode.ask, Icons.auto_awesome, 'Ask', 4),
+                ],
+              ),
+            ),
+          ),
           button(Icons.open_in_new, 'Open app', 5, on: false, onTap: () => unawaited(app.openMain())),
+          button(Icons.picture_in_picture_alt_outlined, 'Note window', 6, on: false, onTap: _openNoteWindow),
         ],
       ),
     );

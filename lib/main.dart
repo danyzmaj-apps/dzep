@@ -6,6 +6,7 @@ import 'package:dzep/local_api.dart';
 import 'package:dzep/main_window.dart';
 import 'package:dzep/mobile.dart';
 import 'package:dzep/native.dart';
+import 'package:dzep/note_window.dart';
 import 'package:dzep/popup.dart';
 import 'package:dzep/ui.dart';
 import 'package:flutter/material.dart';
@@ -28,8 +29,8 @@ Future<void> main() async {
   } on Object catch (e) {
     debugPrint('Džep: terminal API unavailable: $e');
   }
-  // The engine runs in multi-view mode: the popup panel and the main window
-  // are separate Flutter views of this one app.
+  // The engine runs in multi-view mode: the popup panel, the main window and
+  // the note window are separate Flutter views of this one app.
   runWidget(DzepWindows(app: app, ids: await Native.viewIds()));
   await app.start();
 }
@@ -39,7 +40,7 @@ Future<void> main() async {
 class DzepWindows extends StatefulWidget {
   const DzepWindows({required this.app, required this.ids, super.key});
   final AppController app;
-  final ({int popup, int main}) ids;
+  final ({int popup, int main, int note}) ids;
 
   @override
   State<DzepWindows> createState() => _DzepWindowsState();
@@ -100,6 +101,11 @@ class _DzepWindowsState extends State<DzepWindows> with WidgetsBindingObserver {
             View(
               view: view,
               child: window(() => MainWindow(app: app)),
+            )
+          else if (view.viewId == widget.ids.note)
+            View(
+              view: view,
+              child: window(() => NoteWindow(app: app)),
             ),
       ],
     );

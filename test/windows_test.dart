@@ -129,4 +129,38 @@ void main() {
 
     expect(popupFieldFocused(tester), isFalse);
   }, variant: mac);
+
+  testWidgets('a note window opened from the main window hides it until it closes, then shows that note', (
+    tester,
+  ) async {
+    final app = await pumpWindows(tester);
+    final note = app.fakeStore.addNote('Reps\n12');
+    app.fakeStore.addNote('Newer');
+    await app.openMain();
+    await tester.pumpAndSettle();
+
+    await app.openNoteWindow(id: note.id, fromMain: true);
+    await tester.pumpAndSettle();
+    expect((app.mainOpen, app.noteOpen), (false, true));
+
+    await app.closeNoteWindow();
+    await tester.pumpAndSettle();
+    expect((app.mainOpen, app.noteOpen), (true, false));
+    expect(tester.widget<NoteEditor>(find.byType(NoteEditor)).note, note);
+  }, variant: mac);
+
+  testWidgets('a note window opened from the popup closes without bringing the app up', (tester) async {
+    final app = await pumpWindows(tester);
+    await app.openPopup();
+    await tester.pumpAndSettle();
+
+    await app.openNoteWindow();
+    await tester.pumpAndSettle();
+    expect((app.popupOpen, app.noteOpen), (false, true));
+
+    await app.closeNoteWindow();
+    await tester.pumpAndSettle();
+    expect(app.mainOpen, isFalse);
+    expect(app.calls, isNot(contains('showMain')));
+  }, variant: mac);
 }
