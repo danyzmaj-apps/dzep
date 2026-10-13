@@ -89,5 +89,10 @@
 	<false/>
 	<key>DzepAppGroup</key>
 	<string>$(DZEP_APP_GROUP)</string>
+	<!-- omp sessions on the Lock Screen (ios/Shared/OmpActivity.swift), updated by push. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
 </dict>
 </plist>

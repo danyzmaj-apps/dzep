@@ -20,6 +20,9 @@ final _projectToken = RegExp(r'(^|\s)@([\w.-]+)');
   return (title: title, project: m?.group(2) ?? '');
 }
 
+/// A popup text field and its focus.
+typedef _Field = ({TextEditingController text, FocusNode focus});
+
 /// The ⇧⌘Space panel. It opens straight into the mode it was last used in,
 /// field focused: an idea, a todo, a note or a quick question (⌘1–⌘4 or the
 /// strip at the top switch; ⌘5 opens the app). ↵ saves and gets out of the way.
@@ -87,9 +90,14 @@ class _PopupState extends State<Popup> {
     super.dispose();
   }
 
+  /// The popup was open when [app] last changed.
+  bool _open = false;
+
   /// A new open resets right away (not on the next frame), so a quick
   /// ⇧⌘Space-then-typing never lands on a stale screen.
   void _onApp() {
+    if (_open && !app.popupOpen) _letGoOfFocus();
+    _open = app.popupOpen;
     if (_session == app.popupSession) return;
     _session = app.popupSession;
     _sel = -1;
@@ -100,8 +108,24 @@ class _PopupState extends State<Popup> {
     _notesFocus.unfocus();
     _questionFocus.unfocus();
     _noteFocus.unfocus();
-    if (app.popupOpen) _focusMode();
+    if (app.popupOpen) {
+      // The draft comes back with the caret after it.
+      final text = _modeField.text;
+      text.selection = TextSelection.collapsed(offset: text.text.length);
+      _focusMode();
+    }
     if (mounted) setState(() {});
+  }
+
+  /// Hidden, the popup holds no focus. Both windows share one FocusManager,
+  /// so the main window's keys would otherwise go to a hidden popup field.
+  /// The main window takes the focus back itself (`Library`).
+  void _letGoOfFocus() {
+    _awaiting = null;
+    final focus = FocusManager.instance.primaryFocus;
+    final at = focus?.context;
+    if (focus == null || focus is FocusScopeNode || at == null || View.maybeOf(at) != View.maybeOf(context)) return;
+    focus.unfocus();
   }
 
   void _setMode(PopupMode mode) {
@@ -130,11 +154,37 @@ class _PopupState extends State<Popup> {
     _shownDraft = mode;
   }
 
-  void _focusMode() => switch (_mode) {
-    PopupMode.ask => _focusSoon(_question, _questionFocus),
-    PopupMode.note => _focusSoon(_note, _noteFocus),
-    _ => _focusSoon(_title, _titleFocus),
+  /// The field typing goes to in the current mode.
+  _Field get _modeField => switch (_mode) {
+    PopupMode.ask => (text: _question, focus: _questionFocus),
+    PopupMode.note => (text: _note, focus: _noteFocus),
+    _ => (text: _title, focus: _titleFocus),
   };
+
+  bool get _fieldFocused => [_titleFocus, _notesFocus, _questionFocus, _noteFocus].any((f) => f.hasFocus);
+
+  /// Focuses the mode's field: now if it's on screen, else right after the
+  /// frame that builds it (asked for here, since nothing else may ask: the
+  /// popup can sit there with no frame coming).
+  void _focusMode() {
+    final field = _modeField;
+    _awaiting = field;
+    void apply() {
+      if (!mounted || _awaiting != field) return;
+      _awaiting = null;
+      field.focus.requestFocus();
+    }
+
+    if (field.focus.context != null) return apply();
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) => apply())
+      ..scheduleFrame();
+  }
+
+  /// Clicks elsewhere in the panel leave the field focused (on the Mac a
+  /// field lets go of the focus on any click outside it): the list, the hint
+  /// bar and the padding are nothing to focus instead.
+  void _keepFocus(PointerDownEvent _) {}
 
   // ---------------------------------------------------------------- keys
 
@@ -143,7 +193,7 @@ class _PopupState extends State<Popup> {
 
   /// The field the popup is about to focus: characters typed before it has
   /// focus go into it.
-  TextEditingController? _awaiting;
+  _Field? _awaiting;
 
   static final Map<LogicalKeyboardKey, PopupMode> _modeKeys = {
     LogicalKeyboardKey.digit1: PopupMode.idea,
@@ -153,7 +203,7 @@ class _PopupState extends State<Popup> {
   };
 
   /// Sees every key, whatever has focus: the window can take keys a frame
-  /// before Flutter has rebuilt it.
+  /// before Flutter has rebuilt it, and a click can leave no field focused.
   bool _onAnyKey(KeyEvent e) {
     if (!app.popupOpen || e is KeyUpEvent) return false;
     final k = e.logicalKey;
@@ -165,46 +215,76 @@ class _PopupState extends State<Popup> {
       unawaited(app.openMain());
       return true;
     }
+    // ⌘W hides it, as it closes any window.
+    if (_cmd && !_shift && k == LogicalKeyboardKey.keyW) {
+      unawaited(app.closePopup());
+      return true;
+    }
     // The chat's keys work whether the field or the transcript has focus.
     final chat = app.chats;
     if (_asking && chat != null) {
       if (k == LogicalKeyboardKey.escape) {
         unawaited(app.closePopup());
+        return true;
       } else if (k == LogicalKeyboardKey.keyN && _cmd) {
         chat.newChat();
         _question.clear();
         _attachments.take();
         _questionFocus.requestFocus();
+        return true;
       } else if (k == LogicalKeyboardKey.keyO && _cmd) {
         unawaited(app.openMain(conversation: chat.current));
+        return true;
       } else if (k == LogicalKeyboardKey.keyC && _cmd && _shift) {
         copyAnswer(context, chat.current?.lastAnswer);
+        return true;
       } else if (isPasteKey(e)) {
         // An image on the clipboard is attached; text still pastes as usual.
         unawaited(_attachments.paste());
         return false;
-      } else {
-        return false;
       }
-      return true;
     }
+    // The mode's field isn't focused yet (just opened or switched), or a
+    // click left no field focused: its keys still work, and typing goes in.
+    final field = _awaiting ?? (_fieldFocused ? null : _modeField);
+    if (field == null || field.focus.hasFocus) return false;
+    if (_unfocusedKey(e) == KeyEventResult.handled) return true;
     final ch = e.character;
-    final target = _awaiting;
-    if (target != null && !_cmd && ch != null && ch.runes.every((r) => r >= 0x20)) {
-      target.text += ch;
-      return true;
-    }
-    return false;
+    if (store == null || _cmd || !_printable(ch)) return false;
+    _type(field.text, ch!);
+    if (_awaiting == null) _focusMode();
+    return true;
   }
 
-  void _focusSoon(TextEditingController text, FocusNode focus) {
-    _awaiting = text;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      focus.requestFocus();
-      text.selection = TextSelection.collapsed(offset: text.text.length);
-      _awaiting = null;
-    });
+  /// What the mode's field would do with [e], for when it doesn't have focus.
+  KeyEventResult _unfocusedKey(KeyEvent e) {
+    if (store == null) {
+      if (e.logicalKey != LogicalKeyboardKey.escape) return KeyEventResult.ignored;
+      unawaited(app.closePopup());
+      return KeyEventResult.handled;
+    }
+    return switch (_mode) {
+      PopupMode.ask => _onQuestionKey(_questionFocus, e),
+      PopupMode.note => _onNoteKey(_noteFocus, e),
+      _ => _onTitleKey(_titleFocus, e),
+    };
   }
+
+  /// Puts [ch] where the caret is (after the text if the field never had
+  /// one), as typing into the field would.
+  static void _type(TextEditingController text, String ch) {
+    final v = text.value;
+    final at = v.selection.isValid ? v.selection : TextSelection.collapsed(offset: v.text.length);
+    text.value = TextEditingValue(
+      text: v.text.replaceRange(at.start, at.end, ch),
+      selection: TextSelection.collapsed(offset: at.start + ch.length),
+    );
+  }
+
+  /// Text a key types: no control characters, and none of the private-use
+  /// ones macOS gives arrow and function keys.
+  static bool _printable(String? ch) =>
+      ch != null && ch.isNotEmpty && ch.runes.every((r) => r >= 0x20 && r != 0x7f && (r < 0xF700 || r > 0xF8FF));
 
   KeyEventResult _onTitleKey(FocusNode _, KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
@@ -389,7 +469,11 @@ class _PopupState extends State<Popup> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
           child: GestureDetector(
-            onTap: () {}, // clicks on the panel stay on the panel
+            // Clicks on the panel stay on the panel, and one on nothing in
+            // particular hands the focus back to the field.
+            onTap: () {
+              if (s != null && !_fieldFocused) _focusMode();
+            },
             child: Container(
               constraints: const BoxConstraints(maxWidth: 680),
               decoration: BoxDecoration(
@@ -539,6 +623,8 @@ class _PopupState extends State<Popup> {
               child: TextField(
                 controller: _note,
                 focusNode: _noteFocus,
+                onTapOutside: _keepFocus,
+                selectionWidthStyle: selectionWidth,
                 minLines: 3,
                 maxLines: 10,
                 keyboardType: TextInputType.multiline,
@@ -671,6 +757,10 @@ class _PopupState extends State<Popup> {
                   TextField(
                     controller: _title,
                     focusNode: _titleFocus,
+                    onTapOutside: _keepFocus,
+                    // A draft coming back into focus keeps its caret: the
+                    // Mac's select-all-on-focus would let the next key wipe it.
+                    selectAllOnFocus: false,
                     style: const TextStyle(fontSize: 18, height: 1.4),
                     decoration: plainInput.copyWith(
                       hintText: todoMode ? 'Add a todo…  !15:00' : 'Drop an idea…  @project',
@@ -687,6 +777,8 @@ class _PopupState extends State<Popup> {
                       child: TextField(
                         controller: _notes,
                         focusNode: _notesFocus,
+                        onTapOutside: _keepFocus,
+                        selectionWidthStyle: selectionWidth,
                         minLines: 2,
                         maxLines: 8,
                         style: const TextStyle(fontSize: 14, height: 1.5, color: Color(0xFFC9CCD5)),
@@ -792,6 +884,8 @@ class _PopupState extends State<Popup> {
                       child: TextField(
                         controller: _question,
                         focusNode: _questionFocus,
+                        onTapOutside: _keepFocus,
+                        selectionWidthStyle: selectionWidth,
                         minLines: 1,
                         maxLines: 6,
                         style: const TextStyle(fontSize: 18, height: 1.4),

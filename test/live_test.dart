@@ -130,6 +130,7 @@ void main() {
         switch (s) {
           Keys(:final keys) => keys.join(' '),
           Typed(:final text) => 'type:$text',
+          Settle() => 'wait',
         },
     ];
     String to(int row, int rows) => [...List.filled(rows, 'up'), ...List.filled(row, 'down')].join(' ');
@@ -148,12 +149,42 @@ void main() {
       );
     });
 
-    test('a typed answer picks Other, types, and confirms', () {
+    test('a typed answer picks Other, waits for the editor, types, and confirms', () {
       expect(flat(answerKeys(ask([db]), answers: [const LiveAnswer(custom: ' DuckDB ')])), [
         '${to(3, 4)} enter',
+        'wait',
         'type:DuckDB',
         'enter',
+        'wait',
       ]);
+    });
+
+    test('typed answers to several questions: each editor closes before the next keys, and Submit waits too', () {
+      const q2 = LiveQuestion(id: 'wt', question: 'Worktree?', options: ['Yes', 'No']);
+      expect(
+        flat(
+          answerKeys(
+            ask([db, q2]),
+            answers: [
+              const LiveAnswer(custom: 'a'),
+              const LiveAnswer(custom: 'b'),
+            ],
+          ),
+        ),
+        [
+          '${to(3, 4)} enter',
+          'wait',
+          'type:a',
+          'enter',
+          'wait',
+          '${to(2, 3)} enter',
+          'wait',
+          'type:b',
+          'enter',
+          'wait',
+          'enter',
+        ],
+      );
     });
 
     test('multiple choice toggles each pick with Space, then Enter', () {
@@ -182,7 +213,7 @@ void main() {
             ],
           ),
         ),
-        ['${to(0, 2)} space ${to(1, 2)} enter', 'type:z', 'enter enter'],
+        ['${to(0, 2)} space ${to(1, 2)} enter', 'wait', 'type:z', 'enter', 'wait', 'enter'],
       );
     });
 
@@ -198,7 +229,7 @@ void main() {
             ],
           ),
         ),
-        ['${to(2, 4)} enter ${to(0, 3)} enter enter'],
+        ['${to(2, 4)} enter ${to(0, 3)} enter', 'wait', 'enter'],
       );
     });
 
@@ -245,6 +276,197 @@ void main() {
       expect(askOnScreen(a, 'Run bash?\n> Approve\n  Deny'), isTrue);
       expect(askOnScreen(a, 'Approve the plan'), isFalse);
     });
+
+    test('a plan review is recognised by its header, whatever has focus', () {
+      const plan = LiveAsk.plan('c', title: 'notes');
+      expect(askOnScreen(plan, _planScreen()), isTrue);
+      expect(askOnScreen(plan, _planScreen(help: '↑/↓ scroll · a annotate · ⇥ regions')), isTrue);
+      expect(askOnScreen(plan, 'π > waiting for input\n  plan the next release'), isFalse);
+    });
+  });
+
+  group('plan review', () {
+    test('reads the options and the cursor row, past the slider and a wrapped row', () {
+      final review = parsePlanReview(_planScreen());
+      expect(review?.options, [
+        'Approve and execute',
+        'Approve and compact context',
+        'Approve and keep context (~47k / 1m) — then save every draft note as it changes',
+        'Refine plan',
+        'Save and quit',
+      ]);
+      expect(review?.current, 2);
+    });
+
+    test('reads a review without the slider, with the cursor on the last option', () {
+      final screen = _planScreen(slider: false, cursor: 4, long: false);
+      expect(parsePlanReview(screen)?.options.length, 5);
+      expect(parsePlanReview(screen)?.current, 4);
+    });
+
+    test('is not read while the plan text has focus, once a choice is made, or without a review', () {
+      expect(parsePlanReview(_planScreen(help: '↑/↓ scroll · a annotate · ⇥ regions')), isNull);
+      expect(parsePlanReview(_planScreen(help: 'Applying your selection — this can take a moment.')), isNull);
+      expect(parsePlanReview('π > waiting for input\n↑/↓ select'), isNull);
+    });
+
+    test('keys go down or up from the cursor to the option, then Enter', () {
+      expect(menuKeys(1, 3), ['down', 'down', 'enter']);
+      expect(menuKeys(3, 0), ['up', 'up', 'up', 'enter']);
+      expect(menuKeys(2, 2), ['enter']);
+      expect(menuKeys(4, 1, enter: false), ['up', 'up', 'up']);
+    });
+
+    test('keys never go above the first option', () {
+      expect(() => menuKeys(2, -1), throwsArgumentError);
+      expect(() => menuKeys(-1, 0), throwsArgumentError);
+      expect(menuKeys(0, 0), ['enter']);
+    });
+
+    test('a plan ask goes through JSON with its options and cursor', () {
+      const ask = LiveAsk.plan(
+        'call',
+        title: 'notes-plan',
+        options: ['Approve and execute', 'Refine plan'],
+        selected: 1,
+      );
+      final back = LiveAsk.fromJson(jsonDecode(jsonEncode(ask.toJson())) as Map<String, dynamic>);
+      expect(back.isPlan, isTrue);
+      expect(back.id, 'call');
+      expect(back.title, 'notes-plan');
+      expect(back.options, ask.options);
+      expect(back.selected, 1);
+      expect(back.text, 'Plan ready: notes-plan');
+      // The extension sends a plan without options; the Mac reads them off the screen.
+      final bare = LiveAsk.fromJson(const {'kind': 'plan', 'id': 'x', 'title': 'notes-plan'});
+      expect(bare.isPlan, isTrue);
+      expect(bare.options, isEmpty);
+    });
+  });
+
+  group('pickers', () {
+    // /resume in a 60-column kitty, as its plain text reads.
+    const resume = '''
+ Resume Session (current folder)
+
+ > █
+
+ ❯ Build kitty socket client and live protoc…
+   i want you to review our WHOLE terminal f…
+   3 minutes ago  ·  5.2MB  ·  ✔ done
+
+   Check if mobile app rebuild needed
+   we did bunch of changes to this app, do i…
+   1 day ago  ·  239.3KB  ·  ✔ done
+
+   Fix popup notes
+   2 days ago  ·  12.1KB
+   …
+ [⌦/⌫ delete · ⏎ select · ⇥ all projects · esc cancel]''';
+
+    test('/resume: one item per block, its first line the label and the rest the detail', () {
+      final menu = parseMenu(resume);
+      expect(menu?.title, 'Resume Session (current folder)');
+      expect(menu?.filter, isTrue);
+      expect(menu?.current, 0);
+      expect(menu?.items, [
+        (
+          label: 'Build kitty socket client and live protoc…',
+          detail: 'i want you to review our WHOLE terminal f… · 3 minutes ago · 5.2MB · ✔ done',
+        ),
+        (
+          label: 'Check if mobile app rebuild needed',
+          detail: 'we did bunch of changes to this app, do i… · 1 day ago · 239.3KB · ✔ done',
+        ),
+        (label: 'Fix popup notes', detail: '2 days ago · 12.1KB'),
+      ]);
+    });
+
+    test('/resume in its box, with a scrollbar and the cursor further down', () {
+      String row(String s) => '│ ${s.padRight(54)}${s.startsWith('  ') ? '█' : '│'} │';
+      final screen = [
+        'π  earlier answer in the transcript',
+        '╭─ Resume Session (current folder) ───────────────────────╮',
+        row('> fix'),
+        row(''),
+        row('  Build kitty socket client'),
+        row('  3 minutes ago  ·  5.2MB'),
+        row(''),
+        row('❯ Fix popup notes'),
+        row('  2 days ago  ·  12.1KB'),
+        row(''),
+        row('[⌦/⌫ delete · ⏎ select · ⇥ all projects · esc cancel]'),
+        '╰${'─' * 58}╯',
+      ].join('\n');
+      final menu = parseMenu(screen);
+      expect(menu?.title, 'Resume Session (current folder)');
+      expect(menu?.filter, isTrue);
+      expect(menu?.current, 1);
+      expect(menu?.items.map((i) => i.label), ['Build kitty socket client', 'Fix popup notes']);
+      expect(menu?.items.last.detail, '2 days ago · 12.1KB');
+    });
+
+    test('a simple picker: one item per line, a described one split at its gap', () {
+      const screen = '''
+π  Theme changed.
+
+ Select theme
+
+   dark
+   light       the default
+ ❯ solarized
+   nord
+   (3/4)  Type to search
+
+ ↑/↓ navigate  ⏎ select  esc cancel''';
+      final menu = parseMenu(screen);
+      expect(menu?.title, 'Select theme');
+      expect(menu?.current, 2);
+      expect(menu?.filter, isTrue);
+      expect(menu?.items, [
+        (label: 'dark', detail: ''),
+        (label: 'light', detail: 'the default'),
+        (label: 'solarized', detail: ''),
+        (label: 'nord', detail: ''),
+      ]);
+    });
+
+    test("omp's prompt and the plan review are not pickers", () {
+      const prompt = '''
+π  Done: the popup keeps its notes now.
+   > ran 3 tests
+
+╭──────────────────────────────────────────────────────────╮
+│ > █                                                        │
+╰──────────────────────────────────────────────────────────╯
+  opus-4.5 · 12% · ~/Dev/dzep''';
+      expect(parseMenu(prompt), isNull);
+      expect(parseMenu(_planScreen()), isNull);
+    });
+
+    test('a picker is on screen while its title is', () {
+      const ask = LiveAsk.menu('m1', title: 'Resume Session (current folder)', items: []);
+      expect(askOnScreen(ask, resume), isTrue);
+      expect(askOnScreen(const LiveAsk.menu('m1', title: 'Select theme', items: []), resume), isFalse);
+    });
+
+    test('a picker goes through JSON with its items, cursor and filter', () {
+      const ask = LiveAsk.menu(
+        'menu-3',
+        title: 'Select model',
+        items: [(label: 'opus', detail: 'Anthropic · 200k'), (label: 'gpt-5', detail: '')],
+        selected: 1,
+        filter: true,
+      );
+      final back = LiveAsk.fromJson(jsonDecode(jsonEncode(ask.toJson())) as Map<String, dynamic>);
+      expect(back.isMenu, isTrue);
+      expect(back.id, 'menu-3');
+      expect(back.title, 'Select model');
+      expect(back.items, ask.items);
+      expect(back.selected, 1);
+      expect(back.filter, isTrue);
+      expect(back.text, 'Select model');
+    });
   });
 
   group('ScreenDiff', () {
@@ -276,6 +498,39 @@ void main() {
     });
   });
 
+  group('slash commands', () {
+    const commands = [
+      (name: 'model', description: 'Switch model for this session'),
+      (name: 'new', description: 'Start a new session'),
+      (name: 'compact', description: 'Manually compact the session context'),
+      (name: 'plan-review', description: ''),
+      (name: 'plan', description: 'Toggle plan mode'),
+      (name: 'skill:Pdf', description: 'Read PDFs'),
+    ];
+    List<String> names(String text, {int max = 6}) => [for (final c in matchCommands(commands, text, max: max)) c.name];
+
+    test('a summary keeps its commands through JSON, a description-less one too', () {
+      const s = LiveSummary(key: 'k', id: 's', title: '', cwd: '/x', epoch: 'e', seq: 1, commands: commands);
+      final back = LiveSummary.fromJson(jsonDecode(jsonEncode(s.toJson())) as Map<String, dynamic>);
+      expect(back.commands, commands);
+      expect(LiveSummary.fromJson(const {'key': 'k'}).commands, isEmpty);
+    });
+
+    test('names that start with what was typed come first, then ones that contain it, in omp order', () {
+      expect(names('/p'), ['plan-review', 'plan', 'compact', 'skill:Pdf']);
+      expect(names('/PL'), ['plan-review', 'plan']);
+      expect(names('/n'), ['new', 'plan-review', 'plan']);
+      expect(names('/', max: 3), ['model', 'new', 'compact']);
+    });
+
+    test('nothing once a space follows the name, or without the slash', () {
+      expect(names('/new '), isEmpty);
+      expect(names('/compact keep the API'), isEmpty);
+      expect(names('new'), isEmpty);
+      expect(names('/zzz'), isEmpty);
+    });
+  });
+
   test('chunkJson keeps every chunk under the limit and loses nothing', () {
     final items = [
       for (var i = 0; i < 50; i++) {'id': '$i', 't': 'x' * 900},
@@ -287,4 +542,50 @@ void main() {
     }
     expect(chunks.expand((c) => c).length, 50);
   });
+}
+
+/// omp's plan review as kitty's plain text shows it [width] columns wide:
+/// the plan in a rounded box, then the "next step" prompt, the model slider,
+/// the options (cursor on [cursor]) and the help line. Rows too wide for the
+/// terminal wrap onto the next line, as they do in kitty.
+String _planScreen({
+  int width = 60,
+  int cursor = 2,
+  bool slider = true,
+  bool long = true,
+  String help = '↑/↓ select · ⏎ confirm · ←/→ model · c copy · ⇥ regions · esc cancel',
+}) {
+  final options = [
+    'Approve and execute',
+    'Approve and compact context',
+    if (long)
+      'Approve and keep context (~47k / 1m) — then save every draft note as it changes'
+    else
+      'Approve and keep context (~47k / 1m)',
+    'Refine plan',
+    'Save and quit',
+  ];
+  final inner = width - 4;
+  final out = <String>['╭─ Plan Review ${'─' * (width - 17)}╮'];
+  void row(String content) {
+    final line = '│ ${content.padRight(inner)} │';
+    for (var i = 0; i < line.length; i += width) {
+      out.add(line.substring(i, i + width > line.length ? line.length : i + width));
+    }
+  }
+
+  ['# Notes plan', '', '1. Read the notes store', '2. Save drafts on close', ''].forEach(row);
+  out.add('├${'─' * (width - 2)}┤');
+  row('Plan mode - next step');
+  if (slider) {
+    row('continue with  ◂  smol │ default │ slow  ▸');
+    row('  ↳ Claude Sonnet 4.5');
+  }
+  for (final (i, o) in options.indexed) {
+    row('${i == cursor ? '❯' : ' '} $o');
+  }
+  out.add('├${'─' * (width - 2)}┤');
+  row(help);
+  out.add('╰${'─' * (width - 2)}╯');
+  return out.join('\n');
 }

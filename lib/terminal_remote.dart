@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dzep/ansi.dart';
 import 'package:dzep/kitty.dart';
 import 'package:dzep/live.dart';
+import 'package:dzep/live_activity.dart';
 import 'package:dzep/terminal_channel.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -113,6 +114,10 @@ class TerminalRemote extends ChangeNotifier {
 
   /// The Mac couldn't reach kitty (not listening, no kitten).
   String? error;
+
+  /// iPhone: the sessions followed as Live Activities; set by the app (null
+  /// in tests and wherever there are none).
+  LiveActivities? activities;
 
   /// When the Mac last sent its state; [fromCache]: that was before this
   /// launch, read from disk.

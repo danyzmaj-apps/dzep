@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:dzep/ansi.dart';
 import 'package:dzep/kitty.dart';
 import 'package:dzep/live.dart';
+import 'package:dzep/native.dart';
 import 'package:dzep/session_view.dart';
 import 'package:dzep/terminal_remote.dart';
 import 'package:dzep/ui.dart';
@@ -265,7 +266,9 @@ class TerminalList extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
+  Widget build(BuildContext context) => _KeepAwake(child: _list());
+
+  Widget _list() => ListenableBuilder(
     listenable: remote,
     builder: (context, _) {
       final note = linkNote(remote);
@@ -323,6 +326,33 @@ class TerminalList extends StatelessWidget {
       );
     },
   );
+}
+
+/// The screen stays on while the Terminal tab is up (and the session and
+/// screen pages pushed over it): a terminal is something you watch.
+class _KeepAwake extends StatefulWidget {
+  const _KeepAwake({required this.child});
+  final Widget child;
+
+  @override
+  State<_KeepAwake> createState() => _KeepAwakeState();
+}
+
+class _KeepAwakeState extends State<_KeepAwake> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(Native.setKeepAwake(on: true));
+  }
+
+  @override
+  void dispose() {
+    unawaited(Native.setKeepAwake(on: false));
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// One kitty window: its screen as text, live, plus a composer and the keys

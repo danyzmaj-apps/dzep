@@ -143,11 +143,17 @@ class _LibraryState extends State<Library> {
 
   /// The conversation shown in Chats; null for a new one.
   Conversation? _chat;
+
+  /// Bumped by ⌘N in Chats, so even an empty new chat starts over, focused.
+  int _newChats = 0;
   final _searchFocus = FocusNode();
   final _newIdea = TextEditingController();
   final _newFocus = FocusNode();
-  final _listFocus = FocusNode();
+  late final _listFocus = FocusNode(onKeyEvent: _onKey);
   final _rowsScroll = ScrollController();
+
+  /// On the selected row, to scroll it into view as ↑/↓ move.
+  final GlobalKey _selRow = GlobalKey();
 
   IdeaStore get store => widget.store;
 
@@ -157,14 +163,21 @@ class _LibraryState extends State<Library> {
   @override
   void initState() {
     super.initState();
-    widget.app.addListener(_takePendingSelect);
+    _popupWasOpen = widget.app.popupOpen;
+    widget.app
+      ..addListener(_onPopup)
+      ..addListener(_takePendingSelect);
+    FocusManager.instance.addListener(_reclaim);
     _takePendingSelect();
     _listFocus.requestFocus();
   }
 
   @override
   void dispose() {
-    widget.app.removeListener(_takePendingSelect);
+    widget.app
+      ..removeListener(_onPopup)
+      ..removeListener(_takePendingSelect);
+    FocusManager.instance.removeListener(_reclaim);
     _search.dispose();
     _searchFocus.dispose();
     _newIdea.dispose();
@@ -172,6 +185,59 @@ class _LibraryState extends State<Library> {
     _listFocus.dispose();
     _rowsScroll.dispose();
     super.dispose();
+  }
+
+  bool _popupWasOpen = false;
+
+  /// What had the focus in this window when the popup opened.
+  FocusNode? _beforePopup;
+
+  /// [focus] is a control in this window (not just a scope of it).
+  bool _here(FocusNode? focus) {
+    final at = focus?.context;
+    return focus is! FocusScopeNode && at != null && at.mounted && View.maybeOf(at) == View.of(context);
+  }
+
+  /// The keyboard has nowhere to go in this window: no focus, the focus in
+  /// the other window, or only on a scope around the list (a click outside
+  /// a text field leaves it there), where the list's keys never see a key.
+  /// A dialog's scope isn't around the list, so it keeps the focus.
+  bool get _lost {
+    final focus = FocusManager.instance.primaryFocus;
+    final at = focus?.context;
+    if (focus == null || at == null || !at.mounted || View.maybeOf(at) != View.of(context)) return true;
+    return focus is FocusScopeNode && _listFocus.ancestors.contains(focus);
+  }
+
+  /// The popup and this window share one FocusManager, and macOS doesn't
+  /// tell Flutter when a window becomes key: the popup takes the focus when
+  /// it opens (and its route did at launch). What had it here then is kept
+  /// for [_reclaim].
+  void _onPopup() {
+    final app = widget.app;
+    if (app.popupOpen && !_popupWasOpen) {
+      final focus = FocusManager.instance.primaryFocus;
+      _beforePopup = _here(focus) ? focus : null;
+    }
+    _popupWasOpen = app.popupOpen;
+    _reclaim();
+  }
+
+  /// While this window is open (and the popup and Settings aren't), the
+  /// keyboard always has somewhere to go here: what had the focus before the
+  /// popup, or the list, so the window's keys work whatever was clicked.
+  void _reclaim() {
+    final app = widget.app;
+    bool wanted() => mounted && app.mainOpen && !app.popupOpen && !app.settingsOpen && _lost;
+    if (!wanted()) return;
+    // A microtask: after the popup has let go of its focus, whichever of the
+    // two heard of the close first, and outside the focus manager's update.
+    scheduleMicrotask(() {
+      if (!wanted()) return;
+      final before = _beforePopup;
+      _beforePopup = null;
+      (before != null && _here(before) ? before : _listFocus).requestFocus();
+    });
   }
 
   /// The popup asked to open a specific item, the notes or a chat.
@@ -187,11 +253,14 @@ class _LibraryState extends State<Library> {
     }
     if (app.pendingNotes) {
       app.pendingNotes = false;
+      _beforePopup = null;
       _setView(_notes);
     }
     final id = app.pendingSelect;
     if (id == null) return;
     app.pendingSelect = null;
+    // Opened on another item: the list has the focus, not what had it.
+    _beforePopup = null;
     final item = store.byId(id);
     if (item == null) return;
     setState(() {
@@ -307,6 +376,96 @@ class _LibraryState extends State<Library> {
     });
   }
 
+  // ---------------------------------------------------------------- keys
+
+  /// The keyboard is in a text field: plain keys are the field's then.
+  static bool get _typing {
+    final context = FocusManager.instance.primaryFocus?.context;
+    return context != null && context.findAncestorStateOfType<EditableTextState>() != null;
+  }
+
+  /// The window's keys, seen after whatever has focus passed on them: ⌘N
+  /// the section's new field, ⌘F or / the search, ⌫ deletes the selected
+  /// item, ↑/↓ move the selection, Esc clears the search and leaves a field
+  /// for the list. Plain keys only while no text field has focus.
+  KeyEventResult _onKey(FocusNode _, KeyEvent e) {
+    if (e is KeyUpEvent || widget.app.settingsOpen) return KeyEventResult.ignored;
+    final keys = HardwareKeyboard.instance;
+    final k = e.logicalKey;
+    final mods = keys.isShiftPressed || keys.isAltPressed || keys.isControlPressed;
+    final cmd = keys.isMetaPressed && !mods;
+    final plain = !keys.isMetaPressed && !mods;
+    final chats = _view == _chats;
+    final typing = _typing;
+    if (cmd && k == LogicalKeyboardKey.keyN) {
+      if (chats) {
+        setState(() {
+          _chat = null;
+          _newChats++;
+        });
+      } else {
+        _newFocus.requestFocus();
+      }
+      return KeyEventResult.handled;
+    }
+    if (chats) return KeyEventResult.ignored;
+    if (cmd && k == LogicalKeyboardKey.keyF || plain && !typing && e.character == '/') {
+      _searchFocus.requestFocus();
+      _search.selection = TextSelection(baseOffset: 0, extentOffset: _search.text.length);
+      return KeyEventResult.handled;
+    }
+    if (plain && k == LogicalKeyboardKey.escape) {
+      // In the search, the first Esc clears it and the next one leaves.
+      if (_query.isNotEmpty && (!typing || _searchFocus.hasFocus)) {
+        _clearSearch();
+      } else if (typing) {
+        _listFocus.requestFocus();
+      } else {
+        return KeyEventResult.ignored;
+      }
+      return KeyEventResult.handled;
+    }
+    if (typing) return KeyEventResult.ignored;
+    if ((plain || cmd) && (k == LogicalKeyboardKey.backspace || k == LogicalKeyboardKey.delete)) {
+      final selected = _selId == null ? null : store.byId(_selId!);
+      if (selected == null) return KeyEventResult.ignored;
+      _delete(selected);
+      return KeyEventResult.handled;
+    }
+    if (plain && (k == LogicalKeyboardKey.arrowDown || k == LogicalKeyboardKey.arrowUp)) {
+      _move(k == LogicalKeyboardKey.arrowDown ? 1 : -1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _clearSearch() {
+    _search.clear();
+    setState(() {
+      _query = '';
+      if (!_visible.any((i) => i.id == _selId)) _selId = _visible.firstOrNull?.id;
+    });
+  }
+
+  /// Selects the row [by] rows away (the first or last one if none is), and
+  /// scrolls it into view.
+  void _move(int by) {
+    final rows = _visible;
+    if (rows.isEmpty) return;
+    final at = rows.indexWhere((i) => i.id == _selId);
+    _select(rows[at < 0 ? (by > 0 ? 0 : rows.length - 1) : (at + by).clamp(0, rows.length - 1)].id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final row = _selRow.currentContext;
+      if (row == null || !row.mounted) return;
+      Scrollable.ensureVisible(
+        row,
+        alignmentPolicy: by > 0
+            ? ScrollPositionAlignmentPolicy.keepVisibleAtEnd
+            : ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      );
+    });
+  }
+
   // ---------------------------------------------------------------- build
 
   @override
@@ -329,14 +488,19 @@ class _LibraryState extends State<Library> {
             SizedBox(
               width: 370,
               child: chats
-                  ? ChatList(chat: chat, selected: _chat, onSelect: (c) => setState(() => _chat = c))
+                  ? ChatList(
+                      chat: chat,
+                      selected: _chat,
+                      onSelect: (c) => setState(() => _chat = c),
+                      hotKey: widget.app.hotKey.label,
+                    )
                   : _listPane(visible),
             ),
             const VerticalDivider(width: 1, color: C.line),
             Expanded(
               child: chats
                   ? ChatThread(
-                      key: ValueKey(_chat?.id),
+                      key: ValueKey((_chat?.id, _newChats)),
                       chat: chat,
                       conversation: _chat,
                       onSent: (c) => setState(() => _chat = c),
@@ -643,6 +807,7 @@ class _LibraryState extends State<Library> {
         ? i.notes.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).skip(1).firstOrNull ?? ''
         : i.notes.split('\n').first;
     return Hoverable(
+      key: on ? _selRow : null,
       onTap: () {
         _select(i.id);
         _listFocus.requestFocus();
@@ -857,7 +1022,7 @@ class _NoteEditorState extends State<NoteEditor> {
               },
             ),
             IconButton(
-              tooltip: 'Delete',
+              tooltip: 'Delete  ⌫',
               iconSize: 15,
               color: C.dim,
               icon: const Icon(Icons.delete_outline),
@@ -876,6 +1041,7 @@ class _NoteEditorState extends State<NoteEditor> {
             child: TextField(
               controller: _text,
               focusNode: _focus,
+              selectionWidthStyle: selectionWidth,
               maxLines: null,
               keyboardType: TextInputType.multiline,
               style: const TextStyle(fontSize: 15, height: 1.65, color: Color(0xFFD7DAE2)),
@@ -1079,6 +1245,7 @@ class _DetailState extends State<_Detail> {
             TextField(
               controller: _notes,
               focusNode: _notesFocus,
+              selectionWidthStyle: selectionWidth,
               maxLines: null,
               minLines: 12,
               style: const TextStyle(fontSize: 14, height: 1.65, color: Color(0xFFD7DAE2)),
@@ -1275,6 +1442,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
   ({int? windows, String? error})? _kitty;
   final _recorderFocus = FocusNode();
 
+  /// What had the focus in this window before Settings: it gets it back.
+  FocusNode? _before;
+
   AppController get app => widget.app;
 
   @override
@@ -1282,6 +1452,14 @@ class _SettingsSheetState extends State<SettingsSheet> {
     super.initState();
     unawaited(Native.launchAtLogin().then((v) => mounted ? setState(() => _launchAtLogin = v) : null));
     unawaited(_checkKitty());
+    // Taken even from a focused field (autofocus wouldn't), so Esc closes
+    // Settings and typing doesn't go into the field behind it.
+    _before = FocusManager.instance.primaryFocus;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _recorderFocus.requestFocus();
+      if (_before?.enclosingScope != _recorderFocus.enclosingScope) _before = null;
+    });
   }
 
   Future<void> _checkKitty() async {
@@ -1297,6 +1475,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
   @override
   void dispose() {
     _recorderFocus.dispose();
+    final before = _before;
+    if (before != null && before.context != null) before.requestFocus();
     super.dispose();
   }
 
@@ -1337,7 +1517,6 @@ class _SettingsSheetState extends State<SettingsSheet> {
               ),
               child: Focus(
                 focusNode: _recorderFocus,
-                autofocus: true,
                 onKeyEvent: (n, e) {
                   if (!_recording && e is KeyDownEvent && e.logicalKey == LogicalKeyboardKey.escape) {
                     app.setSettingsOpen(open: false);

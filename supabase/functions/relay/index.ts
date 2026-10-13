@@ -6,7 +6,15 @@
 // device token and ciphertext. Deployed --no-verify-jwt.
 //
 //   POST {"token": hex, "kind": "reminder"|"terminal", "enc": base64, "collapse"?: string}
+//   POST {"token": hex, "kind": "liveactivity", "event": "update"|"end",
+//         "state": {"state": "working"|"needs"|"done"|"ended", "since": unix seconds,
+//                   "kind"?: "question"|"approval"|"plan"}}
 //   → 200 sent · 410 the iPhone is gone (uninstalled, signed out): forget it · 4xx/5xx otherwise
+//
+// A Live Activity push (an omp session on the Lock Screen) can't be
+// encrypted: the phone's notification extension never sees it. So it carries
+// only a state, rebuilt here from checked fields, never anything passed
+// through.
 //
 // Secrets: APNS_KEY (the .p8's contents), APNS_KEY_ID, APNS_TEAM_ID, APNS_TOPIC (bundle id).
 
@@ -51,32 +59,73 @@ async function providerToken(): Promise<string> {
 // What shows if the iPhone can't decrypt (shouldn't happen): no content.
 const fallback = { reminder: "Reminder", terminal: "Terminal" } as const;
 
+const activityStates = ["working", "needs", "done", "ended"];
+const activityKinds = ["question", "approval", "plan"];
+
+/** A Live Activity's push from a checked body; a string says what's wrong. */
+function liveActivity(body: Record<string, unknown>): { payload: string; priority: string } | string {
+  const s = body.state;
+  if (!s || typeof s !== "object") return "state missing";
+  const { state, since, kind } = s as Record<string, unknown>;
+  if (typeof state !== "string" || !activityStates.includes(state)) return "state.state must be a known state";
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof since !== "number" || !Number.isFinite(since) || since < now - 7 * 86400 || since > now + 3600) {
+    return "state.since must be a recent unix time";
+  }
+  if (kind !== undefined && (typeof kind !== "string" || !activityKinds.includes(kind) || state !== "needs")) {
+    return "state.kind must be a known kind, with needs";
+  }
+  if (body.event !== "update" && body.event !== "end") return "event must be update or end";
+  const end = body.event === "end";
+  const aps: Record<string, unknown> = {
+    timestamp: now,
+    event: body.event,
+    "content-state": { state, since: Math.floor(since), ...(kind ? { kind } : {}) },
+  };
+  // Gone from the Lock Screen 10 minutes after it ended; otherwise stale (the
+  // phone shows it as such) after 8 hours without news.
+  if (end) aps["dismissal-date"] = now + 600;
+  else aps["stale-date"] = now + 8 * 3600;
+  // Apple rations priority 10; working can wait.
+  return { payload: JSON.stringify({ aps }), priority: state === "working" ? "5" : "10" };
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "POST only" });
   const body = await req.json().catch(() => ({}));
-  if (typeof body.token !== "string" || !/^[0-9a-f]{64,200}$/.test(body.token)) {
+  const live = body.kind === "liveactivity";
+  // A Live Activity's token is longer than a device's.
+  if (typeof body.token !== "string" || !new RegExp(`^[0-9a-f]{64,${live ? 400 : 200}}$`).test(body.token)) {
     return json(400, { error: "token must be an APNs device token" });
   }
-  if (typeof body.enc !== "string" || body.enc.length > 3000) return json(400, { error: "enc missing or too long" });
-  const kind = body.kind === "terminal" ? "terminal" : "reminder";
 
-  const payload = JSON.stringify({
-    aps: {
-      alert: { title: "Džep", body: fallback[kind] },
-      sound: "default",
-      // The iPhone's notification extension decrypts enc into the real text.
-      "mutable-content": 1,
-      ...(kind === "reminder" ? { category: "todo" } : {}),
-    },
-    enc: body.enc,
-  });
-  const headers: Record<string, string> = {
-    authorization: `bearer ${await providerToken()}`,
-    "apns-topic": topic,
-    "apns-push-type": "alert",
-    "apns-priority": "10",
-  };
-  if (typeof body.collapse === "string" && body.collapse.length <= 64) headers["apns-collapse-id"] = body.collapse;
+  let payload: string;
+  const headers: Record<string, string> = { authorization: `bearer ${await providerToken()}` };
+  if (live) {
+    const push = liveActivity(body);
+    if (typeof push === "string") return json(400, { error: push });
+    payload = push.payload;
+    headers["apns-topic"] = `${topic}.push-type.liveactivity`;
+    headers["apns-push-type"] = "liveactivity";
+    headers["apns-priority"] = push.priority;
+  } else {
+    if (typeof body.enc !== "string" || body.enc.length > 3000) return json(400, { error: "enc missing or too long" });
+    const kind = body.kind === "terminal" ? "terminal" : "reminder";
+    payload = JSON.stringify({
+      aps: {
+        alert: { title: "Džep", body: fallback[kind] },
+        sound: "default",
+        // The iPhone's notification extension decrypts enc into the real text.
+        "mutable-content": 1,
+        ...(kind === "reminder" ? { category: "todo" } : {}),
+      },
+      enc: body.enc,
+    });
+    headers["apns-topic"] = topic;
+    headers["apns-push-type"] = "alert";
+    headers["apns-priority"] = "10";
+    if (typeof body.collapse === "string" && body.collapse.length <= 64) headers["apns-collapse-id"] = body.collapse;
+  }
 
   // Release builds talk to production, ones run from Xcode / flutter run to
   // the sandbox; a token from the other one is a BadDeviceToken here.

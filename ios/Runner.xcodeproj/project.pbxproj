@@ -28,6 +28,8 @@
 		CD6FCE96FA3B4AF969E38283 /* AddIdeaIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73FC57645BB2B64188AE6591 /* AddIdeaIntent.swift */; };
 		D4D28887640318B87505ACB3 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
 		EE55FF83F5BEB2B72B07637F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
+		F1A2B3C4D5E6F7A8B9C0D1F1 /* OmpActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */; };
+		F1A2B3C4D5E6F7A8B9C0D1F2 /* OmpActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */; };
 		F1A2B3C4D5E6F7A8B9C0D1E3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E2 /* PrivacyInfo.xcprivacy */; };
 		F52923C8703C13E38558B605 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E6DCE7634C573C852A2FA7F /* Pods_RunnerTests.framework */; };
 /* End PBXBuildFile section */
@@ -121,6 +123,7 @@
 		DA086895D1496E904500F046 /* DzepWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DzepWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F1A2B3C4D5E6F7A8B9C0D1E2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F282ABC65C3976B71350A6FA /* DzepShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DzepShared.swift; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OmpActivity.swift; sourceTree = "<group>"; };
 		F6AAE2D3AE02F294270C2A9D /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		F92AF8CCFA21587D43A34AA6 /* NotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -289,6 +292,7 @@
 			isa = PBXGroup;
 			children = (
 				F282ABC65C3976B71350A6FA /* DzepShared.swift */,
+				F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */,
 			);
 			name = Shared;
 			path = Shared;
@@ -562,6 +566,7 @@
 			files = (
 				97514C1BAA21D2DA5D20CDE3 /* DzepWidget.swift in Sources */,
 				2911FC697F720799C277815A /* DzepShared.swift in Sources */,
+				F1A2B3C4D5E6F7A8B9C0D1F2 /* OmpActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -574,6 +579,7 @@
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				CD6FCE96FA3B4AF969E38283 /* AddIdeaIntent.swift in Sources */,
 				A22F99F5DB1A0C87B20A98C0 /* DzepShared.swift in Sources */,
+				F1A2B3C4D5E6F7A8B9C0D1F1 /* OmpActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -16,7 +16,8 @@ import 'dart:math';
 //
 //   iPhone → Mac  hello  {from, session?, window?}   every 4 s while the app is in front;
 //                        session: the live session it shows, window: the screen it shows
-//   Mac → iPhone  state  {windows, sessions, projects, home, error?}   on every hello and on changes
+//   Mac → iPhone  state  {windows, sessions, projects, home, error?}   on every hello and on changes;
+//                        sessions: LiveSummary.toJson, its slash commands as `cmds` [[name, description?]]
 //   iPhone → Mac  sync   {from, session, epoch?, since}   catch up after a gap or on opening
 //   Mac → iPhone  items  {to, session, epoch, seq, reset, items, last}   answer to sync, in chunks
 //   Mac → iPhone  live   {session, epoch, ops}   changes to watched sessions, batched
@@ -28,13 +29,15 @@ import 'dart:math';
 // Extension ↔ Mac (JSON text frames on ws://127.0.0.1:<port>/v1/live, the
 // local API's bearer token):
 //
-//   ext → Mac  hello  {v, session: {id, title, cwd, model}, window?, pid, busy, ctx?, items, older}
-//                     the session's newest items, oldest first; again after /new, /resume, /tree
-//   ext → Mac  meta   {title?, model?, ctx?}
+//   ext → Mac  hello  {v, session: {id, title, cwd, model}, window?, pid, busy, ctx?, items, older, commands}
+//                     the session's newest items, oldest first; again after /new, /resume, /tree.
+//                     commands: [{name, description?}] omp's builtin slash commands, then the session's own
+//   ext → Mac  meta   {title?, model?, ctx?, commands?}
 //   ext → Mac  item   {item}   a new or changed item (whole)
 //   ext → Mac  append {id, text}   streamed text added to an assistant item
 //   ext → Mac  busy   {busy, summary?}   summary: the last answer, when a run has really ended
-//   ext → Mac  ask    {ask?}   omp waits for an answer (null: not anymore)
+//   ext → Mac  ask    {ask?}   omp waits for an answer (null: not anymore): LiveAsk.toJson; a plan
+//                     review comes without options, which the Mac reads off omp's screen
 //   ext → Mac  reply  {req, error?, items?, older?}
 //   Mac → ext  prompt {req, text, images: [{data, mimeType}], deliver?: steer | followUp}
 //   Mac → ext  abort  {req}
@@ -362,38 +365,126 @@ class LiveQuestion {
   };
 }
 
-/// omp is waiting on the person: the `ask` tool's [questions], or approval
-/// of [tool] ([summary]: what it would do).
-class LiveAsk {
-  const LiveAsk.questions(this.id, List<LiveQuestion> this.questions) : tool = '', summary = '';
-  const LiveAsk.approval(this.id, {required this.tool, this.summary = ''}) : questions = null;
+enum AskKind { questions, approval, plan, menu }
 
-  factory LiveAsk.fromJson(Map<String, dynamic> j) => j['kind'] == 'approval'
-      ? LiveAsk.approval(j['id'] as String, tool: j['tool'] as String? ?? '', summary: j['summary'] as String? ?? '')
-      : LiveAsk.questions(j['id'] as String, [
-          for (final q in j['questions'] as List? ?? const []) LiveQuestion.fromJson((q as Map).cast()),
-        ]);
+/// One row of an omp picker: its `label`, and what it shows under or beside
+/// it (`detail`).
+typedef MenuItem = ({String label, String detail});
+
+/// omp is waiting on the person: the `ask` tool's [questions], approval of
+/// [tool] ([summary]: what it would do), its plan review (plan mode's last
+/// step) of the plan [title], or a picker a slash command opened (/resume,
+/// /model …) titled [title]. A plan's [options], a picker's [items] and the
+/// [selected] row of either are read off omp's screen by the Mac (none when
+/// it couldn't read them); a picker with [filter] narrows as you type.
+class LiveAsk {
+  const LiveAsk.questions(this.id, List<LiveQuestion> this.questions)
+    : kind = AskKind.questions,
+      tool = '',
+      summary = '',
+      title = '',
+      options = const [],
+      items = const [],
+      selected = 0,
+      filter = false;
+  const LiveAsk.approval(this.id, {required this.tool, this.summary = ''})
+    : kind = AskKind.approval,
+      questions = null,
+      title = '',
+      options = const [],
+      items = const [],
+      selected = 0,
+      filter = false;
+  const LiveAsk.plan(this.id, {this.title = 'Plan', this.options = const [], this.selected = 0})
+    : kind = AskKind.plan,
+      questions = null,
+      tool = '',
+      summary = '',
+      items = const [],
+      filter = false;
+  const LiveAsk.menu(this.id, {required this.title, required this.items, this.selected = 0, this.filter = false})
+    : kind = AskKind.menu,
+      questions = null,
+      tool = '',
+      summary = '',
+      options = const [];
+
+  factory LiveAsk.fromJson(Map<String, dynamic> j) => switch (j['kind']) {
+    'approval' => LiveAsk.approval(
+      j['id'] as String,
+      tool: j['tool'] as String? ?? '',
+      summary: j['summary'] as String? ?? '',
+    ),
+    'plan' => LiveAsk.plan(
+      j['id'] as String,
+      title: j['title'] as String? ?? 'Plan',
+      options: [for (final o in j['options'] as List? ?? const []) '$o'],
+      selected: j['selected'] as int? ?? 0,
+    ),
+    'menu' => LiveAsk.menu(
+      j['id'] as String,
+      title: j['title'] as String? ?? '',
+      items: [
+        for (final i in j['items'] as List? ?? const [])
+          (label: '${(i as Map)['label'] ?? ''}', detail: i['detail'] as String? ?? ''),
+      ],
+      selected: j['selected'] as int? ?? 0,
+      filter: j['filter'] == true,
+    ),
+    _ => LiveAsk.questions(j['id'] as String, [
+      for (final q in j['questions'] as List? ?? const []) LiveQuestion.fromJson((q as Map).cast()),
+    ]),
+  };
 
   /// The tool call it belongs to.
   final String id;
+  final AskKind kind;
   final List<LiveQuestion>? questions;
   final String tool;
   final String summary;
+  final String title;
+  final List<String> options;
+  final List<MenuItem> items;
+  final int selected;
+  final bool filter;
 
-  bool get isApproval => questions == null;
+  bool get isApproval => kind == AskKind.approval;
+  bool get isPlan => kind == AskKind.plan;
+  bool get isMenu => kind == AskKind.menu;
 
   /// What a notification says.
-  String get text => isApproval
-      ? 'Approve $tool${summary.isEmpty ? '' : ': $summary'}?'
-      : questions!.map((q) => q.question).join('\n');
+  String get text => switch (kind) {
+    AskKind.approval => 'Approve $tool${summary.isEmpty ? '' : ': $summary'}?',
+    AskKind.plan => 'Plan ready: $title',
+    AskKind.menu => title,
+    AskKind.questions => questions!.map((q) => q.question).join('\n'),
+  };
 
-  Map<String, dynamic> toJson() => isApproval
-      ? {'kind': 'approval', 'id': id, 'tool': tool, if (summary.isNotEmpty) 'summary': summary}
-      : {
-          'kind': 'ask',
-          'id': id,
-          'questions': [for (final q in questions!) q.toJson()],
-        };
+  Map<String, dynamic> toJson() => switch (kind) {
+    AskKind.approval => {'kind': 'approval', 'id': id, 'tool': tool, if (summary.isNotEmpty) 'summary': summary},
+    AskKind.plan => {
+      'kind': 'plan',
+      'id': id,
+      'title': title,
+      if (options.isNotEmpty) 'options': options,
+      if (options.isNotEmpty) 'selected': selected,
+    },
+    AskKind.menu => {
+      'kind': 'menu',
+      'id': id,
+      'title': title,
+      'items': [
+        for (final i in items) {'label': i.label, if (i.detail.isNotEmpty) 'detail': i.detail},
+      ],
+      'selected': selected,
+      if (filter) 'filter': true,
+    },
+    AskKind.questions => {
+      'kind': 'ask',
+      'id': id,
+      'questions': [for (final q in questions!) q.toJson()],
+    },
+  };
 }
 
 /// The person's answer to one [LiveQuestion]: the options picked (indexes)
@@ -426,14 +517,25 @@ class Typed extends KeyStep {
   final String text;
 }
 
+/// Wait for omp to redraw before the next keys: closing the typed-answer
+/// editor and moving to the Submit tab take a moment, and keys sent before
+/// that are dropped.
+class Settle extends KeyStep {
+  const Settle();
+}
+
 /// The keystrokes that answer [ask] in omp's terminal UI. The ask dialog
 /// lists each question's options and then "Other"; its cursor stops at the
 /// ends, so going up past the top and then down picks a row wherever the
 /// cursor started. Enter on a single-choice row answers and moves on, Space
 /// toggles a multiple-choice row and Enter moves on; after several questions
-/// a Submit tab takes a last Enter. An approval is omp's Approve/Deny menu,
-/// which opens on Approve.
+/// a Submit tab takes a last Enter. A typed answer goes through an editor;
+/// its Enter closes it, and the next keys wait for that ([Settle]). An
+/// approval is omp's Approve/Deny menu,
+/// which opens on Approve. A plan review or a picker is answered from where
+/// its cursor is now, with [menuKeys].
 List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool approve = false}) {
+  if (ask.isPlan || ask.isMenu) throw ArgumentError('A plan review or a picker is answered with menuKeys.');
   if (ask.isApproval) {
     return [
       Keys(approve ? const ['enter'] : const ['down', 'enter']),
@@ -470,8 +572,11 @@ List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool
     }
     if (hasCustom) {
       press([...rowKeys(q.options.length), 'enter']);
-      steps.add(Typed(custom));
+      steps
+        ..add(const Settle())
+        ..add(Typed(custom));
       press(['enter']);
+      steps.add(const Settle());
       // A lone multiple-choice question goes to its Submit tab after a typed answer.
       if (q.multi && questions.length == 1) onSubmitTab = true;
     } else if (q.multi) {
@@ -480,7 +585,10 @@ List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool
       press([...rowKeys(a.picks.single), 'enter']);
     }
   }
-  if (questions.length > 1 || onSubmitTab) press(['enter']);
+  if (questions.length > 1 || onSubmitTab) {
+    if (steps.lastOrNull is! Settle) steps.add(const Settle());
+    press(['enter']);
+  }
   return steps;
 }
 
@@ -490,9 +598,216 @@ List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool
 bool askOnScreen(LiveAsk ask, String screen) {
   String flat(String s) => s.replaceAll(RegExp(r'[\s*_`#>]+'), '').toLowerCase();
   final text = flat(screen);
+  if (ask.isPlan) return text.contains('planmode-nextstep') || parsePlanReview(screen) != null;
+  if (ask.isMenu) return parseMenu(screen)?.title == ask.title;
   if (ask.isApproval) return text.contains('approve') && text.contains('deny');
   final q = flat(ask.questions!.first.question);
   return text.contains(q.length > 24 ? q.substring(0, 24) : q);
+}
+
+final _planHeader = RegExp(r'plan mode\s*[-–—]\s*next step', caseSensitive: false);
+final _planHelp = RegExp(r'\bselect\b', caseSensitive: false);
+final _leftEdge = RegExp(r'^\s*[│┃║|]');
+final _rightEdge = RegExp(r'\s*[│┃║|]\s*$');
+final _cursor = RegExp(r'^(\s*)[❯›>]\s+(?=\S)');
+final _rule = RegExp(r'^[─━═┄┈╌\-+├┤┼┬┴╭╮╰╯]+$');
+
+/// omp's plan review (the last step of plan mode), read off the plain text
+/// of its screen: the options listed between its "Plan mode - next step"
+/// header and the help line under them ("↑/↓ select · ⏎ confirm · …"), and
+/// the one its cursor (❯) is on. The model slider above them ("continue
+/// with ◂ smol default slow ▸" and its "↳ model" line) is skipped, and a row
+/// the terminal wrapped is joined again. Null unless a review is up with its
+/// options focused, the only time ↑/↓ move between them.
+({List<String> options, int current})? parsePlanReview(String screen) {
+  final lines = screen.split('\n');
+  final header = lines.lastIndexWhere(_planHeader.hasMatch);
+  if (header < 0) return null;
+  final help = lines.indexWhere(_planHelp.hasMatch, header + 1);
+  if (help < 0) return null;
+  // Inside the review's box every row starts with its edge; a row too wide
+  // for the terminal goes on, without one, on the next line.
+  final boxed = _leftEdge.hasMatch(lines[header]);
+  final rows = [
+    for (final l in lines.sublist(header + 1, help))
+      (edge: _leftEdge.hasMatch(l), text: l.replaceFirst(_leftEdge, '').replaceFirst(_rightEdge, '')),
+  ];
+  final at = rows.indexWhere((r) => _cursor.hasMatch(r.text));
+  if (at < 0) return null;
+  // Where the labels start: past the cursor on its row, past the indent on the others.
+  final column = _cursor.firstMatch(rows[at].text)!.end;
+  int indent(String s) => s.length - s.trimLeft().length;
+
+  final options = <String>[];
+  var current = -1;
+  var afterOption = false;
+  for (final (i, r) in rows.indexed) {
+    final t = r.text.trim();
+    if (t.isEmpty || _rule.hasMatch(t)) {
+      afterOption = false;
+      continue;
+    }
+    if (boxed ? !r.edge : i != at && indent(r.text) != column) {
+      if (afterOption) options.last += boxed ? r.text : ' ${r.text}';
+      continue;
+    }
+    afterOption = false;
+    if (t.startsWith('↳') || t.contains('continue with') || t.contains('◂') || t.contains('▸')) continue;
+    if (i == at) {
+      current = options.length;
+      options.add(r.text.substring(column));
+    } else if (indent(r.text) == column) {
+      options.add(r.text.substring(column));
+    } else {
+      continue;
+    }
+    afterOption = true;
+  }
+  if (current < 0) return null;
+  return (options: [for (final o in options) o.replaceAll(RegExp(r'\s+'), ' ').trim()], current: current);
+}
+
+/// The keys that move a menu's cursor (a picker's, the plan review's) from
+/// row [current] to [target], then (with [enter]) pick it. Never above row
+/// 0: the plan review's ↑ there leaves its options for the plan's text.
+List<String> menuKeys(int current, int target, {bool enter = true}) {
+  if (current < 0 || target < 0) throw ArgumentError('No row $target.');
+  return [
+    for (var k = current; k < target; k++) 'down',
+    for (var k = target; k < current; k++) 'up',
+    if (enter) 'enter',
+  ];
+}
+
+final _menuCursor = RegExp(r'^\s*❯ ');
+final _menuLeft = RegExp(r'^\s*[│┃║]');
+final _menuRight = RegExp(r'(\s*[│┃║█])+\s*$');
+final _menuChrome = RegExp(r'^[\s─━═╭╮┌┐╔╗├┤╰╯└┘]+|[\s─━═╭╮┌┐╔╗├┤╰╯└┘]+$');
+final _menuStatus = RegExp(
+  r'^(\(\d+/\d+[^)]*\)\s*)?(type to search|search:|no match|no items|no sessions)',
+  caseSensitive: false,
+);
+final _menuGap = RegExp(r'\s{2,}');
+
+/// A picker omp's terminal UI shows (/resume, /model, /tree, a hook's
+/// selector …), read off the plain text of its screen: the rows around the
+/// last cursor (❯) at the cursor's label column, a `title` above them (its
+/// box's top border, or a line of its own) and whether typing filters them
+/// (a `>` search line above, or "Type to search" under them). Rows apart by
+/// blank lines are one item each (first line its label, the rest its
+/// detail); otherwise every line is one, with what's indented deeper or
+/// set apart by a wide gap as its detail. Box edges, scrollbars, padding
+/// and lone "…" lines are left out; a footer of keys ends the rows. Null
+/// for anything else, the plan review included.
+({String title, List<MenuItem> items, int current, bool filter})? parseMenu(String screen) {
+  if (_planHeader.hasMatch(screen)) return null;
+  final lines = [for (final l in screen.split('\n')) l.replaceFirst(_menuLeft, '').replaceFirst(_menuRight, '')];
+  final at = lines.lastIndexWhere(_menuCursor.hasMatch);
+  if (at < 0) return null;
+  final column = _menuCursor.firstMatch(lines[at])!.end;
+  int indent(String s) => s.length - s.trimLeft().length;
+  var filter = false;
+  bool inList(int i) {
+    final t = lines[i].trim();
+    if (t.isEmpty || i == at) return true;
+    if (_menuStatus.hasMatch(t)) {
+      filter |= t.toLowerCase().contains('search');
+      return false;
+    }
+    return indent(lines[i]) >= column;
+  }
+
+  var top = at;
+  while (top > 0 && inList(top - 1)) {
+    top--;
+  }
+  var bottom = at;
+  while (bottom + 1 < lines.length && inList(bottom + 1)) {
+    bottom++;
+  }
+  final rows = [
+    for (var i = top; i <= bottom; i++)
+      if (lines[i].trim() != '…') (i: i, text: lines[i]),
+  ];
+  bool isItem(({int i, String text}) r) => r.i == at || (r.text.trim().isNotEmpty && indent(r.text) == column);
+  final first = rows.indexWhere(isItem);
+  final last = rows.lastIndexWhere(isItem);
+  final blocks = rows.sublist(first, last + 1).any((r) => r.text.trim().isEmpty);
+
+  final items = <List<String>>[];
+  var current = -1;
+  var gap = true;
+  for (final r in rows) {
+    final t = r.text.trim();
+    if (t.isEmpty) {
+      gap = true;
+      continue;
+    }
+    if (isItem(r) && (!blocks || gap || items.isEmpty)) {
+      final row = r.text.substring(column).trim();
+      final split = _menuGap.firstMatch(row);
+      items.add(split == null ? [row] : [row.substring(0, split.start), row.substring(split.end)]);
+    } else if (items.isNotEmpty) {
+      items.last.add(t);
+    } else {
+      continue;
+    }
+    if (r.i == at) current = items.length - 1;
+    gap = false;
+  }
+  if (current < 0) return null;
+  // Panes side by side (/model's providers | models): a list of the left pane
+  // alone would mislead, so leave it to the screen.
+  if (rows.any((r) => r.text.substring(min(column, r.text.length)).contains(_paneSplit))) return null;
+
+  // The title: the first line above the rows that isn't blank or the search line.
+  var title = '';
+  for (var i = top - 1; i >= 0; i--) {
+    final t = lines[i].trim();
+    if (t.isEmpty) continue;
+    if (t.startsWith('>')) {
+      filter = true;
+      continue;
+    }
+    title = t.replaceAll(_menuChrome, '');
+    break;
+  }
+  String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return (
+    title: flat(title),
+    items: [for (final it in items) (label: flat(it.first), detail: it.skip(1).map(flat).join(' · '))],
+    current: current,
+    filter: filter,
+  );
+}
+
+/// A vertical rule inside a row: another pane beside the list.
+final _paneSplit = RegExp('[│┃║]');
+
+/// One of omp's slash commands, without its `/`.
+typedef LiveCommand = ({String name, String description});
+
+/// The extension's `commands` ([{name, description?}]).
+List<LiveCommand> liveCommands(Object? json) => [
+  if (json is List)
+    for (final c in json)
+      if (c is Map && c['name'] is String)
+        (name: c['name'] as String, description: c['description'] is String ? c['description'] as String : ''),
+];
+
+/// The [commands] the composer offers for [text] (`/` and the start of a
+/// name), at most [max]: names that start with what was typed, then names
+/// that contain it, each in omp's order. None once there's a space.
+List<LiveCommand> matchCommands(List<LiveCommand> commands, String text, {int max = 6}) {
+  if (!text.startsWith('/') || text.contains(RegExp(r'\s'))) return const [];
+  final q = text.substring(1).toLowerCase();
+  final names = [for (final c in commands) c.name.toLowerCase()];
+  return [
+    for (final (i, c) in commands.indexed)
+      if (names[i].startsWith(q)) c,
+    for (final (i, c) in commands.indexed)
+      if (!names[i].startsWith(q) && names[i].contains(q)) c,
+  ].take(max).toList();
 }
 
 /// A live session in the phone's list.
@@ -512,6 +827,7 @@ class LiveSummary {
     this.preview = '',
     this.at,
     this.older = false,
+    this.commands = const [],
   });
 
   factory LiveSummary.fromJson(Map<String, dynamic> j) => LiveSummary(
@@ -529,6 +845,11 @@ class LiveSummary {
     epoch: j['epoch'] as String? ?? '',
     seq: j['seq'] as int? ?? 0,
     older: j['older'] == true,
+    commands: [
+      for (final c in j['cmds'] as List? ?? const [])
+        if (c is List && c.isNotEmpty && c[0] is String)
+          (name: c[0] as String, description: c.length > 1 && c[1] is String ? c[1] as String : ''),
+    ],
   );
 
   /// Stable for the omp process: its kitty window's key, or `pid:<pid>`
@@ -556,6 +877,9 @@ class LiveSummary {
   final int seq;
   final bool older;
 
+  /// omp's slash commands, for the composer.
+  final List<LiveCommand> commands;
+
   Map<String, dynamic> toJson() => {
     'key': key,
     'id': id,
@@ -571,6 +895,10 @@ class LiveSummary {
     'epoch': epoch,
     'seq': seq,
     if (older) 'older': true,
+    if (commands.isNotEmpty)
+      'cmds': [
+        for (final c in commands) [c.name, if (c.description.isNotEmpty) c.description],
+      ],
   };
 }
 

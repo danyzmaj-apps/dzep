@@ -23,6 +23,7 @@ class LiveSession {
   LiveAsk? ask;
   int? ctx;
   String preview = '';
+  List<LiveCommand> commands = const [];
   DateTime at = DateTime.now();
 
   int _req = 0;
@@ -46,6 +47,7 @@ class LiveSession {
     epoch: log.epoch,
     seq: log.seq,
     older: log.older,
+    commands: commands,
   );
 
   Future<Map<String, dynamic>> _request(String type, Map<String, dynamic> payload, Duration timeout) async {
@@ -92,7 +94,7 @@ class LiveFinished extends LiveEvent {
   final String summary;
 }
 
-/// omp asks a question or wants a tool approved.
+/// omp asks a question, wants a tool approved, or has a plan for review.
 class LiveAsked extends LiveEvent {
   const LiveAsked(super.session, this.ask);
   final LiveAsk ask;
@@ -177,6 +179,7 @@ class LiveHub {
       ..busy = m['busy'] == true
       ..ctx = (m['ctx'] as num?)?.round()
       ..ask = null
+      ..commands = liveCommands(m['commands'])
       ..preview = _preview(log.items.lastWhere((i) => i.kind == ItemKind.assistant, orElse: () => _none).text)
       ..at = DateTime.now();
     _changes.add(null);
@@ -226,6 +229,7 @@ class LiveHub {
         if (m['title'] is String) s.title = m['title'] as String;
         if (m['model'] is String) s.model = m['model'] as String;
         if (m.containsKey('ctx')) s.ctx = (m['ctx'] as num?)?.round();
+        if (m['commands'] is List) s.commands = liveCommands(m['commands']);
         _changes.add(null);
       case 'reply':
         s._pending[m['req']]?.complete(m);
@@ -236,6 +240,18 @@ class LiveHub {
     final s = _byKey[key];
     if (s == null) throw const LiveException('That omp session has ended.');
     return s;
+  }
+
+  /// Replaces session [key]'s ask, while it's still [id] (null: while there
+  /// is none), with what the Mac read off its screen: a plan review's
+  /// options, a picker a slash command opened, or null once it's gone. Not
+  /// omp asking, so no event. False when the session's ask has moved on.
+  bool updateAsk(String key, String? id, LiveAsk? ask) {
+    final s = _byKey[key];
+    if (s == null || s.ask?.id != id) return false;
+    s.ask = ask;
+    _changes.add(null);
+    return true;
   }
 
   /// Sends [text] (and [images]) as the person's prompt; while omp works it

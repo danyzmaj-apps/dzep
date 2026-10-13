@@ -39,6 +39,10 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
   /// the user clicking away ("blur").
   private var hidingPopup = false
 
+  /// The main window had the keyboard when the popup opened over it: it gets
+  /// it back when the popup goes.
+  private var mainWasKey = false
+
   static let popupSize = NSSize(width: 720, height: 660)
 
   override func awakeFromNib() {
@@ -114,9 +118,7 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       showPopup()
       result(nil)
     case "hidePopup":
-      hidingPopup = true
-      popup.orderOut(nil)
-      hidingPopup = false
+      hidePopup()
       result(nil)
     case "showMain":
       showMain()
@@ -184,6 +186,9 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
   }
 
   private func showPopup() {
+    // Not when the popup comes back after its own file dialog: the main
+    // window wasn't key then, but it was when the popup first opened.
+    if !popup.isVisible { mainWasKey = isKeyWindow && NSApp.isActive }
     let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
     let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     let top = visible.maxY - visible.height * 0.18
@@ -193,6 +198,23 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     popup.orderFrontRegardless()
     popup.makeKey()
     resumeFlutter()
+  }
+
+  /// Hides the popup; the main window takes the keyboard back if it had it
+  /// before. Without this, how it was closed decided where the keys went:
+  /// after Esc AppKit made the main window key again, after the hotkey it
+  /// handed them to the app used before Džep. Not when the popup closed
+  /// because the user clicked somewhere else (it isn't key anymore then).
+  private func hidePopup() {
+    let restore = mainWasKey && popup.isKeyWindow && isVisible
+    mainWasKey = false
+    hidingPopup = true
+    // Key first, so the popup going away never leaves Džep without a key
+    // window.
+    if restore { makeKeyAndOrderFront(nil) }
+    popup.orderOut(nil)
+    hidingPopup = false
+    if restore { activate() }
   }
 
   private func showMain() {
@@ -253,6 +275,17 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     // The popup losing focus is the user clicking elsewhere: it closes.
     guard notification.object as? NSWindow === popup, !hidingPopup, popup.isVisible else { return }
     channel.invokeMethod("blur", arguments: nil)
+  }
+
+  func windowDidBecomeKey(_ notification: Notification) {
+    // The two Flutter views share one text input view, which moves to the
+    // popup with the keyboard; the window it left is then its own first
+    // responder, and keys would go nowhere (⌘F to the menu) until a click.
+    // The Flutter view takes them instead.
+    guard notification.object as? NSWindow === self, firstResponder === self,
+      let view = mainController.view.subviews.first(where: { $0.acceptsFirstResponder })
+    else { return }
+    makeFirstResponder(view)
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
