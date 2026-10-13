@@ -18,19 +18,41 @@ final class PopupPanel: NSPanel {
   override func cancelOperation(_ sender: Any?) {}
 }
 
+/// The note window: one note, apart from the app, floating over everything
+/// so it can sit beside whatever else is on screen, moved and resized at
+/// will. Non-activating like the popup: it takes the keyboard without
+/// pulling Džep (and its menu bar) in front of the app beside it.
+final class NotePanel: NSPanel {
+  override var canBecomeKey: Bool { true }
+  // Esc is the editor's; a panel would otherwise close itself behind Dart's
+  // back.
+  override func cancelOperation(_ sender: Any?) {}
+  // ⌘W closes it even with the editor focused, as in the main window.
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    if mods == .command, event.charactersIgnoringModifiers?.lowercased() == "w" {
+      performClose(nil)
+      return true
+    }
+    return super.performKeyEquivalent(with: event)
+  }
+}
+
 /// The main window, from MainMenu.xib: a regular window, so it behaves like
 /// any app's — while it's open Džep has a Dock icon and its menu bar, ⌘W
 /// closes it, ⌘Q quits. Closed, Džep goes back to living in the menu bar.
 ///
 /// It also owns the Flutter engine, which runs in multi-view mode: one Dart
-/// app (one store, one sync) draws both this window and the popup panel.
-/// Separate windows means neither is ever resized to become the other (Flutter
-/// blocks after resizes and Impeller crashes on rapid ones).
+/// app (one store, one sync) draws this window, the popup panel and the note
+/// window. Separate windows means none is ever resized to become another
+/// (Flutter blocks after resizes and Impeller crashes on rapid ones).
 class MainFlutterWindow: NSWindow, NSWindowDelegate {
   private var channel: FlutterMethodChannel!
   private var popup: PopupPanel!
+  private var note: NotePanel!
   private var popupController: FlutterViewController!
   private var mainController: FlutterViewController!
+  private var noteController: FlutterViewController!
   private var hotKeyRef: EventHotKeyRef?
   private var hotKeyHandler: EventHandlerRef?
   private var statusItem: NSStatusItem?
@@ -39,11 +61,12 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
   /// the user clicking away ("blur").
   private var hidingPopup = false
 
-  /// The main window had the keyboard when the popup opened over it: it gets
-  /// it back when the popup goes.
-  private var mainWasKey = false
+  /// The window that had the keyboard when the popup opened (the main
+  /// window or the note window): it gets it back when the popup goes.
+  private weak var keyBeforePopup: NSWindow?
 
   static let popupSize = NSSize(width: 720, height: 660)
+  static let noteSize = NSSize(width: 340, height: 380)
 
   override func awakeFromNib() {
     // Headless start, then the two views: in multi-view mode the engine can
@@ -73,6 +96,8 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     popupController.backgroundColor = .clear
     mainController = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
     mainController.backgroundColor = NSColor(red: 0.09, green: 0.094, blue: 0.114, alpha: 1)
+    noteController = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
+    noteController.backgroundColor = mainController.backgroundColor
 
     popup = PopupPanel(
       contentRect: NSRect(origin: .zero, size: Self.popupSize),
@@ -91,11 +116,35 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     popup.isMovable = false
     popup.delegate = self
 
+    note = NotePanel(
+      contentRect: NSRect(origin: .zero, size: Self.noteSize),
+      styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .nonactivatingPanel],
+      backing: .buffered, defer: false)
+    note.contentViewController = noteController
+    note.setContentSize(Self.noteSize)
+    note.titleVisibility = .hidden
+    note.titlebarAppearsTransparent = true
+    note.standardWindowButton(.miniaturizeButton)?.isHidden = true
+    note.standardWindowButton(.zoomButton)?.isHidden = true
+    note.contentMinSize = NSSize(width: 200, height: 120)
+    note.level = .floating
+    // Shown over a full-screen app too, on the Space it's opened in.
+    note.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
+    note.hidesOnDeactivate = false
+    note.becomesKeyOnlyIfNeeded = false
+    note.isReleasedWhenClosed = false
+    note.delegate = self
+    let screen = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+    note.setFrameOrigin(NSPoint(x: screen.maxX - note.frame.width - 24, y: screen.maxY - note.frame.height - 24))
+    note.setFrameAutosaveName("DzepNote")  // where you last put it, and its size
+
     contentViewController = mainController
     styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     titleVisibility = .hidden
     titlebarAppearsTransparent = true
-    minSize = NSSize(width: 820, height: 480)
+    // Down to a narrow strip beside something else; the layout folds its
+    // sidebar into icons (lib/main_window.dart).
+    minSize = NSSize(width: 480, height: 360)
     let visible = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
     let w = min(1160, visible.width - 80), h = min(740, visible.height - 80)
     setFrame(NSRect(x: visible.midX - w / 2, y: visible.midY - h / 2, width: w, height: h), display: false)
@@ -113,7 +162,10 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     let args = call.arguments as? [String: Any] ?? [:]
     switch call.method {
     case "viewIds":
-      result(["popup": popupController.viewIdentifier, "main": mainController.viewIdentifier])
+      result([
+        "popup": popupController.viewIdentifier, "main": mainController.viewIdentifier,
+        "note": noteController.viewIdentifier,
+      ])
     case "showPopup":
       showPopup()
       result(nil)
@@ -122,6 +174,12 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       result(nil)
     case "showMain":
       showMain()
+      result(nil)
+    case "showNote":
+      showNote(hideMain: args["hideMain"] as? Bool ?? false)
+      result(nil)
+    case "hideNote":
+      note.orderOut(nil)
       result(nil)
     case "setHotKey":
       result(setHotKey(keyCode: args["keyCode"] as? Int ?? -1, modifiers: args["modifiers"] as? Int ?? 0))
@@ -141,7 +199,8 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
         result(FlutterError(code: "launch_at_login", message: error.localizedDescription, details: nil))
       }
     case "startDrag":
-      if let event = currentEvent { performDrag(with: event) }
+      // Whichever window the drag began in: the main one or the note.
+      if let event = NSApp.currentEvent, let window = event.window { window.performDrag(with: event) }
       result(nil)
     case "setTodoCount":
       // The pocket icon then "3" in the menu bar: open todos at a glance.
@@ -186,9 +245,11 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
   }
 
   private func showPopup() {
-    // Not when the popup comes back after its own file dialog: the main
-    // window wasn't key then, but it was when the popup first opened.
-    if !popup.isVisible { mainWasKey = isKeyWindow && NSApp.isActive }
+    // Not when the popup comes back after its own file dialog: neither
+    // window was key then, but one was when the popup first opened.
+    if !popup.isVisible {
+      keyBeforePopup = isKeyWindow && NSApp.isActive ? self : note.isKeyWindow ? note : nil
+    }
     let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
     let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
     let top = visible.maxY - visible.height * 0.18
@@ -200,21 +261,34 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     resumeFlutter()
   }
 
-  /// Hides the popup; the main window takes the keyboard back if it had it
-  /// before. Without this, how it was closed decided where the keys went:
-  /// after Esc AppKit made the main window key again, after the hotkey it
-  /// handed them to the app used before Džep. Not when the popup closed
-  /// because the user clicked somewhere else (it isn't key anymore then).
+  /// Hides the popup; the main window or the note window takes the keyboard
+  /// back if it had it before. Without this, how it was closed decided where
+  /// the keys went: after Esc AppKit made the main window key again, after
+  /// the hotkey it handed them to the app used before Džep. Not when the
+  /// popup closed because the user clicked somewhere else (it isn't key
+  /// anymore then).
   private func hidePopup() {
-    let restore = mainWasKey && popup.isKeyWindow && isVisible
-    mainWasKey = false
+    let back = popup.isKeyWindow && keyBeforePopup?.isVisible == true ? keyBeforePopup : nil
+    keyBeforePopup = nil
     hidingPopup = true
     // Key first, so the popup going away never leaves Džep without a key
     // window.
-    if restore { makeKeyAndOrderFront(nil) }
+    back?.makeKeyAndOrderFront(nil)
     popup.orderOut(nil)
     hidingPopup = false
-    if restore { activate() }
+    // The note window doesn't activate Džep; the main window does.
+    if back === self { activate() }
+  }
+
+  /// [hideMain]: opened from the main window, which gives way to it until
+  /// the note window closes. Džep stays a regular app meanwhile (its Dock
+  /// icon brings the main window back): switching to .accessory would
+  /// deactivate it, and the note window would lose the keyboard with it.
+  private func showNote(hideMain: Bool) {
+    if hideMain { orderOut(nil) }
+    note.orderFrontRegardless()
+    note.makeKey()
+    resumeFlutter()
   }
 
   private func showMain() {
@@ -272,23 +346,37 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
   // MARK: - Window events → Dart
 
   func windowDidResignKey(_ notification: Notification) {
+    let window = notification.object as? NSWindow
+    // Dart can't tell which window has the keyboard (the views share one
+    // FocusManager); the main window takes the focus back once the note
+    // window lets go of it.
+    if window === note { channel.invokeMethod("noteKey", arguments: ["key": false]) }
     // The popup losing focus is the user clicking elsewhere: it closes.
-    guard notification.object as? NSWindow === popup, !hidingPopup, popup.isVisible else { return }
+    guard window === popup, !hidingPopup, popup.isVisible else { return }
     channel.invokeMethod("blur", arguments: nil)
   }
 
   func windowDidBecomeKey(_ notification: Notification) {
-    // The two Flutter views share one text input view, which moves to the
-    // popup with the keyboard; the window it left is then its own first
-    // responder, and keys would go nowhere (⌘F to the menu) until a click.
-    // The Flutter view takes them instead.
-    guard notification.object as? NSWindow === self, firstResponder === self,
-      let view = mainController.view.subviews.first(where: { $0.acceptsFirstResponder })
+    guard let window = notification.object as? NSWindow else { return }
+    if window === note { channel.invokeMethod("noteKey", arguments: ["key": true]) }
+    // The Flutter views share one text input view, which moves to the
+    // window with the focused field; the window it left is then its own
+    // first responder, and keys would go nowhere (⌘F to the menu) until a
+    // click. The Flutter view takes them instead.
+    let controller = window === self ? mainController : window === note ? noteController : nil
+    guard let controller, window.firstResponder === window,
+      let view = controller.view.subviews.first(where: { $0.acceptsFirstResponder })
     else { return }
-    makeFirstResponder(view)
+    window.makeFirstResponder(view)
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
+    // The note window's red button / ⌘W: Dart closes it (and brings the main
+    // window back if it gave way to it).
+    if sender === note {
+      channel.invokeMethod("closeNote", arguments: nil)
+      return false
+    }
     guard sender === self else { return true }
     // ⌘W / the red button: hide (the window is reused), back to the menu bar.
     orderOut(nil)

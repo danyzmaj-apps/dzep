@@ -25,9 +25,9 @@ const Shelf _all = (project: false, id: 'all');
 const Shelf _notes = (project: false, id: 'notes');
 const Shelf _chats = (project: false, id: 'chats');
 
-/// Drag strip for the transparent title bar.
-class _TitleDrag extends StatelessWidget {
-  const _TitleDrag();
+/// Drag strip for a transparent title bar (the main and the note window).
+class TitleDrag extends StatelessWidget {
+  const TitleDrag({super.key});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -54,7 +54,7 @@ class MainWindow extends StatelessWidget {
             SignInPage(session: app)
           else
             Library(app: app, store: store),
-          const Positioned(top: 0, left: 80, right: 0, child: _TitleDrag()),
+          const Positioned(top: 0, left: 80, right: 0, child: TitleDrag()),
           if (store != null && app.settingsOpen) SettingsSheet(app: app),
         ],
       ),
@@ -223,12 +223,13 @@ class _LibraryState extends State<Library> {
     _reclaim();
   }
 
-  /// While this window is open (and the popup and Settings aren't), the
-  /// keyboard always has somewhere to go here: what had the focus before the
-  /// popup, or the list, so the window's keys work whatever was clicked.
+  /// While this window is open (and the popup and Settings aren't, and the
+  /// note window doesn't have the keyboard), the keyboard always has
+  /// somewhere to go here: what had the focus before the popup, or the list,
+  /// so the window's keys work whatever was clicked.
   void _reclaim() {
     final app = widget.app;
-    bool wanted() => mounted && app.mainOpen && !app.popupOpen && !app.settingsOpen && _lost;
+    bool wanted() => mounted && app.mainOpen && !app.popupOpen && !app.noteKey && !app.settingsOpen && _lost;
     if (!wanted()) return;
     // A microtask: after the popup has let go of its focus, whichever of the
     // two heard of the close first, and outside the focus manager's update.
@@ -478,68 +479,82 @@ class _LibraryState extends State<Library> {
       final chat = _chatStore;
       if (_chat != null && !chat.conversations.contains(_chat)) _chat = chat.conversations.firstOrNull;
       final chats = _view == _chats;
-      return Focus(
-        focusNode: _listFocus,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(width: 210, child: _sidebar()),
-            const VerticalDivider(width: 1, color: C.line),
-            SizedBox(
-              width: 370,
-              child: chats
-                  ? ChatList(
-                      chat: chat,
-                      selected: _chat,
-                      onSelect: (c) => setState(() => _chat = c),
-                      hotKey: widget.app.hotKey.label,
-                    )
-                  : _listPane(visible),
+      return LayoutBuilder(
+        builder: (context, size) {
+          // Narrow, the sidebar folds into a strip of icons and the list
+          // gives up width before the detail does.
+          final rail = size.maxWidth < 760;
+          final side = rail ? 52.0 : 210.0;
+          final list = ((size.maxWidth - side) * .42).clamp(220.0, 370.0);
+          return Focus(
+            focusNode: _listFocus,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: side,
+                  child: _sidebar(rail: rail),
+                ),
+                const VerticalDivider(width: 1, color: C.line),
+                SizedBox(
+                  width: list,
+                  child: chats
+                      ? ChatList(
+                          chat: chat,
+                          selected: _chat,
+                          onSelect: (c) => setState(() => _chat = c),
+                          hotKey: widget.app.hotKey.label,
+                        )
+                      : _listPane(visible),
+                ),
+                const VerticalDivider(width: 1, color: C.line),
+                Expanded(
+                  child: chats
+                      ? ChatThread(
+                          key: ValueKey((_chat?.id, _newChats)),
+                          chat: chat,
+                          conversation: _chat,
+                          onSent: (c) => setState(() => _chat = c),
+                          onContinue: (c) => unawaited(widget.app.openAsk(c)),
+                        )
+                      : selected == null
+                      ? const _EmptyDetail()
+                      : selected.isNote
+                      ? NoteEditor(
+                          key: ValueKey(selected.id),
+                          note: selected,
+                          store: store,
+                          focus: _focusNotesOf == selected.id,
+                          onFocused: () => _focusNotesOf = null,
+                          onDelete: () => _delete(selected),
+                          onWindow: () => unawaited(widget.app.openNoteWindow(id: selected.id, fromMain: true)),
+                        )
+                      : _Detail(
+                          key: ValueKey(selected.id),
+                          idea: selected,
+                          store: store,
+                          viewName: _viewName(_view),
+                          focus: _focusNotesOf == selected.id
+                              ? _DetailFocus.notes
+                              : _focusNotesOf == '${selected.id}#title'
+                              ? _DetailFocus.title
+                              : null,
+                          onFocused: () => _focusNotesOf = null,
+                          onToggleDone: () => _toggleDone(selected),
+                          onDelete: () => _delete(selected),
+                          onDone: _listFocus.requestFocus,
+                        ),
+                ),
+              ],
             ),
-            const VerticalDivider(width: 1, color: C.line),
-            Expanded(
-              child: chats
-                  ? ChatThread(
-                      key: ValueKey((_chat?.id, _newChats)),
-                      chat: chat,
-                      conversation: _chat,
-                      onSent: (c) => setState(() => _chat = c),
-                      onContinue: (c) => unawaited(widget.app.openAsk(c)),
-                    )
-                  : selected == null
-                  ? const _EmptyDetail()
-                  : selected.isNote
-                  ? NoteEditor(
-                      key: ValueKey(selected.id),
-                      note: selected,
-                      store: store,
-                      focus: _focusNotesOf == selected.id,
-                      onFocused: () => _focusNotesOf = null,
-                      onDelete: () => _delete(selected),
-                    )
-                  : _Detail(
-                      key: ValueKey(selected.id),
-                      idea: selected,
-                      store: store,
-                      viewName: _viewName(_view),
-                      focus: _focusNotesOf == selected.id
-                          ? _DetailFocus.notes
-                          : _focusNotesOf == '${selected.id}#title'
-                          ? _DetailFocus.title
-                          : null,
-                      onFocused: () => _focusNotesOf = null,
-                      onToggleDone: () => _toggleDone(selected),
-                      onDelete: () => _delete(selected),
-                      onDone: _listFocus.requestFocus,
-                    ),
-            ),
-          ],
-        ),
+          );
+        },
       );
     },
   );
 
-  Widget _sidebar() {
+  /// [rail]: icons only (a narrow window), each named in its tooltip.
+  Widget _sidebar({required bool rail}) {
     Widget nav(Shelf v, Widget icon, String name) {
       final n = v == _todos
           ? store.openTodos.length
@@ -549,42 +564,65 @@ class _LibraryState extends State<Library> {
           ? _chatStore.conversations.length
           : store.ideas.where((i) => _inView(i, v)).length;
       final on = _view == v;
-      return Hoverable(
+      final item = Hoverable(
         onTap: () => _setView(v),
         builder: (hover) => Container(
-          margin: const EdgeInsets.symmetric(horizontal: 8),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          margin: EdgeInsets.symmetric(horizontal: rail ? 6 : 8),
+          padding: EdgeInsets.symmetric(horizontal: 10, vertical: rail ? 7 : 5),
           decoration: BoxDecoration(
             color: on ? C.sel : (hover ? C.hover : null),
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Row(
-            children: [
-              SizedBox(width: 16, child: Center(child: icon)),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  name,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13, color: on ? Colors.white : const Color(0xFFC9CCD5)),
+          child: rail
+              ? Center(child: icon)
+              : Row(
+                  children: [
+                    SizedBox(width: 16, child: Center(child: icon)),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, color: on ? Colors.white : const Color(0xFFC9CCD5)),
+                      ),
+                    ),
+                    if (n > 0) Text('$n', style: const TextStyle(fontSize: 11, color: C.dim2)),
+                  ],
                 ),
-              ),
-              if (n > 0) Text('$n', style: const TextStyle(fontSize: 11, color: C.dim2)),
-            ],
-          ),
         ),
       );
+      return rail ? Tooltip(message: n > 0 ? '$name  $n' : name, child: item) : item;
     }
 
-    Widget header(String t) => Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 10, 4),
-      child: Text(
-        t,
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: C.dim2),
-      ),
-    );
+    Widget header(String t) => rail
+        ? const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Divider(height: 1, color: C.line),
+          )
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 10, 4),
+            child: Text(
+              t,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: C.dim2),
+            ),
+          );
+
+    // On the rail a project is its first two letters (the tooltip names it).
+    Widget projectIcon(String p) => rail
+        ? Text(
+            '${p.characters.take(1).toUpperCase()}${p.characters.skip(1).take(1)}',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: C.dim),
+          )
+        : const Icon(Icons.tag, size: 13, color: C.dim);
 
     final user = widget.app;
+    final settings = IconButton(
+      tooltip: 'Settings  ⌘,',
+      iconSize: 16,
+      color: C.dim,
+      onPressed: () => user.setSettingsOpen(open: true),
+      icon: const Icon(Icons.settings_outlined),
+    );
     return ColoredBox(
       color: C.side,
       child: Column(
@@ -598,38 +636,41 @@ class _LibraryState extends State<Library> {
                 nav(_notes, const Icon(Icons.sticky_note_2_outlined, size: 14, color: C.dim), 'Notes'),
                 nav(_chats, const Icon(Icons.auto_awesome, size: 14, color: C.dim), 'Ask'),
                 if (store.projects.isNotEmpty) header('PROJECTS'),
-                for (final p in store.projects)
-                  nav((project: true, id: p), const Icon(Icons.tag, size: 13, color: C.dim), p),
+                for (final p in store.projects) nav((project: true, id: p), projectIcon(p), p),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            padding: rail ? const EdgeInsets.symmetric(vertical: 8) : const EdgeInsets.fromLTRB(12, 10, 8, 10),
             decoration: const BoxDecoration(
               border: Border(top: BorderSide(color: C.line)),
             ),
-            child: Row(
-              children: [
-                Avatar(url: user.avatarUrl, name: user.userName),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: rail
+                ? Column(
                     children: [
-                      Text(user.userName, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
-                      SyncDot(store.syncState),
+                      Tooltip(
+                        message: user.userName,
+                        child: Avatar(url: user.avatarUrl, name: user.userName),
+                      ),
+                      settings,
+                    ],
+                  )
+                : Row(
+                    children: [
+                      Avatar(url: user.avatarUrl, name: user.userName),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(user.userName, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                            SyncDot(store.syncState),
+                          ],
+                        ),
+                      ),
+                      settings,
                     ],
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Settings  ⌘,',
-                  iconSize: 16,
-                  color: C.dim,
-                  onPressed: () => user.setSettingsOpen(open: true),
-                  icon: const Icon(Icons.settings_outlined),
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -943,6 +984,7 @@ class NoteEditor extends StatefulWidget {
     required this.focus,
     required this.onFocused,
     required this.onDelete,
+    required this.onWindow,
     super.key,
   });
 
@@ -953,6 +995,9 @@ class NoteEditor extends StatefulWidget {
   final bool focus;
   final VoidCallback onFocused;
   final VoidCallback onDelete;
+
+  /// Opens the note in the note window (lib/note_window.dart).
+  final VoidCallback onWindow;
 
   @override
   State<NoteEditor> createState() => _NoteEditorState();
@@ -1002,14 +1047,13 @@ class _NoteEditorState extends State<NoteEditor> {
         ),
         child: Row(
           children: [
-            const Text('Notes', style: TextStyle(color: C.dim, fontSize: 13)),
-            const Text('  ›  ', style: TextStyle(color: C.dim)),
-            Expanded(
-              child: Text(
-                note.title.isEmpty ? 'Empty note' : note.title,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13),
-              ),
+            Expanded(child: _Crumb('Notes', note.title.isEmpty ? 'Empty note' : note.title)),
+            IconButton(
+              tooltip: 'Open in its own window',
+              iconSize: 15,
+              color: C.dim,
+              icon: const Icon(Icons.picture_in_picture_alt_outlined),
+              onPressed: widget.onWindow,
             ),
             IconButton(
               tooltip: 'Copy',
@@ -1066,6 +1110,33 @@ class _NoteEditorState extends State<NoteEditor> {
         ),
       ),
     ],
+  );
+}
+
+/// A detail header's "Notes › title"; just the title once the pane is too
+/// narrow for both.
+class _Crumb extends StatelessWidget {
+  const _Crumb(this.section, this.title);
+  final String section;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, size) => Text.rich(
+      TextSpan(
+        children: [
+          if (size.maxWidth >= 160)
+            TextSpan(
+              text: '$section  ›  ',
+              style: const TextStyle(color: C.dim),
+            ),
+          TextSpan(text: title),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 13),
+    ),
   );
 }
 
@@ -1172,15 +1243,7 @@ class _DetailState extends State<_Detail> {
         ),
         child: Row(
           children: [
-            Text(widget.viewName, style: const TextStyle(color: C.dim, fontSize: 13)),
-            const Text('  ›  ', style: TextStyle(color: C.dim)),
-            Expanded(
-              child: Text(
-                idea.title.isEmpty ? 'Untitled' : idea.title,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
+            Expanded(child: _Crumb(widget.viewName, idea.title.isEmpty ? 'Untitled' : idea.title)),
             IconButton(
               tooltip: 'Copy as Markdown',
               iconSize: 15,
@@ -1504,126 +1567,130 @@ class _SettingsSheetState extends State<SettingsSheet> {
       child: ColoredBox(
         color: const Color(0x99000000),
         child: Center(
-          child: GestureDetector(
-            onTap: () {},
-            child: Container(
-              width: 500,
-              padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
-              decoration: BoxDecoration(
-                color: C.win,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: C.line2),
-                boxShadow: const [BoxShadow(color: Color(0x99000000), blurRadius: 60, offset: Offset(0, 20))],
-              ),
-              child: Focus(
-                focusNode: _recorderFocus,
-                onKeyEvent: (n, e) {
-                  if (!_recording && e is KeyDownEvent && e.logicalKey == LogicalKeyboardKey.escape) {
-                    app.setSettingsOpen(open: false);
-                    return KeyEventResult.handled;
-                  }
-                  return _onRecordKey(n, e);
-                },
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Center(
-                      child: Text('Settings', style: TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                    _group('ACCOUNT', [
-                      _row(
-                        leading: Avatar(url: app.avatarUrl, name: app.userName),
-                        label: app.userName,
-                        sub: 'Signed in with GitHub · ${app.store?.ideas.length ?? 0} ideas',
-                        trailing: _button('Sign out', () => unawaited(app.signOut()), danger: true),
+          // Scrolls in a window too short for it.
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: GestureDetector(
+              onTap: () {},
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+                decoration: BoxDecoration(
+                  color: C.win,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: C.line2),
+                  boxShadow: const [BoxShadow(color: Color(0x99000000), blurRadius: 60, offset: Offset(0, 20))],
+                ),
+                child: Focus(
+                  focusNode: _recorderFocus,
+                  onKeyEvent: (n, e) {
+                    if (!_recording && e is KeyDownEvent && e.logicalKey == LogicalKeyboardKey.escape) {
+                      app.setSettingsOpen(open: false);
+                      return KeyEventResult.handled;
+                    }
+                    return _onRecordKey(n, e);
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Center(
+                        child: Text('Settings', style: TextStyle(fontWeight: FontWeight.w600)),
                       ),
-                      _row(
-                        label: 'Your server',
-                        sub: '${app.backend?.host ?? ''} · Scan a code with your iPhone to connect it',
-                        trailing: _button('Set up iPhone…', () => unawaited(showPairingQr(context, app))),
-                      ),
-                      _row(
-                        label: 'Delete account',
-                        sub: 'Removes everything you saved, on every device',
-                        trailing: _button('Delete…', () async {
-                          if (!await confirmDeleteAccount(context)) return;
-                          try {
-                            await app.deleteAccount();
-                          } on Object catch (e) {
-                            if (context.mounted) Toaster.of(context).show('Account not deleted: $e');
-                          }
-                        }, danger: true),
-                      ),
-                    ]),
-                    _group('GENERAL', [
-                      _row(
-                        label: 'Quick capture shortcut',
-                        sub:
-                            _hotKeyError ??
-                            (app.hotKeyRegistered
-                                ? 'Click, then press the new combo'
-                                : '${app.hotKey.label} is taken by another app.'),
-                        subError: _hotKeyError != null || !app.hotKeyRegistered,
-                        trailing: _button(_recording ? 'Press keys…' : app.hotKey.label, () {
-                          setState(() {
-                            _recording = !_recording;
-                            _hotKeyError = null;
-                          });
-                          _recorderFocus.requestFocus();
-                        }, active: _recording),
-                      ),
-                      _row(
-                        label: 'Launch at login',
-                        sub: _launchError,
-                        subError: _launchError != null,
-                        trailing: Switch(
-                          value: _launchAtLogin ?? false,
-                          onChanged: _launchAtLogin == null
-                              ? null
-                              : (v) => unawaited(
-                                  Native.setLaunchAtLogin(enabled: v).then(
-                                    (r) => mounted
-                                        ? setState(() {
-                                            _launchAtLogin = r;
-                                            _launchError = null;
-                                          })
-                                        : null,
-                                    onError: (Object e) => mounted
-                                        ? setState(() => _launchError = e is PlatformException ? e.message : '$e')
-                                        : null,
+                      _group('ACCOUNT', [
+                        _row(
+                          leading: Avatar(url: app.avatarUrl, name: app.userName),
+                          label: app.userName,
+                          sub: 'Signed in with GitHub · ${app.store?.ideas.length ?? 0} ideas',
+                          trailing: _button('Sign out', () => unawaited(app.signOut()), danger: true),
+                        ),
+                        _row(
+                          label: 'Your server',
+                          sub: '${app.backend?.host ?? ''} · Scan a code with your iPhone to connect it',
+                          trailing: _button('Set up iPhone…', () => unawaited(showPairingQr(context, app))),
+                        ),
+                        _row(
+                          label: 'Delete account',
+                          sub: 'Removes everything you saved, on every device',
+                          trailing: _button('Delete…', () async {
+                            if (!await confirmDeleteAccount(context)) return;
+                            try {
+                              await app.deleteAccount();
+                            } on Object catch (e) {
+                              if (context.mounted) Toaster.of(context).show('Account not deleted: $e');
+                            }
+                          }, danger: true),
+                        ),
+                      ]),
+                      _group('GENERAL', [
+                        _row(
+                          label: 'Quick capture shortcut',
+                          sub:
+                              _hotKeyError ??
+                              (app.hotKeyRegistered
+                                  ? 'Click, then press the new combo'
+                                  : '${app.hotKey.label} is taken by another app.'),
+                          subError: _hotKeyError != null || !app.hotKeyRegistered,
+                          trailing: _button(_recording ? 'Press keys…' : app.hotKey.label, () {
+                            setState(() {
+                              _recording = !_recording;
+                              _hotKeyError = null;
+                            });
+                            _recorderFocus.requestFocus();
+                          }, active: _recording),
+                        ),
+                        _row(
+                          label: 'Launch at login',
+                          sub: _launchError,
+                          subError: _launchError != null,
+                          trailing: Switch(
+                            value: _launchAtLogin ?? false,
+                            onChanged: _launchAtLogin == null
+                                ? null
+                                : (v) => unawaited(
+                                    Native.setLaunchAtLogin(enabled: v).then(
+                                      (r) => mounted
+                                          ? setState(() {
+                                              _launchAtLogin = r;
+                                              _launchError = null;
+                                            })
+                                          : null,
+                                      onError: (Object e) => mounted
+                                          ? setState(() => _launchError = e is PlatformException ? e.message : '$e')
+                                          : null,
+                                    ),
                                   ),
-                                ),
+                          ),
                         ),
-                      ),
-                      _row(
-                        label: 'Terminal from iPhone',
-                        sub: !app.terminalOn
-                            ? 'Your iPhone sees omp sessions and kitty, and types into them, while this Mac is awake'
-                            : _kitty?.error ??
-                                  (_kitty == null
-                                      ? 'Looking for kitty…'
-                                      : '${_kitty!.windows} kitty windows · ${app.live.sessions.length} omp sessions '
-                                            '· keeps this Mac from idle sleep'),
-                        subError: app.terminalOn && _kitty?.error != null,
-                        trailing: Switch(
-                          value: app.terminalOn,
-                          onChanged: (v) {
-                            unawaited(app.setTerminal(on: v));
-                            unawaited(_checkKitty());
-                          },
+                        _row(
+                          label: 'Terminal from iPhone',
+                          sub: !app.terminalOn
+                              ? 'Your iPhone sees omp sessions and kitty, and types into them, while this Mac is awake'
+                              : _kitty?.error ??
+                                    (_kitty == null
+                                        ? 'Looking for kitty…'
+                                        : '${_kitty!.windows} kitty windows · ${app.live.sessions.length} omp sessions '
+                                              '· keeps this Mac from idle sleep'),
+                          subError: app.terminalOn && _kitty?.error != null,
+                          trailing: Switch(
+                            value: app.terminalOn,
+                            onChanged: (v) {
+                              unawaited(app.setTerminal(on: v));
+                              unawaited(_checkKitty());
+                            },
+                          ),
                         ),
+                      ]),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          _button('Quit Džep', () => unawaited(Native.quit())),
+                          const Spacer(),
+                          _button('Done', () => app.setSettingsOpen(open: false)),
+                        ],
                       ),
-                    ]),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        _button('Quit Džep', () => unawaited(Native.quit())),
-                        const Spacer(),
-                        _button('Done', () => app.setSettingsOpen(open: false)),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

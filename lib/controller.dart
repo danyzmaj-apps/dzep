@@ -13,8 +13,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// The popup's modes, switched with ⌘1–⌘4.
 enum PopupMode { idea, todo, note, ask }
 
-/// The Mac app: [Session] plus its two windows (the ⇧⌘Space popup panel and
-/// the main window, each its own Flutter view) and the hotkey.
+/// The Mac app: [Session] plus its windows (the ⇧⌘Space popup panel, the
+/// main window and the note window, each its own Flutter view) and the
+/// hotkey.
 class AppController extends Session {
   AppController(this._prefs, super.device);
 
@@ -27,6 +28,24 @@ class AppController extends Session {
   /// The main window is open (Džep is a regular app with a Dock icon then).
   bool get mainOpen => _mainOpen;
   bool _mainOpen = false;
+
+  /// The note window is on screen: one note, floating apart from the app.
+  bool get noteOpen => _noteOpen;
+  bool _noteOpen = false;
+
+  /// The note it shows; null for a new one until something is written.
+  String? noteId;
+
+  /// Bumped on every note window open, so it starts over on its note.
+  int noteSession = 0;
+
+  /// The note window has the keyboard. macOS says so; Flutter can't tell,
+  /// all the windows sharing one FocusManager.
+  bool noteKey = false;
+
+  /// The main window gave way to the note window: it comes back when that
+  /// closes.
+  bool _mainAfterNote = false;
 
   /// Bumped on every popup open so it resets (focus, selection).
   int popupSession = 0;
@@ -107,6 +126,8 @@ class AppController extends Session {
   @override
   Future<void> signOut() async {
     settingsOpen = false;
+    _mainAfterNote = false;
+    await closeNoteWindow();
     await super.signOut();
     await _startBridge();
     _shownTodoCount = 0;
@@ -156,6 +177,11 @@ class AppController extends Session {
         if (_popupOpen && !_holdPopup) unawaited(closePopup());
       case 'mainClosed':
         _mainOpen = false;
+        notifyListeners();
+      case 'closeNote':
+        unawaited(closeNoteWindow());
+      case 'noteKey':
+        noteKey = args['key'] == true;
         notifyListeners();
       case 'openTodo':
         // A reminder notification clicked: that todo, selected.
@@ -207,9 +233,41 @@ class AppController extends Session {
     if (conversation != null) pendingChat = conversation;
     if (notes) pendingNotes = true;
     if (_popupOpen) await closePopup();
+    // Back already: closing the note window leaves it be.
+    _mainAfterNote = false;
     _mainOpen = true;
     notifyListeners();
     await Native.showMain();
+  }
+
+  /// Shows note [id] (null: a new one) in the note window. From the main
+  /// window ([fromMain]) the app hides until the note window closes; from
+  /// the popup it stays as it was.
+  Future<void> openNoteWindow({String? id, bool fromMain = false}) async {
+    if (_popupOpen) await closePopup();
+    noteId = id;
+    noteSession++;
+    _noteOpen = true;
+    final hideMain = fromMain && _mainOpen;
+    if (hideMain) {
+      _mainOpen = false;
+      _mainAfterNote = true;
+    }
+    notifyListeners();
+    await Native.showNote(hideMain: hideMain);
+  }
+
+  /// Closes the note window; the main window comes back on that note if it
+  /// gave way to it.
+  Future<void> closeNoteWindow() async {
+    if (!_noteOpen) return;
+    _noteOpen = false;
+    noteKey = false;
+    final back = _mainAfterNote;
+    _mainAfterNote = false;
+    notifyListeners();
+    await Native.hideNote();
+    if (back) await openMain(select: noteId);
   }
 
   void setSettingsOpen({required bool open}) {

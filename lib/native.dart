@@ -7,12 +7,14 @@ class Native {
   static const _channel = MethodChannel('dzep/native');
 
   /// Events from the Swift side: hotKey, togglePopup, openMain,
-  /// openSettings, blur (the popup lost focus), mainClosed (⌘W), openTodo
-  /// ({id}: a reminder notification was clicked), openTerminal ({session}:
-  /// a terminal push was tapped; see [takeTappedSession]), pending (an
-  /// action waits in [takePending], e.g. a tick from the desktop widget),
-  /// activityToken ({key, token}: a Live Activity's push token, new or
-  /// changed) and activityEnded ({key, token?}: it ended or was swiped away).
+  /// openSettings, blur (the popup lost focus), mainClosed (⌘W), closeNote
+  /// (the note window's ⌘W or red button), noteKey ({key}: the note window
+  /// got or lost the keyboard), openTodo ({id}: a reminder notification was
+  /// clicked), openTerminal ({session}: a terminal push was tapped; see
+  /// [takeTappedSession]), pending (an action waits in [takePending], e.g. a
+  /// tick from the desktop widget), activityToken ({key, token}: a Live
+  /// Activity's push token, new or changed) and activityEnded ({key,
+  /// token?}: it ended or was swiped away).
   static void listen(void Function(String event, Map<Object?, Object?> args) onEvent) {
     _channel.setMethodCallHandler(
       (call) async => onEvent(call.method, call.arguments as Map<Object?, Object?>? ?? const {}),
@@ -20,14 +22,18 @@ class Native {
   }
 
   /// Which Flutter view is which window (the engine runs in multi-view mode).
-  static Future<({int popup, int main})> viewIds() async {
+  static Future<({int popup, int main, int note})> viewIds() async {
     final ids = await _channel.invokeMapMethod<String, int>('viewIds');
-    return (popup: ids!['popup']!, main: ids['main']!);
+    return (popup: ids!['popup']!, main: ids['main']!, note: ids['note']!);
   }
 
   static Future<void> showPopup() => _channel.invokeMethod('showPopup');
   static Future<void> hidePopup() => _channel.invokeMethod('hidePopup');
   static Future<void> showMain() => _channel.invokeMethod('showMain');
+
+  /// [hideMain]: the main window gives way to the note window.
+  static Future<void> showNote({required bool hideMain}) => _channel.invokeMethod('showNote', {'hideMain': hideMain});
+  static Future<void> hideNote() => _channel.invokeMethod('hideNote');
   static Future<void> quit() => _channel.invokeMethod('quit');
   static Future<void> startDrag() => _channel.invokeMethod('startDrag');
   static Future<void> setTodoCount(int count) => _channel.invokeMethod('setTodoCount', {'count': count});
