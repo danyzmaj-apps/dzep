@@ -30,8 +30,8 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
-/coverage/
+build/
+coverage/
 
 # Symbolication related
 app.*.symbols
@@ -40,9 +40,13 @@ app.*.symbols
 app.*.map.json
 
 # Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+/apps/*/android/app/debug
+/apps/*/android/app/profile
+/apps/*/android/app/release
+# Android release signing: the keystore and its passwords stay out of git
+/apps/dzep-mobile/android/key.properties
+*.jks
+*.keystore
 
 # Widget Preview related
 .widget_preview/
@@ -50,9 +54,9 @@ app.*.map.json
 # FVM Version Cache
 .fvm/
 # Supabase CLI state
-supabase/.temp/
-# Secrets for the CLI and local functions (tool/setup-backend.sh, docs/BUILDING.md)
-supabase/.env
-supabase/.env.local
+/apps/dzep-macos-app/supabase/.temp/
+# Secrets for the CLI and local functions (apps/dzep-macos-app/tool/setup-backend.sh, docs/BUILDING.md)
+/apps/dzep-macos-app/supabase/.env
+/apps/dzep-macos-app/supabase/.env.local
 # Your own signing identity (config/Local.xcconfig.example)
 config/Local.xcconfig

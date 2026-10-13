@@ -2,44 +2,47 @@
 
 How Džep is put together, and why some of it looks the way it does. For what it does and how to set it up, see the [README](../README.md).
 
-The first design mockup is `design/mockup.html`.
+One Dart pub workspace (root `pubspec.yaml`): the Mac app in `apps/dzep-macos-app/`, the iPhone app in `apps/dzep-mobile/`, and what both use in `packages/dzep_core/` (each with its own `lib/` and `test/`). Below, `core/` stands for `packages/dzep_core/`, `mac/` for `apps/dzep-macos-app/` and `mobile/` for `apps/dzep-mobile/`.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `lib/idea.dart` | One row of `ideas`: an idea or a todo (`kind`) |
-| `lib/session.dart` | The connected backend, GitHub sign-in and the user's `IdeaStore` / `ChatStore` (shared) |
-| `lib/backend.dart`, `setup.dart` | Which Supabase project to use: parsing and checking it, setup links, the setup screen |
-| `lib/onboarding/` | First-run setup: the wizard (`flow.dart`, `wizard.dart`), provisioning through the Supabase Management API (`supabase_admin.dart`, `provision.dart`), the Mac's pairing QR (`pair.dart`) and the iPhone's scanner (`scan.dart`) |
-| `lib/logo.dart` | The pocket mark, drawn in Flutter (the app icons come from `tool/make_icon.swift`) |
-| `lib/remind.dart` | Reminders: the `!` parser, how a time reads, which todos should have a notification pending (pure Dart, `test/remind_test.dart`) |
-| `lib/store.dart` | Local JSON cache + Supabase sync (push dirty, pull since cursor, realtime) |
-| `lib/controller.dart`, `popup.dart`, `main_window.dart`, `note_window.dart`, `native.dart` | Mac app |
-| `lib/chat.dart`, `chat_view.dart` | Quick questions: `ChatStore` (synced chats, streaming from `ask`) and the transcript/list/thread widgets (Mac and iPhone) |
-| `lib/kitty.dart` | Mac: kitty's remote control, spoken directly over its unix socket (windows, screen lines, typing, keys, new windows) |
-| `lib/live.dart` | Terminal from iPhone: the protocol and what both sides share (transcript items and their seq/epoch log, questions and the keys that answer them, screen diffs); pure Dart, `test/live_test.dart` |
-| `lib/live_hub.dart` | Mac: the omp sessions reporting over the local API's `/v1/live` WebSocket |
-| `lib/terminal_bridge.dart` | Mac: the iPhone's way in, sessions and kitty screens out on the Realtime topic, its requests in |
-| `lib/terminal_channel.dart` | Mac and iPhone: the private topic, kept joined (a fresh channel and token after any close, refusal or stuck join) |
-| `lib/terminal_remote.dart`, `session_view.dart`, `terminal_view.dart` | iPhone: the remote and its disk cache, an omp session's transcript and composer, the Terminal tab, kitty screens and new sessions |
-| `lib/live_activity.dart` | iPhone: omp sessions as Live Activities (start, local updates, push tokens to the server); Mac and iPhone: a session's state as an activity's (`test/live_activity_test.dart`) |
-| `lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea`, `/todo`, `/note`, pushes and omp's live sessions |
-| `lib/mobile.dart` | iPhone app |
-| `macos/Runner/MainFlutterWindow.swift`, `AppDelegate.swift` | Popup panel, main window and note window on one multi-view engine, menu-bar icon, Carbon hotkey, activation policy, launch at login, reminder notifications, idle time |
-| `ios/Runner/AppDelegate.swift` | The iPhone half of `native.dart`: App Group, reminder notifications, push registration, Live Activities |
-| `ios/DzepPush/` | Notification Service Extension: decrypts pushes |
-| `ios/Runner/AddIdeaIntent.swift` | Siri / Action Button intents (Add Idea, Add Todo) |
-| `ios/DzepWidget/` | WidgetKit extension (Todos, New idea, the omp session Live Activity) |
-| `macos/DzepWidget/` | Mac WidgetKit extension (Todos), sandboxed; its ticks go through the running app |
-| `ios/Shared/DzepShared.swift` | App Group storage + `device` function client (app and widget; the Mac's app and widget compile it too) |
-| `ios/Shared/OmpActivity.swift` | The omp session Live Activity's attributes and state (iPhone app and widget only) |
-| `supabase/` | Migrations and the `ask`, `device`, `pair` and `push` edge functions; `relay` is the publisher's push relay (`tool/deploy-relay.sh`) |
-| `maestro/` | Simulator flows |
-| `config/Dzep.xcconfig` | Team, bundle id and App Group for every Xcode target (`Local.xcconfig` overrides them) |
-| `tool/setup-backend.sh`, `release.sh` | Self-hosting setup; Mac release (DMG, notarization, Sparkle appcast) |
-| `integrations/omp/idea.ts`, `live.ts` | omp extensions: `/idea`, `/todo` and `/note`; the session, live, for the iPhone |
-| `lib/chat_images.dart` | Images in quick questions: preparing (downscale, PNG), paste and pick, the composer strip and transcript thumbnails |
+| `core/lib/idea.dart` | One row of `ideas`: an idea or a todo (`kind`); `parseTitle` for `@project` tokens |
+| `core/lib/session.dart` | The connected backend, GitHub sign-in and the user's `IdeaStore` / `ChatStore` (shared) |
+| `core/lib/account.dart` | Sign-in page, GitHub button, avatar (Mac and iPhone) |
+| `core/lib/backend.dart`, `connect.dart` | Which Supabase project to use: parsing and checking it, setup links, the connect-an-existing-server form |
+| `mac/lib/setup_page.dart`, `mac/lib/onboarding/` | Mac first-run setup: the wizard (`flow.dart`, `wizard.dart`), provisioning through the Supabase Management API (`supabase_admin.dart`, `provision.dart`), the pairing QR (`pair.dart`) |
+| `mobile/lib/setup_page.dart`, `mobile/lib/onboarding/scan.dart` | iPhone first run: scan the Mac's code, or paste a setup link |
+| `core/lib/logo.dart` | The pocket mark, drawn in Flutter (the app icons come from `mac/tool/make_icon.swift`) |
+| `core/lib/remind.dart` | Reminders: the `!` parser, how a time reads, which todos should have a notification pending (pure Dart, `core/test/remind_test.dart`) |
+| `core/lib/store.dart` | Local JSON cache + Supabase sync (push dirty, pull since cursor, realtime) |
+| `core/lib/native.dart` | The platform channel to the Swift side of both apps |
+| `mac/lib/main.dart`, `controller.dart`, `popup.dart`, `main_window.dart`, `note_window.dart` | Mac app |
+| `core/lib/chat.dart`, `chat_view.dart` | Quick questions: `ChatStore` (synced chats, streaming from `ask`) and the transcript/list/thread widgets (Mac and iPhone) |
+| `core/lib/kitty.dart` | Mac: kitty's remote control, spoken directly over its unix socket (windows, screen lines, typing, keys, new windows) |
+| `core/lib/live.dart` | Terminal from iPhone: the protocol and what both sides share (transcript items and their seq/epoch log, questions and the keys that answer them, screen diffs); pure Dart, `core/test/live_test.dart` |
+| `mac/lib/live_hub.dart` | Mac: the omp sessions reporting over the local API's `/v1/live` WebSocket |
+| `mac/lib/terminal_bridge.dart` | Mac: the iPhone's way in, sessions and kitty screens out on the Realtime topic, its requests in |
+| `core/lib/terminal_channel.dart` | Mac and iPhone: the private topic, kept joined (a fresh channel and token after any close, refusal or stuck join) |
+| `core/lib/terminal_remote.dart`, `mobile/lib/session_view.dart`, `terminal_view.dart` | iPhone: the remote and its disk cache, an omp session's transcript and composer, the Terminal tab, kitty screens and new sessions |
+| `core/lib/live_activity.dart` | iPhone: omp sessions as Live Activities (start, local updates, push tokens to the server); Mac and iPhone: a session's state as an activity's (`core/test/live_activity_test.dart`) |
+| `mac/lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea`, `/todo`, `/note`, pushes and omp's live sessions |
+| `mobile/lib/main.dart`, `mobile.dart` | iPhone app |
+| `mac/macos/Runner/MainFlutterWindow.swift`, `AppDelegate.swift` | Popup panel, main window and note window on one multi-view engine, menu-bar icon, Carbon hotkey, activation policy, launch at login, reminder notifications, idle time |
+| `mobile/ios/Runner/AppDelegate.swift` | The iPhone half of `native.dart`: App Group, reminder notifications, push registration, Live Activities |
+| `mobile/ios/DzepPush/` | Notification Service Extension: decrypts pushes |
+| `mobile/ios/Runner/AddIdeaIntent.swift` | Siri / Action Button intents (Add Idea, Add Todo) |
+| `mobile/ios/DzepWidget/` | WidgetKit extension (Todos, New idea, the omp session Live Activity) |
+| `mac/macos/DzepWidget/` | Mac WidgetKit extension (Todos), sandboxed; its ticks go through the running app |
+| `mobile/ios/Shared/DzepShared.swift` | App Group storage + `device` function client (app and widget; the Mac's app and widget compile it too, from this path) |
+| `mobile/ios/Shared/OmpActivity.swift` | The omp session Live Activity's attributes and state (iPhone app and widget only) |
+| `mac/supabase/` | Migrations and the `ask`, `device`, `pair` and `push` edge functions (bundled as Mac app assets for the setup wizard); `relay` is the publisher's push relay (`mac/tool/deploy-relay.sh`) |
+| `mobile/maestro/` | Simulator flows |
+| `config/Dzep.xcconfig` | Team, bundle id and App Group for every Xcode target of both apps (`Local.xcconfig` overrides them) |
+| `mac/tool/setup-backend.sh`, `release.sh` | Self-hosting setup; Mac release (DMG, notarization, Sparkle appcast) |
+| `mac/integrations/omp/idea.ts`, `live.ts` | omp extensions: `/idea`, `/todo` and `/note`; the session, live, for the iPhone |
+| `core/lib/chat_images.dart` | Images in quick questions: preparing (downscale, PNG), paste and pick, the composer strip and transcript thumbnails |
 
 ## Backend
 

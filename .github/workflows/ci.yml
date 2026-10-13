@@ -8,6 +8,10 @@ on:
 jobs:
   dart:
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        member: [packages/dzep_core, apps/dzep-macos-app, apps/dzep-mobile]
     steps:
       - uses: actions/checkout@v4
       - id: fvm
@@ -17,9 +21,12 @@ jobs:
           flutter-version: ${{ steps.fvm.outputs.flutter }}
           cache: true
       - run: flutter pub get
-      - run: dart format -l 120 --set-exit-if-changed lib test
-      - run: flutter analyze
-      - run: flutter test
+      - working-directory: ${{ matrix.member }}
+        run: dart format -l 120 --set-exit-if-changed lib test
+      - working-directory: ${{ matrix.member }}
+        run: flutter analyze
+      - working-directory: ${{ matrix.member }}
+        run: flutter test
 
   functions:
     runs-on: ubuntu-latest
@@ -28,10 +35,13 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - run: deno check supabase/functions/*/index.ts
+      - run: deno check apps/dzep-macos-app/supabase/functions/*/index.ts
 
   migrations:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dzep-macos-app
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1

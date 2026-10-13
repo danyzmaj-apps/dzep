@@ -1,0 +1,25 @@
+name: dzep_core
+description: "Džep: the code the Mac app and the iPhone app share (sync, sessions, chat, the terminal protocol, UI pieces)."
+publish_to: 'none'
+version: 0.2.0
+resolution: workspace
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  app_links: ^7.2.2
+  crypto: ^3.0.7
+  flutter:
+    sdk: flutter
+  flutter_markdown_plus: ^1.0.12
+  image_picker: ^1.2.4
+  pasteboard: ^0.5.0
+  path_provider: ^2.1.6
+  supabase_flutter: ^2.18.0
+  url_launcher: ^6.3.3
+  uuid: ^4.6.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^11.0.0
