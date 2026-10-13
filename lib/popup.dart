@@ -25,8 +25,8 @@ typedef _Field = ({TextEditingController text, FocusNode focus});
 
 /// The ⇧⌘Space panel. It opens straight into the mode it was last used in,
 /// field focused: an idea, a todo, a note or a quick question (⌘1–⌘4 or the
-/// strip at the top switch; ⌘5 opens the app, ⌘6 a note window). ↵ saves and
-/// gets out of the way.
+/// strip at the top switch; ⌘5 opens the app). ↵ saves and gets out of the
+/// way; in Note mode ⌘P puts the note in its own window.
 class Popup extends StatefulWidget {
   const Popup({required this.app, super.key});
   final AppController app;
@@ -35,7 +35,7 @@ class Popup extends StatefulWidget {
   State<Popup> createState() => _PopupState();
 }
 
-class _PopupState extends State<Popup> {
+class _PopupState extends State<Popup> with WidgetsBindingObserver {
   final _title = TextEditingController();
   final _notes = TextEditingController();
   late final FocusNode _titleFocus = FocusNode(onKeyEvent: _onTitleKey);
@@ -72,6 +72,7 @@ class _PopupState extends State<Popup> {
     _notesFocus.addListener(() => setState(() {}));
     app.addListener(_onApp);
     HardwareKeyboard.instance.addHandler(_onAnyKey);
+    WidgetsBinding.instance.addObserver(this);
     _onApp();
   }
 
@@ -79,6 +80,7 @@ class _PopupState extends State<Popup> {
   void dispose() {
     app.removeListener(_onApp);
     HardwareKeyboard.instance.removeHandler(_onAnyKey);
+    WidgetsBinding.instance.removeObserver(this);
     _title.dispose();
     _notes.dispose();
     _titleFocus.dispose();
@@ -89,6 +91,16 @@ class _PopupState extends State<Popup> {
     _noteFocus.dispose();
     _attachments.dispose();
     super.dispose();
+  }
+
+  /// The popup takes the keyboard without making Džep the active app, so as
+  /// it comes on screen the engine reports the app inactive or hidden, and
+  /// Flutter's FocusManager puts the focus away (until a "resumed" that
+  /// never comes): the field had no caret until a key focused it again.
+  /// It takes it back.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && app.popupOpen && store != null && !_fieldFocused) _focusMode();
   }
 
   /// The popup was open when [app] last changed.
@@ -216,10 +228,6 @@ class _PopupState extends State<Popup> {
       unawaited(app.openMain());
       return true;
     }
-    if (_cmd && !_shift && k == LogicalKeyboardKey.digit6 && store != null) {
-      _openNoteWindow();
-      return true;
-    }
     // ⌘W hides it, as it closes any window.
     if (_cmd && !_shift && k == LogicalKeyboardKey.keyW) {
       unawaited(app.closePopup());
@@ -238,7 +246,7 @@ class _PopupState extends State<Popup> {
         _questionFocus.requestFocus();
         return true;
       } else if (k == LogicalKeyboardKey.keyO && _cmd) {
-        unawaited(app.openMain(conversation: chat.current));
+        unawaited(app.openMain(conversation: chat.current, chats: true));
         return true;
       } else if (k == LogicalKeyboardKey.keyC && _cmd && _shift) {
         copyAnswer(context, chat.current?.lastAnswer);
@@ -306,7 +314,8 @@ class _PopupState extends State<Popup> {
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.keyO && _cmd) {
-      unawaited(app.openMain(select: _sel >= 0 ? _shown[_sel].id : null));
+      // The selected item, else this mode's list (Todos or Ideas).
+      unawaited(app.openMain(select: _sel >= 0 ? _shown[_sel].id : null, section: _kind));
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) {
@@ -379,7 +388,11 @@ class _PopupState extends State<Popup> {
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.keyO && _cmd) {
-      unawaited(app.openMain(notes: true));
+      unawaited(app.openMain(section: Kind.note));
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.keyP && _cmd) {
+      _openNoteWindow();
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.escape) {
@@ -399,12 +412,12 @@ class _PopupState extends State<Popup> {
     unawaited(app.closePopup());
   }
 
-  /// ⌘6: a note in its own window, apart from the app (which stays as it
-  /// is). The note being written here goes there; otherwise it's a new one.
+  /// ⌘P: the note in its own window, apart from the app (which stays as it
+  /// is). The note being written goes there; nothing written, a new one.
   void _openNoteWindow() {
     final s = store;
     if (s == null) return;
-    final text = _mode == PopupMode.note ? _note.text.trim() : '';
+    final text = _note.text.trim();
     final note = text.isEmpty ? null : s.addNote(text);
     if (note != null) _note.clear();
     unawaited(app.openNoteWindow(id: note?.id));
@@ -581,7 +594,7 @@ class _PopupState extends State<Popup> {
   );
 
   /// The strip on top: which mode ↵ saves in (⌘1–⌘4), and the way to the app
-  /// (⌘5) and to a note window (⌘6).
+  /// (⌘5).
   Widget _modes() {
     Widget button(IconData icon, String label, int n, {required bool on, required VoidCallback onTap}) => Hoverable(
       onTap: onTap,
@@ -609,23 +622,12 @@ class _PopupState extends State<Popup> {
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
       child: Row(
         children: [
-          // The tabs give way (scroll) before the buttons on the right do,
-          // should the strip ever be too narrow for all of it.
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  tab(PopupMode.idea, Icons.lightbulb_outline, 'Idea', 1),
-                  tab(PopupMode.todo, Icons.check_circle_outline, 'Todo', 2),
-                  tab(PopupMode.note, Icons.sticky_note_2_outlined, 'Note', 3),
-                  tab(PopupMode.ask, Icons.auto_awesome, 'Ask', 4),
-                ],
-              ),
-            ),
-          ),
+          tab(PopupMode.idea, Icons.lightbulb_outline, 'Idea', 1),
+          tab(PopupMode.todo, Icons.check_circle_outline, 'Todo', 2),
+          tab(PopupMode.note, Icons.sticky_note_2_outlined, 'Note', 3),
+          tab(PopupMode.ask, Icons.auto_awesome, 'Ask', 4),
+          const Spacer(),
           button(Icons.open_in_new, 'Open app', 5, on: false, onTap: () => unawaited(app.openMain())),
-          button(Icons.picture_in_picture_alt_outlined, 'Note window', 6, on: false, onTap: _openNoteWindow),
         ],
       ),
     );
@@ -651,6 +653,8 @@ class _PopupState extends State<Popup> {
                 controller: _note,
                 focusNode: _noteFocus,
                 onTapOutside: _keepFocus,
+                // A draft coming back keeps its caret (see the title field).
+                selectAllOnFocus: false,
                 selectionWidthStyle: selectionWidth,
                 minLines: 3,
                 maxLines: 10,
@@ -805,6 +809,7 @@ class _PopupState extends State<Popup> {
                         controller: _notes,
                         focusNode: _notesFocus,
                         onTapOutside: _keepFocus,
+                        selectAllOnFocus: false,
                         selectionWidthStyle: selectionWidth,
                         minLines: 2,
                         maxLines: 8,
@@ -912,6 +917,7 @@ class _PopupState extends State<Popup> {
                         controller: _question,
                         focusNode: _questionFocus,
                         onTapOutside: _keepFocus,
+                        selectAllOnFocus: false,
                         selectionWidthStyle: selectionWidth,
                         minLines: 1,
                         maxLines: 6,
@@ -955,9 +961,9 @@ class _PopupState extends State<Popup> {
           KeyHint('⌘O', 'chats'),
           KeyHint('esc', 'hide'),
         ] else if (_mode == PopupMode.note) ...const [
-          KeyHint('↵', 'newline'),
           KeyHint('⌘↵', 'save'),
           KeyHint('⌘O', 'notes'),
+          KeyHint('⌘P', 'window'),
           KeyHint('esc', 'hide'),
         ] else if (_notesFocus.hasFocus) ...const [
           KeyHint('↵', 'newline'),

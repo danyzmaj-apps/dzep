@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dzep/chat.dart';
+import 'package:dzep/idea.dart';
 import 'package:dzep/kitty.dart';
 import 'package:dzep/live_hub.dart';
 import 'package:dzep/native.dart';
@@ -55,11 +56,16 @@ class AppController extends Session {
   /// Idea the main window should select next (from the popup's list).
   String? pendingSelect;
 
-  /// The main window should show the notes next (popup ⌘O in the note mode).
-  bool pendingNotes = false;
+  /// The list the main window should show next (popup ⌘O: Ideas, Todos or
+  /// Notes, the popup's mode).
+  Kind? pendingSection;
 
   /// Conversation the main window's Chats should show next (popup ⌘O).
   Conversation? pendingChat;
+
+  /// The main window should show Ask next (popup ⌘O in Ask, even with no
+  /// chat to show yet).
+  bool pendingChats = false;
 
   /// The next popup open goes straight to the chat (Continue in popup).
   bool askNext = false;
@@ -227,11 +233,12 @@ class AppController extends Session {
   }
 
   /// Shows the main window; [select] an item, [conversation] a chat, or
-  /// [notes] the notes list.
-  Future<void> openMain({String? select, Conversation? conversation, bool notes = false}) async {
+  /// [section] that kind's list, or [chats] Ask.
+  Future<void> openMain({String? select, Conversation? conversation, Kind? section, bool chats = false}) async {
     if (select != null) pendingSelect = select;
     if (conversation != null) pendingChat = conversation;
-    if (notes) pendingNotes = true;
+    if (chats) pendingChats = true;
+    if (section != null) pendingSection = section;
     if (_popupOpen) await closePopup();
     // Back already: closing the note window leaves it be.
     _mainAfterNote = false;

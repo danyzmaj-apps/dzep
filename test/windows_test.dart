@@ -1,3 +1,4 @@
+import 'package:dzep/controller.dart';
 import 'package:dzep/main_window.dart';
 import 'package:dzep/popup.dart';
 import 'package:flutter/material.dart';
@@ -162,5 +163,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.mainOpen, isFalse);
     expect(app.calls, isNot(contains('showMain')));
+  }, variant: mac);
+
+  testWidgets('⌘O in the popup opens the app on that mode’s list', (tester) async {
+    final app = await pumpWindows(tester);
+    app.fakeStore.addNote('A note');
+    for (final (mode, list) in [(PopupMode.todo, '0 open'), (PopupMode.note, '1 note'), (PopupMode.idea, '0 ideas')]) {
+      app.setPopupMode(mode);
+      await app.openPopup();
+      await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyO);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect((app.popupOpen, app.mainOpen), (false, true));
+      expect(find.textContaining(list, findRichText: true), findsOneWidget, reason: mode.name);
+    }
   }, variant: mac);
 }

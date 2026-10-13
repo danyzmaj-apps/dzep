@@ -23,7 +23,12 @@ class AppDelegate: FlutterAppDelegate {
   }
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
-    super.applicationDidFinishLaunching(notification)
+    // FlutterAppDelegate doesn't implement this (any more): calling super
+    // unguarded threw, and none of the menu setup below ran (no File menu,
+    // no ⌘, Settings, no Check for Updates).
+    if FlutterAppDelegate.instancesRespond(to: #selector(NSApplicationDelegate.applicationDidFinishLaunching(_:))) {
+      super.applicationDidFinishLaunching(notification)
+    }
     // The template menu has no Close item; ⌘W should close the main window.
     let file = NSMenuItem()
     file.submenu = NSMenu(title: "File")
