@@ -118,10 +118,11 @@ class Backend {
             'on under Authentication → Sign In / Providers (docs/SELF_HOSTING.md).';
       }
       return null;
-    } on SocketException {
-      return "Couldn't reach $host. Check the URL and your connection.";
     } on HandshakeException {
       return "Couldn't make a secure connection to $host.";
+    } on IOException {
+      // Refused, reset, or closed mid-answer (HttpException), e.g. a captive portal or a proxy.
+      return "Couldn't reach $host. Check the URL and your connection.";
     } on TimeoutException {
       return '$host took too long to answer.';
     } on FormatException {
