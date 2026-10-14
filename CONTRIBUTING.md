@@ -6,7 +6,7 @@ Thanks for helping. Džep is small and opinionated, so for anything bigger than 
 
 [docs/BUILDING.md](docs/BUILDING.md) covers tools, your own signing identity (`config/Local.xcconfig`, Android `key.properties`) and a local backend. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the pieces fit, and why some of them look odd.
 
-The repo is a pub workspace: `apps/dzep-macos-app` (Mac app and the backend), `apps/dzep-mobile` (iPhone and Android), `packages/dzep_core` (shared). Code both apps use belongs in `dzep_core`. A change to the phone app should work on both iPhone and Android; if one platform can't do it (like Siri), say so in the PR.
+The repo is a pub workspace: `apps/dzep-macos-app` (Mac app and the backend), `apps/dzep-mobile` (iPhone and Android), `packages/dzep_core` (shared). Code both apps use belongs in `dzep_core`. A change to the phone app should work on both iPhone and Android; if one platform can't do it, say so in the PR.
 
 ## Pull requests
 

@@ -25,7 +25,6 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		9F92D8EF6D7B663C16E4C9B1 /* DzepShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F282ABC65C3976B71350A6FA /* DzepShared.swift */; };
 		A22F99F5DB1A0C87B20A98C0 /* DzepShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F282ABC65C3976B71350A6FA /* DzepShared.swift */; };
-		CD6FCE96FA3B4AF969E38283 /* AddIdeaIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73FC57645BB2B64188AE6591 /* AddIdeaIntent.swift */; };
 		D4D28887640318B87505ACB3 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
 		EE55FF83F5BEB2B72B07637F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
 		F1A2B3C4D5E6F7A8B9C0D1F1 /* OmpActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */; };
@@ -101,7 +100,6 @@
 		47DE70D6EBC39F343AEFC816 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		5E38265C13E6F0BF70250A40 /* DzepWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DzepWidget.swift; sourceTree = "<group>"; };
 		6B8990F53146E8DBFC4E1462 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
-		73FC57645BB2B64188AE6591 /* AddIdeaIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AddIdeaIntent.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		770E96D4F039B2FC6387DC94 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -270,7 +268,6 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
-				73FC57645BB2B64188AE6591 /* AddIdeaIntent.swift */,
 				2E1CFE68F9BBE39C089CA7F8 /* Runner.entitlements */,
 			);
 			path = Runner;
@@ -577,7 +574,6 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
-				CD6FCE96FA3B4AF969E38283 /* AddIdeaIntent.swift in Sources */,
 				A22F99F5DB1A0C87B20A98C0 /* DzepShared.swift in Sources */,
 				F1A2B3C4D5E6F7A8B9C0D1F1 /* OmpActivity.swift in Sources */,
 			);

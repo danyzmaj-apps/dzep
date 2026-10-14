@@ -20,18 +20,13 @@ import 'package:dzep_core/ui.dart';
 import 'package:dzep_mobile/setup_page.dart';
 import 'package:dzep_mobile/terminal_view.dart';
 import 'package:flutter/cupertino.dart' show CupertinoDatePicker;
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Siri and the Action Button add to Džep on iOS (ios/Runner/AddIdeaIntent.swift);
-/// Android has no voice-assistant integration.
-bool get _siri => defaultTargetPlatform == TargetPlatform.iOS;
-
 /// The phone side of [Session]: registers a device token for the Todos
-/// widget (and the iPhone's Siri / Action Button intents), keeps the
+/// widget, keeps the
 /// widget's todo snapshot current, and replays what those queued while
 /// offline. All of it travels through what the native side shares with them
 /// (ios/Shared/DzepShared.swift, android/…/DzepShared.kt).
@@ -76,7 +71,7 @@ class MobileSession extends Session {
       await _prefs.setString(_tokenUserKey, store.userId);
       await Native.setSharedToken(token);
     } on Object catch (e) {
-      // The widget (and Siri) can't save directly until this works; retried on next launch.
+      // The widget can't save directly until this works; retried on next launch.
       debugPrint('Džep: device token registration failed: $e');
     }
   }
@@ -592,7 +587,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _query.isNotEmpty
             ? 'No matches.'
             : !_filter.project
-            ? 'No ideas yet.\nTap +${_siri ? ' or say “Hey Siri, add an idea to Džep”' : ' to add one'}.'
+            ? 'No ideas yet.\nTap + to add one.'
             : 'Nothing here yet.',
       );
     }
@@ -608,11 +603,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _notesList() {
     final notes = store.notes.where(_searchHit).toList();
     if (notes.isEmpty) {
-      return _empty(
-        _query.isNotEmpty
-            ? 'No matches.'
-            : 'No notes yet.\nTap ✎${_siri ? ' or say “Hey Siri, add a note to Džep”' : ' to write one'}.',
-      );
+      return _empty(_query.isNotEmpty ? 'No matches.' : 'No notes yet.\nTap ✎ to write one.');
     }
     return ListView.builder(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -682,11 +673,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final open = store.openTodos.where(_searchHit).toList();
     final done = store.doneTodos.where(_searchHit).toList();
     if (open.isEmpty && done.isEmpty) {
-      return _empty(
-        _query.isNotEmpty
-            ? 'No matches.'
-            : 'All done 🎉\nTap +${_siri ? ' or say “Hey Siri, add a todo to Džep”' : ' to add one'}.',
-      );
+      return _empty(_query.isNotEmpty ? 'No matches.' : 'All done 🎉\nTap + to add one.');
     }
     return ListView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -909,13 +896,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             const SizedBox(height: 18),
             const Text('Capture without opening the app', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
-            Text(
-              _siri
-                  ? '• Say “Hey Siri, add a todo to Džep” (or “an idea”).\n'
-                        '• Action Button: Settings → Action Button → Shortcut → Džep → Add Todo.\n'
-                        '• Widgets: “Todos” ticks todos off from the Home Screen; “New idea” opens the add field.'
-                  : '• Widgets: “Todos” ticks todos off from the home screen; “New idea” opens the add field.',
-              style: const TextStyle(color: C.dim, height: 1.6),
+            const Text(
+              '• Widgets: “Todos” ticks todos off from the home screen; “New idea” opens the add field.',
+              style: TextStyle(color: C.dim, height: 1.6),
             ),
             const SizedBox(height: 18),
             OutlinedButton(

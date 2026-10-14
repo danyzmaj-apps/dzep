@@ -64,7 +64,7 @@ DZEP_CLI_JSON=/tmp/dzep-e2e/cli.json DZEP_KITTY_DIR=/tmp/dzep-e2e fvm flutter ru
 
 ## iPhone
 
-Install it on your own phone from source until the TestFlight build is out. It needs a **paid** Apple Developer account, because its widgets and Siri intents share data through an App Group.
+Install it on your own phone from source until the TestFlight build is out. It needs a **paid** Apple Developer account, because its widgets share data through an App Group.
 
 ```sh
 cd apps/dzep-mobile

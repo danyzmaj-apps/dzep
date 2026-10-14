@@ -10,7 +10,7 @@ DZEP_TEAM = 5SSZ6TYMF5
 // The app's bundle id; the widgets are <this>.DzepWidget.
 DZEP_BUNDLE_ID = com.danyzmaj.dzep
 
-// The App Group the app shares with its widget and Siri intents. Must start
+// The App Group the app shares with its widget extension. Must start
 // with `group.` and be registered to your team.
 DZEP_APP_GROUP = group.com.danyzmaj.dzep
 

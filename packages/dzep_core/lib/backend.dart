@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 /// setup link (`dzep://setup?url=…&key=…`, printed by tool/setup-backend.sh);
 /// a phone learns it only from the Mac's code, a setup link with a sign-in
 /// code in it (`…&code=…`, functions/pair). Kept in the App Group, where the
-/// iPhone's Siri intents and widget read it too
+/// iPhone's widget reads it too
 /// (apps/dzep-mobile/ios/Shared/DzepShared.swift).
 @immutable
 class Backend {

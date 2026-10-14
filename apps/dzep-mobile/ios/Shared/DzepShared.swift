@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// What the app, its Siri intents and the widget extension share through the
+/// What the app and the widget extension share through the
 /// App Group: the backend (the Supabase project the user connected, written
 /// by packages/dzep_core/lib/backend.dart), the device token (written by lib/mobile.dart at
 /// sign-in), a snapshot of open todos for the widget, and actions queued

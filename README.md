@@ -7,7 +7,7 @@
 
 *Džep* (Croatian, "pocket") is pronounced roughly "jep".
 
-- **Capture anywhere.** A popup on the Mac, Siri and widgets on the iPhone, widgets on Android, `/idea`, `/do` and `/note` in your coding agent.
+- **Capture anywhere.** A popup on the Mac, widgets on iPhone and Android, `/idea`, `/do` and `/note` in your coding agent.
 - **Todos with reminders.** End a todo with `!15:00` or `!tomorrow` and every device reminds you; tick it off on one and it's done on all.
 - **Notes.** Free text, saved as you type; on the Mac one can float in its own window.
 - **Ask.** Short streamed chats with any OpenAI-compatible AI, with images. Chats sync between devices; the AI key stays on your server.
@@ -116,7 +116,6 @@ For example `call bank !15:00`. Phones get reminders by push, so one set on the 
 
 - **Tabs:** Todos, Ideas, Notes, Ask and Terminal. Swipe a row right to tick a todo off, left to delete.
 - **Widgets:** **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field), on iPhone and Android. The Mac has a **Todos** widget too (desktop or Notification Center).
-- **Siri (iPhone):** "Hey Siri, add a todo to Džep", "add an idea to Džep" or "add a note to Džep" saves without opening the app. The Action Button can do it too: Settings → Action Button → Shortcut → Džep. Android has no voice-assistant integration.
 - **Account:** the avatar at the top opens Sign out and Delete account.
 
 ### Ask

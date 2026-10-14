@@ -41,8 +41,8 @@ import WidgetKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    // The iPhone half of packages/dzep_core/lib/native.dart: device name, the App Group the Siri
-    // intents and the widget read (ios/Shared/DzepShared.swift), reminders.
+    // The iPhone half of packages/dzep_core/lib/native.dart: device name, the App Group the
+    // widget reads (ios/Shared/DzepShared.swift), reminders.
     let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "DzepNative")!
     let channel = FlutterMethodChannel(name: "dzep/native", binaryMessenger: registrar.messenger())
     reminders.channel = channel
@@ -76,7 +76,7 @@ import WidgetKit
         }
         result(nil)
       case "takePending":
-        // Actions Siri or the widget couldn't send; the app replays them.
+        // Actions the widget or a notification couldn't send; the app replays them.
         let pending = DzepShared.defaults.stringArray(forKey: "pending") ?? []
         DzepShared.defaults.removeObject(forKey: "pending")
         result(pending)
