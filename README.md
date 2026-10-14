@@ -81,10 +81,11 @@ For App Store or Google Play review, **Settings → Reviewer access → Codes…
 | ↵ | Save (Idea, Todo); send the question (Ask) |
 | ⌘↵ | Save and stay for the next one (Idea, Todo); save the note (Note) |
 | ⇥ | Add a description, or complete an `@project` (Idea, Todo) |
-| ↓ ↑ | Browse the list below the field; ↵ opens the selected item |
+| ↓ ↑ | Browse the list below the field: ideas, todos, **RECENT NOTES**, or your recent chats in Ask. In Note and Ask ↓ goes to the list from the field's last line; ↑ past the top or Esc goes back to the field |
+| ↵ on a selected row | Open the idea, todo or note in the main window; in Ask, continue that chat in the popup |
 | ⌘D | Tick off the selected todo |
-| ⌘O | Open the app on the selected item (or on Notes, or on the chat) |
-| ⌘P | Float the note in its own window (Note) |
+| ⌘O | Open the app on the selected item or chat (or on Notes, or on the current chat) |
+| ⌘P | Float the note in its own window: the selected one, else the one being written (Note) |
 | ⌘N | New chat (Ask) |
 | ⇧⌘C | Copy the last answer (Ask) |
 | Esc, ⌘W | Hide the popup |

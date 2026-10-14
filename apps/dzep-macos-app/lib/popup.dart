@@ -50,9 +50,19 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
 
   /// What ↵ saves in the idea and todo modes.
   Kind get _kind => _mode == PopupMode.todo ? Kind.todo : Kind.idea;
+
+  /// The row ↑/↓ have picked in the list under the field (the ideas or
+  /// todos, the recent notes, the recent chats); -1 while typing.
   int _sel = -1;
   List<Idea> _shown = const [];
   int _session = -1;
+
+  /// The lists Note and Ask browse.
+  List<Idea> get _recentNotes => store?.notes.take(5).toList() ?? const [];
+  List<Conversation> get _recentChats => app.chats?.conversations.take(7).toList() ?? const [];
+
+  /// The row of [list] ↑/↓ have picked, if any.
+  T? _picked<T>(List<T> list) => _sel >= 0 && _sel < list.length ? list[_sel] : null;
 
   AppController get app => widget.app;
   IdeaStore? get store => app.store;
@@ -60,7 +70,10 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _title.addListener(() => setState(() => _sel = -1));
+    // Typing (or moving the caret) hands the keys back to the field.
+    for (final text in [_title, _note, _question]) {
+      text.addListener(() => setState(() => _sel = -1));
+    }
     _notesFocus.addListener(() => setState(() {}));
     app.addListener(_onApp);
     HardwareKeyboard.instance.addHandler(_onAnyKey);
@@ -229,16 +242,22 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
     final chat = app.chats;
     if (_asking && chat != null) {
       if (k == LogicalKeyboardKey.escape) {
-        unawaited(app.closePopup());
+        // Browsing the chats, Esc goes back to the one shown.
+        if (_sel >= 0) {
+          setState(() => _sel = -1);
+        } else {
+          unawaited(app.closePopup());
+        }
         return true;
       } else if (k == LogicalKeyboardKey.keyN && _cmd) {
         chat.newChat();
         _question.clear();
         _attachments.take();
+        setState(() => _sel = -1);
         _questionFocus.requestFocus();
         return true;
       } else if (k == LogicalKeyboardKey.keyO && _cmd) {
-        unawaited(app.openMain(conversation: chat.current, chats: true));
+        unawaited(app.openMain(conversation: _picked(_recentChats) ?? chat.current, chats: true));
         return true;
       } else if (k == LogicalKeyboardKey.keyC && _cmd && _shift) {
         copyAnswer(context, chat.current?.lastAnswer);
@@ -296,6 +315,35 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
   static bool _printable(String? ch) =>
       ch != null && ch.isNotEmpty && ch.runes.every((r) => r >= 0x20 && r != 0x7f && (r < 0xF700 || r > 0xF8FF));
 
+  /// The list under the field, by keyboard: ↓ goes into it (only when
+  /// [fromField] says ↓ has nowhere left to go in the field), ↑/↓ move, and ↑
+  /// past the top or Esc come back to the field. Null: not a key of the list.
+  KeyEventResult? _browse(LogicalKeyboardKey k, int count, {bool Function()? fromField}) {
+    if (k == LogicalKeyboardKey.arrowDown && count > 0 && (_sel >= 0 || (fromField?.call() ?? true))) {
+      setState(() => _sel = (_sel + 1).clamp(0, count - 1));
+      return KeyEventResult.handled;
+    }
+    if ((k == LogicalKeyboardKey.arrowUp || k == LogicalKeyboardKey.escape) && _sel >= 0) {
+      setState(() => _sel = k == LogicalKeyboardKey.escape ? -1 : _sel - 1);
+      return KeyEventResult.handled;
+    }
+    return null;
+  }
+
+  /// The caret is on [field]'s last line, as laid out (a wrapped line counts
+  /// as lines): a multi-line field's ↓ only goes on to the list from there.
+  static bool _onLastLine(_Field field) {
+    final v = field.text.value;
+    final at = v.selection.isValid ? v.selection.extentOffset : v.text.length;
+    if (at >= v.text.length) return true;
+    if (v.text.substring(at).contains('\n')) return false;
+    // No new line below; a wrapped line may still go on below the caret.
+    final editable = field.focus.context?.findAncestorStateOfType<EditableTextState>()?.renderEditable;
+    if (editable == null || !editable.hasSize) return true;
+    final line = editable.getLineAtOffset(TextPosition(offset: at));
+    return !line.isValid || line.end >= v.text.length;
+  }
+
   KeyEventResult _onTitleKey(FocusNode _, KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
     final k = e.logicalKey;
@@ -323,20 +371,9 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
       }
       return KeyEventResult.handled;
     }
-    if (k == LogicalKeyboardKey.arrowDown && _shown.isNotEmpty) {
-      setState(() => _sel = (_sel + 1).clamp(0, _shown.length - 1));
-      return KeyEventResult.handled;
-    }
-    if (k == LogicalKeyboardKey.arrowUp && _sel >= 0) {
-      setState(() => _sel--);
-      return KeyEventResult.handled;
-    }
+    if (_browse(k, _shown.length) case final done?) return done;
     if (k == LogicalKeyboardKey.escape) {
-      if (_sel >= 0) {
-        setState(() => _sel = -1);
-      } else {
-        unawaited(app.closePopup());
-      }
+      unawaited(app.closePopup());
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -365,33 +402,51 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
   KeyEventResult _onQuestionKey(FocusNode _, KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
     final k = e.logicalKey;
+    final chat = app.chats;
     if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && !_shift) {
+      // A picked chat goes on in the popup; else the question is asked.
+      if (_picked(_recentChats) case final c?) {
+        _continueChat(c);
+        return KeyEventResult.handled;
+      }
       final text = _question.text;
-      final chat = app.chats;
       if (chat != null && (text.trim().isNotEmpty || !_attachments.isEmpty) && !chat.busy) {
         _question.clear();
         unawaited(chat.send(text, images: _attachments.take()));
       }
       return KeyEventResult.handled;
     }
-    return KeyEventResult.ignored;
+    final question = (text: _question, focus: _questionFocus);
+    return _browse(k, _recentChats.length, fromField: () => _onLastLine(question)) ?? KeyEventResult.ignored;
   }
 
   KeyEventResult _onNoteKey(FocusNode _, KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
     final k = e.logicalKey;
+    final picked = _picked(_recentNotes);
     if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && _cmd) {
       _saveNote();
       return KeyEventResult.handled;
     }
+    // A picked note opens as a click on it does: in the main window.
+    if ((k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) && picked != null) {
+      unawaited(app.openMain(select: picked.id));
+      return KeyEventResult.handled;
+    }
     if (k == LogicalKeyboardKey.keyO && _cmd) {
-      unawaited(app.openMain(section: Kind.note));
+      unawaited(picked != null ? app.openMain(select: picked.id) : app.openMain(section: Kind.note));
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.keyP && _cmd) {
-      _openNoteWindow();
+      if (picked != null) {
+        unawaited(app.openNoteWindow(id: picked.id));
+      } else {
+        _openNoteWindow();
+      }
       return KeyEventResult.handled;
     }
+    final note = (text: _note, focus: _noteFocus);
+    if (_browse(k, _recentNotes.length, fromField: () => _onLastLine(note)) case final done?) return done;
     if (k == LogicalKeyboardKey.escape) {
       unawaited(app.closePopup());
       return KeyEventResult.handled;
@@ -418,6 +473,13 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
     final note = text.isEmpty ? null : s.addNote(text);
     if (note != null) _note.clear();
     unawaited(app.openNoteWindow(id: note?.id));
+  }
+
+  /// [c] goes on in the popup, its composer focused.
+  void _continueChat(Conversation c) {
+    app.chats?.resume(c);
+    setState(() => _sel = -1);
+    _questionFocus.requestFocus();
   }
 
   /// Tab right after `@pro` completes it to a known project.
@@ -630,10 +692,27 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
     );
   }
 
+  /// The heading of a list under the field.
+  static Widget _section(String label) => Padding(
+    padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
+    child: Text(label, style: const TextStyle(fontSize: 11, letterSpacing: .6, color: C.dim)),
+  );
+
+  /// Row [k] of the list under the field, highlighted while ↑/↓ have it.
+  Widget _row(int k, {required VoidCallback onTap, required List<Widget> children}) => Hoverable(
+    onTap: onTap,
+    builder: (hover) => Container(
+      color: k == _sel ? C.sel : (hover ? C.hover : null),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
+      child: Row(children: children),
+    ),
+  );
+
   /// A note: one free text field (↵ is a new line, ⌘↵ saves); the recent
-  /// notes below open in the main window.
+  /// notes below (↓ from the field's last line) open in the main window.
   List<Widget> _notePane(IdeaStore s) {
-    final recent = s.notes.take(5).toList();
+    final recent = _recentNotes;
+    if (_sel >= recent.length) _sel = recent.length - 1;
     return [
       Padding(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
@@ -675,33 +754,25 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(18, 8, 18, 4),
-                child: Text('RECENT NOTES', style: TextStyle(fontSize: 11, letterSpacing: .6, color: C.dim)),
-              ),
-              for (final n in recent)
-                Hoverable(
+              _section('RECENT NOTES'),
+              for (final (k, n) in recent.indexed)
+                _row(
+                  k,
                   onTap: () => unawaited(app.openMain(select: n.id)),
-                  builder: (hover) => Container(
-                    color: hover ? C.hover : null,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.notes, size: 13, color: C.dim),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            n.title.isEmpty ? 'Empty note' : n.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Text(stamp(n.updatedAt), style: const TextStyle(fontSize: 11, color: C.dim)),
-                      ],
+                  children: [
+                    const Icon(Icons.notes, size: 13, color: C.dim),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        n.title.isEmpty ? 'Empty note' : n.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Text(stamp(n.updatedAt), style: const TextStyle(fontSize: 11, color: C.dim)),
+                  ],
                 ),
             ],
           ),
@@ -729,40 +800,30 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
         ? const <String>[]
         : s.projects.where((p) => p.startsWith(completing.group(1)!)).take(4).toList();
 
-    Widget section(String label) => Padding(
-      padding: const EdgeInsets.fromLTRB(18, 8, 18, 4),
-      child: Text(label, style: const TextStyle(fontSize: 11, letterSpacing: .6, color: C.dim)),
-    );
-
-    Widget row(int k, Idea i) => Hoverable(
+    Widget row(int k, Idea i) => _row(
+      k,
       onTap: () => unawaited(app.openMain(select: i.id)),
-      builder: (hover) => Container(
-        color: k == _sel ? C.sel : (hover ? C.hover : null),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-        child: Row(
-          children: [
-            if (i.isTodo)
-              GestureDetector(
-                onTap: () => _toggleTodo(i),
-                child: TodoCheck(done: i.done, size: 14),
-              )
-            else
-              const Dot(C.dim),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text.rich(
-                highlight(i.title, words.join(' '), const TextStyle(fontSize: 13, color: C.text)),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (i.project.isNotEmpty) ...[const SizedBox(width: 8), ProjectChip(i.project)],
-            if (i.remindAt case final at? when !i.done) ...[const SizedBox(width: 8), ReminderChip(at)],
-            const SizedBox(width: 10),
-            Text(stamp(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim)),
-          ],
+      children: [
+        if (i.isTodo)
+          GestureDetector(
+            onTap: () => _toggleTodo(i),
+            child: TodoCheck(done: i.done, size: 14),
+          )
+        else
+          const Dot(C.dim),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text.rich(
+            highlight(i.title, words.join(' '), const TextStyle(fontSize: 13, color: C.text)),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
+        if (i.project.isNotEmpty) ...[const SizedBox(width: 8), ProjectChip(i.project)],
+        if (i.remindAt case final at? when !i.done) ...[const SizedBox(width: 8), ReminderChip(at)],
+        const SizedBox(width: 10),
+        Text(stamp(i.createdAt), style: const TextStyle(fontSize: 11, color: C.dim)),
+      ],
     );
 
     return [
@@ -849,7 +910,7 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
           padding: const EdgeInsets.only(bottom: 6),
           children: [
             if (todos.isNotEmpty || todoMode)
-              section(todoMode && words.isNotEmpty ? '${todos.length} SIMILAR TODOS' : 'OPEN TODOS'),
+              _section(todoMode && words.isNotEmpty ? '${todos.length} SIMILAR TODOS' : 'OPEN TODOS'),
             if (todoMode && todos.isEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(18, 8, 18, 10),
@@ -860,7 +921,7 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
               ),
             for (final (k, i) in todos.indexed) row(k, i),
             if (!todoMode) ...[
-              section(words.isEmpty ? 'RECENT IDEAS' : '${ideas.length} SIMILAR'),
+              _section(words.isEmpty ? 'RECENT IDEAS' : '${ideas.length} SIMILAR'),
               if (ideas.isEmpty)
                 const Padding(
                   padding: EdgeInsets.fromLTRB(18, 8, 18, 10),
@@ -877,11 +938,14 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
   /// The quick-question chat: the conversation above, the question field
   /// below. It continues where it was left; ⌘N starts a new one and the old
   /// one stays in the main window's Quick questions (and on the phone).
+  /// ↓ from the field's last line lists the recent chats to go on with one.
   /// With no AI connected, the field gives way to the way to connect one.
   Widget _askPane(ChatStore chat) => ListenableBuilder(
     listenable: chat,
     builder: (context, _) {
       final c = chat.current;
+      final recent = _recentChats;
+      if (_sel >= recent.length) _sel = recent.length - 1;
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -938,6 +1002,38 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
                 ],
               ),
             ),
+          if (_sel >= 0 && !chat.aiMissing)
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: C.line)),
+              ),
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _section('RECENT CHATS'),
+                  for (final (k, r) in recent.indexed)
+                    _row(
+                      k,
+                      onTap: () => _continueChat(r),
+                      children: [
+                        Icon(Icons.auto_awesome, size: 12, color: r == c ? C.accent : C.dim2),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            r.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(stamp(r.updatedAt), style: const TextStyle(fontSize: 11, color: C.dim)),
+                      ],
+                    ),
+                ],
+              ),
+            ),
         ],
       );
     },
@@ -964,18 +1060,29 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
             builder: (_, _) => Row(
               children: app.chats!.aiMissing
                   ? const [KeyHint('↵', 'connect AI'), KeyHint('⌘O', 'chats'), KeyHint('esc', 'hide')]
+                  : _sel >= 0
+                  ? const [
+                      KeyHint('↵', 'continue'),
+                      KeyHint('⌘N', 'new chat'),
+                      KeyHint('⌘O', 'open'),
+                      KeyHint('esc', 'back'),
+                    ]
                   : const [
                       KeyHint('↵', 'ask'),
                       KeyHint('⇧↵', 'newline'),
+                      KeyHint('↓', 'chats'),
                       KeyHint('⌘N', 'new chat'),
-                      KeyHint('⌘O', 'chats'),
                       KeyHint('esc', 'hide'),
                     ],
             ),
           )
-        else if (_mode == PopupMode.note) ...const [
+        else if (_mode == PopupMode.note && _sel >= 0) ...const [
+          KeyHint('↵', 'open'),
+          KeyHint('⌘P', 'window'),
+          KeyHint('esc', 'back'),
+        ] else if (_mode == PopupMode.note) ...const [
           KeyHint('⌘↵', 'save'),
-          KeyHint('⌘O', 'notes'),
+          KeyHint('↓', 'browse'),
           KeyHint('⌘P', 'window'),
           KeyHint('esc', 'hide'),
         ] else if (_notesFocus.hasFocus) ...const [

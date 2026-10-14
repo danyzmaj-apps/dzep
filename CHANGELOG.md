@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Mac popup, browse notes and chats by keyboard**: in Note mode ↓ from the field's last line moves into **RECENT NOTES** (↑/↓ move, ↵ or ⌘O opens the note in the main window, ⌘P in the note window, Esc or ↑ past the top goes back to the field). In Ask mode ↓ from the question's last line lists your recent chats, newest first; ↵ continues the selected one in the popup, ⌘O opens it in the main window, Esc or ↑ past the top goes back to the chat you were on.
+
 ## 0.3.0
 
 The first release on GitHub Releases; it also carries everything listed under 0.2.0. **Backend:** update your server: re-run `apps/dzep-macos-app/tool/setup-backend.sh`, or the Mac's setup wizard on the same project (new migrations, `ask`, `pair` and `push` changed).
