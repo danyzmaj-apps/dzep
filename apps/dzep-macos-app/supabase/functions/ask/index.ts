@@ -119,7 +119,9 @@ function describe(status: number, body: string) {
   if (status === 402) return `${PROVIDER}: insufficient balance.`;
   if (status === 404) return `${PROVIDER} doesn't know the model "${MODEL}" (secret AI_MODEL).`;
   if (status === 429) return `${PROVIDER} is rate-limiting requests. Try again in a moment.`;
-  return `${PROVIDER} error ${status}${message ? `: ${message.slice(0, 300)}` : ""}`;
+  // Cut between characters: half of one isn't valid JSON for Postgres, and the answer's error is saved.
+  const cut = message.slice(0, /[\uD800-\uDBFF]/.test(message[299] ?? "") ? 299 : 300);
+  return `${PROVIDER} error ${status}${message ? `: ${cut}` : ""}`;
 }
 
 Deno.serve(async (req) => {

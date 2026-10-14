@@ -105,3 +105,29 @@ Deno.test("nothing without a sign-in or the scheduler's secret", async () => {
   assertEquals((await push(post({ action: "notify", title: "hi" }, { authorization: "Bearer forged" }))).status, 401);
   assertEquals((await push(post({ action: "tick" }, { "x-dzep-cron": "guess" }))).status, 401);
 });
+
+/** A lone surrogate: half a character, which Postgres and the iPhone's JSONDecoder refuse. */
+const halfCharacter = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+Deno.test("a long label or alert is cut between characters, never through one", async () => {
+  network((req) => {
+    const { pathname } = new URL(req.url);
+    if (req.url.startsWith(relayUrl)) return json({ ok: true });
+    if (pathname === "/auth/v1/user") return json(user);
+    if (pathname === "/rest/v1/push_devices" && req.method === "POST") return new Response(null, { status: 201 });
+    if (pathname === "/rest/v1/push_devices") return json([{ token: iphone, key: encodeBase64(phoneKey), platform: "ios" }]);
+    if (pathname === "/rest/v1/push_config") return json({ id: 1 });
+    throw new Error(`unexpected request: ${req.method} ${req.url}`);
+  });
+  const register = { action: "register", token: iphone, key: encodeBase64(phoneKey), label: `a${"😀".repeat(40)}` };
+  assertEquals((await push(post(register, signedIn))).status, 200);
+  const row = JSON.parse(sent.find((r) => r.url.pathname === "/rest/v1/push_devices" && r.method === "POST")!.body);
+  assertEquals(halfCharacter.test(row.label), false, "no half character reaches the database");
+
+  const notify = { action: "notify", title: `a${"😀".repeat(60)}`, body: `a${"😀".repeat(200)}` };
+  assertEquals((await push(post(notify, signedIn))).status, 200);
+  const opened = (await open(phoneKey, toRelay()[0].enc)) as { title: string; body: string };
+  assertEquals(halfCharacter.test(opened.title), false, "the title opens whole on the phone");
+  assertEquals(halfCharacter.test(opened.body), false, "and so does the text");
+  assertEquals(opened.body, `a${"😀".repeat(199)}`);
+});

@@ -35,6 +35,9 @@ const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { au
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
+/** [s] cut to at most [max] UTF-16 units, never through a character: half of one isn't valid JSON for Postgres. */
+const clip = (s: string, max: number) => s.slice(0, /[\uD800-\uDBFF]/.test(s[max - 1] ?? "") ? max - 1 : max);
+
 const phoneLifetimeMs = 10 * 60 * 1000;
 
 // Crockford's base32: no I, L, O or U, so a code read aloud or typed can't be
@@ -175,7 +178,7 @@ Deno.serve(async (req) => {
     if (action === "reviewer") {
       const days = Number.isInteger(body.days) ? body.days : 30;
       if (days < 1 || days > 365) return json(400, { error: "days must be between 1 and 365" });
-      const label = typeof body.label === "string" ? body.label.trim().slice(0, 80) : "";
+      const label = typeof body.label === "string" ? clip(body.label.trim(), 80) : "";
       const expires_at = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
       const { id, code } = await insertCode({
         user_id: await demoUser(),

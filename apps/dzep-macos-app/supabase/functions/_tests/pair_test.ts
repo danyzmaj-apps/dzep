@@ -111,3 +111,23 @@ Deno.test("everything but redeem needs a sign-in", async () => {
   supabase();
   assertEquals((await pair(post({ action: "create" }))).status, 401);
 });
+
+/** A lone surrogate: half a character, which Postgres refuses in JSON. */
+const halfCharacter = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+Deno.test("a long reviewer label is cut between characters, never through one", async () => {
+  network((req) => {
+    const { pathname } = new URL(req.url);
+    if (pathname === "/auth/v1/user") return json(owner);
+    if (pathname === "/rest/v1/rpc/pairing_demo_user") return json(demo.id);
+    if (pathname === "/rest/v1/pairing_codes" && req.method === "POST") return json({ id: "new-code" }, 201);
+    throw new Error(`unexpected request: ${req.method} ${req.url}`);
+  });
+  const res = await pair(
+    post({ action: "reviewer", days: 7, label: `a${"😀".repeat(40)}` }, { authorization: "Bearer owner-token" }),
+  );
+  assertEquals(res.status, 200);
+  const label: string = JSON.parse(sent.find((r) => r.url.pathname === "/rest/v1/pairing_codes")!.body).label;
+  assertEquals(halfCharacter.test(label), false, "no half character reaches the database");
+  assertEquals(label, `a${"😀".repeat(39)}`);
+});
