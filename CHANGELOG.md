@@ -1,16 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+The first release on GitHub Releases; it also carries everything listed under 0.2.0. **Backend:** update your server: re-run `apps/dzep-macos-app/tool/setup-backend.sh`, or the Mac's setup wizard on the same project (new migrations, `ask`, `pair` and `push` changed).
 
 - **Removed: Siri and Action Button shortcuts on iPhone; the widgets stay.** **Backend:** redeploy `device` (`supabase functions deploy device --no-verify-jwt`).
 - **Any terminal, not just kitty**: Terminal from the phone now works with iTerm2, WezTerm, Ghostty, Terminal (macOS's) and tmux too. What a window can do depends on its terminal (kitty, WezTerm and tmux everything; iTerm2 without colors; Ghostty without a screen; Terminal without keys), and the phone shows only what works; with tmux installed, sessions the phone starts in Terminal or Ghostty run in tmux with full control. New windows open without taking the focus: in kitty and Ghostty a session from the phone opens as a tab in the window Džep opened last, and an app that still jumps to the front gets the focus back within about a tenth of a second. The Mac's new **Settings → Terminals** shows each terminal as Ready, Limited or Needs setup, sets kitty up in one click (**Set up…**, then restart kitty) and picks where **New sessions open in**. macOS asks once whether Džep may control iTerm2, Terminal and Ghostty; until you answer, the phone says so instead of waiting.
 - **Mac popup, browse notes and chats by keyboard**: in Note mode ↓ from the field's last line moves into **RECENT NOTES** (↑/↓ move, ↵ or ⌘O opens the note in the main window, ⌘P in the note window, Esc or ↑ past the top goes back to the field). In Ask mode ↓ from the question's last line lists your recent chats, newest first; ↵ continues the selected one in the popup, ⌘O opens it in the main window, Esc or ↑ past the top goes back to the chat you were on.
 - For contributors: a shorter README with screenshots and diagrams; every feature, key and setting is in [docs/USING.md](docs/USING.md). The screenshots are the real screens on made-up data, rendered by `fvm flutter test --tags screenshots --run-skipped` in each app ([docs/BUILDING.md](docs/BUILDING.md#screenshots)).
-
-## 0.3.0
-
-The first release on GitHub Releases; it also carries everything listed under 0.2.0. **Backend:** update your server: re-run `apps/dzep-macos-app/tool/setup-backend.sh`, or the Mac's setup wizard on the same project (new migrations, `ask`, `pair` and `push` changed).
-
 - **Android app**: everything the iPhone app does except Siri. Todos, Ideas, Notes, Ask and Terminal tabs; **Todos** and **New idea** home-screen widgets; reminders with a **Done** action; omp sessions you follow show as an ongoing notification (working, needs you, finished) instead of a Live Activity. Pairs with your server by scanning the Mac's code.
 - **Android push**: reminders, omp notifications and session updates reach Android through Firebase Cloud Messaging, encrypted by your server with a key only that phone has, exactly like the iPhone's. The relay only passes ciphertext on. **Backend:** run `apps/dzep-macos-app/tool/setup-backend.sh` (new migration: a `platform` column on `push_devices` and `activity_tokens`; `push` redeployed); the publisher redeploys `relay` with the Firebase service account.
 - **Phones only pair**: setting up a server is the Mac's job (its wizard or `setup-backend.sh`); the phone app scans the Mac's code (**Settings → Set up phone…**, formerly "Set up iPhone…") or takes it pasted.
