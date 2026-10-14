@@ -43,7 +43,7 @@
 | **iPhone** (iOS 17+) | TestFlight: *link coming soon* |
 | **Android** (8.0+) | Google Play (open testing): *link coming soon* |
 
-> **Coming soon.** The first notarized Mac release and the TestFlight and Google Play links are being prepared. Until then, [build the apps from source](docs/BUILDING.md).
+> **Coming soon:** the TestFlight and Google Play links. Until then, [build the phone app from source](docs/BUILDING.md).
 
 You'll also need a free [Supabase](https://supabase.com) account (it hosts your server) and a [GitHub](https://github.com) account (the Mac signs in to your server with GitHub). Optional: an API key for any OpenAI-compatible AI for Ask; for Terminal from the phone, omp or Claude Code (2.1.287+) and one of the [terminals below](#terminal-from-the-phone).
 
