@@ -5,7 +5,7 @@ import 'dart:math';
 
 import 'package:app_links/app_links.dart';
 import 'package:crypto/crypto.dart';
-import 'package:dzep_core/account.dart';
+import 'package:dzep_core/account.dart' show Avatar;
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/chat_images.dart';
 import 'package:dzep_core/chat_view.dart';
@@ -39,6 +39,10 @@ class MobileSession extends Session {
   MobileSession(this._prefs, super.device);
 
   final SharedPreferences _prefs;
+
+  /// A phone signs in only with a code from the Mac (functions/pair).
+  @override
+  bool get signsInWithGithub => false;
 
   static const _tokenKey = 'dzep_device_token';
   static const _tokenUserKey = 'dzep_device_token_user';
@@ -142,15 +146,14 @@ class MobileApp extends StatelessWidget {
         actionTextColor: Colors.white,
       ),
     ),
+    // No session, no app: only the Mac's code gets a phone in.
     home: ListenableBuilder(
       listenable: session,
       builder: (context, _) {
         final store = session.store;
         if (store == null) {
           return Scaffold(
-            body: SafeArea(
-              child: session.backend == null ? SetupPage(session: session) : SignInPage(session: session),
-            ),
+            body: SafeArea(child: SetupPage(session: session)),
           );
         }
         return HomePage(session: session, store: store);
@@ -894,7 +897,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(widget.session.userName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                      Text('${store.ideas.length} ideas · signed in with GitHub', style: const TextStyle(color: C.dim)),
+                      Text(
+                        '${store.ideas.length} ideas · signed in with your Mac\u2019s code',
+                        style: const TextStyle(color: C.dim),
+                      ),
                     ],
                   ),
                 ),

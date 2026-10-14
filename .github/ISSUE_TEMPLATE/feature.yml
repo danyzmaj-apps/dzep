@@ -1,0 +1,22 @@
+name: Feature request
+description: Something Džep could do, or do better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: What you'd like
+      description: What you want to do, and what's in the way today. A real situation helps more than a solution.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      multiple: true
+      options: [Mac app, iPhone app, Android app, Widget, Siri, Notifications / push, Backend setup, Pairing a phone, Quick questions (AI), Terminal from phone, omp / Claude Code integration]
+  - type: textarea
+    id: else
+    attributes:
+      label: Anything else
+      description: Other apps that do it well, sketches, alternatives you've tried.

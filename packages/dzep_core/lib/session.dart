@@ -14,12 +14,18 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// The connected [Backend], GitHub sign-in and the signed-in user's
-/// [IdeaStore] and [ChatStore]: what the Mac and the phone apps share.
+/// The connected [Backend], signing in (GitHub on the Mac, the Mac's code on
+/// a phone) and the signed-in user's [IdeaStore] and [ChatStore]: what the
+/// Mac and the phone apps share.
 class Session extends ChangeNotifier {
   Session(this.device);
 
   static const _redirect = 'dzep://login-callback';
+
+  /// Whether this device signs in with GitHub (the Mac). A phone doesn't: it
+  /// signs in only with a code from the Mac (functions/pair), so it neither
+  /// needs GitHub on its server nor handles OAuth callbacks.
+  bool get signsInWithGithub => true;
 
   /// The Supabase project this device syncs through; null until one is set
   /// up (the setup screen shows then).
@@ -44,8 +50,17 @@ class Session extends ChangeNotifier {
 
   String? authError;
 
+  /// Why the last user is gone, once they are (signed out here, the server
+  /// ended the session, the account was deleted); null after a sign-in. The
+  /// phone shows it on its scan screen.
+  String? get signedOutReason => _signedOutReason;
+  String? _signedOutReason;
+
+  /// Set by [signOut] and [deleteAccount] just before the user goes.
+  String? _leaving;
+
   /// Launch: opens the backend this device was set up with, if any, and
-  /// listens for setup links (`dzep://setup?url=…&key=…[&pair=…]`).
+  /// listens for setup links (`dzep://setup?url=…&key=…[&code=…]`).
   Future<void> start() async {
     _links = AppLinks().uriLinkStream.listen((uri) {
       if (Backend.fromLink(uri) != null) unawaited(connectLink(uri));
@@ -56,19 +71,25 @@ class Session extends ChangeNotifier {
 
   StreamSubscription<Uri>? _links;
 
-  /// A setup link: connects to its server and, with a pairing code (the
-  /// Mac's QR), signs in too. Problems land in [authError].
+  /// A setup link: connects to its server and, with a sign-in code (the
+  /// Mac's QR), signs in too. A phone takes only links with a code. Problems
+  /// land in [authError].
   Future<void> connectLink(Uri uri) async {
     final backend = Backend.fromLink(uri);
     if (backend == null) return;
-    final code = uri.queryParameters['pair'];
+    final code = Backend.pairingCode(uri);
     if (_user != null) {
       if (backend != _backend) authError = 'Sign out before switching to ${backend.host}.';
       notifyListeners();
       return;
     }
+    if (code == null && !signsInWithGithub) {
+      authError = 'That link has no sign-in code. On your Mac, open Džep: Settings → Set up phone…';
+      notifyListeners();
+      return;
+    }
     if (backend != _backend) {
-      final problem = await backend.check();
+      final problem = await backend.check(github: signsInWithGithub);
       if (problem != null) {
         authError = problem;
         notifyListeners();
@@ -77,31 +98,71 @@ class Session extends ChangeNotifier {
       await connect(backend);
     }
     if (code == null) return;
+    authError = null;
+    notifyListeners();
     try {
-      await client.auth.verifyOTP(type: OtpType.magiclink, tokenHash: code);
-    } on Object {
-      authError =
-          'That code has expired or was already used. Make a new one in Džep on a signed-in Mac '
-          '(Settings → Set up phone), or sign in with GitHub here.';
-      notifyListeners();
+      final data = (await client.functions.invoke('pair', body: {'action': 'redeem', 'code': code})).data;
+      if (data case {'token_hash': final String hash}) {
+        await client.auth.verifyOTP(type: OtpType.magiclink, tokenHash: hash);
+        return;
+      }
+      authError = _serverTooOld;
+    } on FunctionException catch (e) {
+      authError = switch (e) {
+        // A server from before codes: no function, or the old one that
+        // wanted a signed-in caller.
+        FunctionException(status: 404 || 401) => _serverTooOld,
+        _ => pairingProblem(e),
+      };
+    } on AuthException {
+      authError = 'That code was used up while signing in. Make a new one on your Mac (Settings → Set up phone…).';
+    } on Object catch (e) {
+      authError = 'Sign-in failed: $e';
     }
+    notifyListeners();
   }
 
-  /// A setup link that also signs a new device in (functions/pair): works
-  /// once, for 10 minutes. Only while signed in. Fails with a
+  static const _serverTooOld =
+      'Your server is older than this app. Update it from your Mac (docs/SELF_HOSTING.md), then make a new code.';
+
+  /// A setup link that also signs a new device in (functions/pair, action
+  /// create): works once, for 10 minutes. Only while signed in. Fails with a
   /// [PairingException] that says why.
   Future<Uri> pairingLink() async {
-    final Object? data;
+    final data = await _pair({'action': 'create'});
+    if (data case {'code': final String code}) return _backend!.linkWithCode(code);
+    throw const PairingException("The server didn't send a code. Update it (docs/SELF_HOSTING.md), then retry.");
+  }
+
+  /// A reusable code for App Store / Play review (functions/pair, action
+  /// reviewer): signs into this server's separate demo account, not this
+  /// user's, for [days]. Its [ReviewerCode.link] is known only now.
+  Future<ReviewerCode> createReviewerCode({required int days, String label = ''}) async {
+    final data = await _pair({'action': 'reviewer', 'days': days, 'label': label});
+    if (data case {'code': final String code} when data is Map<String, dynamic>) {
+      return ReviewerCode.fromJson(data, link: _backend!.linkWithCode(code));
+    }
+    throw const PairingException("The server didn't send a code. Update it (docs/SELF_HOSTING.md), then retry.");
+  }
+
+  /// This user's reviewer codes that still work, newest first.
+  Future<List<ReviewerCode>> reviewerCodes() async {
+    final data = await _pair({'action': 'list'});
+    if (data case {'codes': final List<dynamic> codes}) {
+      return [for (final c in codes.whereType<Map<String, dynamic>>()) ReviewerCode.fromJson(c)];
+    }
+    throw const PairingException("The server didn't list the codes. Update it (docs/SELF_HOSTING.md), then retry.");
+  }
+
+  /// Stops reviewer code [id] from working.
+  Future<void> revokeReviewerCode(String id) => _pair({'action': 'revoke', 'id': id});
+
+  Future<Object?> _pair(Map<String, Object> body) async {
     try {
-      data = (await client.functions.invoke('pair')).data;
+      return (await client.functions.invoke('pair', body: body)).data;
     } on Object catch (e) {
       throw PairingException(pairingProblem(e));
     }
-    if (data case {'token_hash': final String hash}) {
-      final link = _backend!.link;
-      return link.replace(queryParameters: {...link.queryParameters, 'pair': hash});
-    }
-    throw const PairingException("The server didn't send a code. Update it (docs/SELF_HOSTING.md), then retry.");
   }
 
   /// Opens [backend] (and remembers it): the one saved at launch, the setup
@@ -109,20 +170,37 @@ class Session extends ChangeNotifier {
   Future<void> connect(Backend backend) async {
     if (_user != null) throw StateError('Sign out before switching projects.');
     await _close();
-    await Supabase.initialize(url: backend.url, publishableKey: backend.key);
+    await Supabase.initialize(
+      url: backend.url,
+      publishableKey: backend.key,
+      // A phone never takes an OAuth callback: it signs in with codes only.
+      authOptions: FlutterAuthClientOptions(detectSessionInUri: signsInWithGithub),
+    );
     await backend.save();
     _backend = backend;
     authError = null;
     notifyListeners();
     _auth = client.auth.onAuthStateChange.listen(
-      (s) => unawaited(_setUser(s.session?.user)),
+      (s) {
+        // The server refused to refresh the session (signed out elsewhere,
+        // account deleted, refresh token revoked or expired).
+        if (s.signOutReason case SignOutReason.sessionExpired || SignOutReason.sessionMissing) {
+          _leaving ??= 'Your sign-in ended on the server. Scan a new code from your Mac.';
+        }
+        unawaited(_setUser(s.session?.user));
+      },
       // A failed OAuth callback (expired code, sign-up refused) lands here.
       onError: (Object e) {
         authError = e is AuthException ? e.message : 'Sign-in failed: $e';
         notifyListeners();
       },
     );
+    final hadSession = client.auth.currentSession != null;
     await _freshSession();
+    // Refused while restoring at launch, before anything was listening.
+    if (hadSession && client.auth.currentSession == null) {
+      _leaving ??= 'Your sign-in ended on the server. Scan a new code from your Mac.';
+    }
     await _setUser(client.auth.currentUser);
   }
 
@@ -205,8 +283,16 @@ class Session extends ChangeNotifier {
   Future<void> _setUser(User? user) => _switching = _switching.then((_) => _applyUser(user));
 
   Future<void> _applyUser(User? user) async {
+    final reason = _signedOutReason;
+    if (user != null) {
+      _signedOutReason = _leaving = null;
+    } else if (_user != null || _leaving != null) {
+      _signedOutReason = _leaving ?? 'Your sign-in ended. Scan a new code from your Mac.';
+      _leaving = null;
+    }
     if (user?.id == _user?.id) {
       _user = user ?? _user;
+      if (_signedOutReason != reason) notifyListeners();
       return;
     }
     await _store?.close();
@@ -291,6 +377,7 @@ class Session extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    _leaving ??= 'You signed out.';
     try {
       await onSigningOut();
       await client.auth.signOut();
@@ -321,6 +408,7 @@ class Session extends ChangeNotifier {
       }
     }
     await client.rpc<void>('delete_my_account');
+    _leaving = 'Your account was deleted.';
     await signOut();
     final dir = await getApplicationSupportDirectory();
     for (final name in ['ideas-$id.json', 'chats-$id.json']) {
@@ -346,7 +434,8 @@ class Session extends ChangeNotifier {
   }
 }
 
-/// Why a pairing code couldn't be made, worded for the person.
+/// Why a pairing or reviewer code couldn't be made (or listed, or revoked),
+/// worded for the person.
 class PairingException implements Exception {
   const PairingException(this.message);
   final String message;
@@ -355,9 +444,35 @@ class PairingException implements Exception {
   String toString() => message;
 }
 
+/// A reusable code for App Store / Play review: signs into the server's demo
+/// account, a separate account that sees none of the owner's data. [link]
+/// (the setup link with the code) is known only right after it is made:
+/// the server keeps a hash.
+@immutable
+class ReviewerCode {
+  const ReviewerCode({required this.id, required this.label, required this.expiresAt, this.lastUsedAt, this.link});
+
+  factory ReviewerCode.fromJson(Map<String, dynamic> j, {Uri? link}) => ReviewerCode(
+    id: j['id'] as String,
+    label: j['label'] as String? ?? '',
+    expiresAt: DateTime.parse(j['expires_at'] as String).toLocal(),
+    lastUsedAt: switch (j['last_used_at']) {
+      final String at => DateTime.parse(at).toLocal(),
+      _ => null,
+    },
+    link: link,
+  );
+
+  final String id;
+  final String label;
+  final DateTime expiresAt;
+  final DateTime? lastUsedAt;
+  final Uri? link;
+}
+
 /// What a failed call to functions/pair means: the function's own reason
-/// (not signed in, no email on the account), an older server without it, or
-/// no connection.
+/// (not signed in, a used-up code), an older server without it, or no
+/// connection.
 String pairingProblem(Object error) => switch (error) {
   FunctionsFetchException() => "Couldn't reach your server. Check your connection.",
   FunctionException(details: {'error': final String message}) => message,

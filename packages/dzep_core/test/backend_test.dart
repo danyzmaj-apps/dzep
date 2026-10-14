@@ -43,4 +43,16 @@ void main() {
     expect(Backend.fromLink(Uri.parse('dzep://todos')), isNull);
     expect(Backend.fromLink(Uri.parse('dzep://setup?url=https://abc.supabase.co')), isNull);
   });
+
+  test("a setup link's sign-in code is read back; links without one, or not setup links, have none", () {
+    const b = Backend(url: 'https://abc.supabase.co', key: 'sb_publishable_x');
+    final link = b.linkWithCode('K7QM-3XRT-AB12');
+    expect(Backend.fromLink(link), b);
+    expect(Backend.pairingCode(link), 'K7QM-3XRT-AB12');
+    expect(Backend.pairingCode(b.link), isNull);
+    expect(Backend.pairingCode(Uri.parse('dzep://setup?url=https://abc.supabase.co&key=k&code=')), isNull);
+    expect(Backend.pairingCode(Uri.parse('dzep://todos?code=K7QM')), isNull);
+    // A link with a code but no usable server is no link at all.
+    expect(Backend.pairingCode(Uri.parse('dzep://setup?url=ftp://x&key=k&code=K7QM')), isNull);
+  });
 }

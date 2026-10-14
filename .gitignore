@@ -43,6 +43,8 @@ app.*.map.json
 /apps/*/android/app/debug
 /apps/*/android/app/profile
 /apps/*/android/app/release
+# Kotlin compiler daemon state
+/apps/*/android/.kotlin/
 # Android release signing: the keystore and its passwords stay out of git
 /apps/dzep-mobile/android/key.properties
 *.jks

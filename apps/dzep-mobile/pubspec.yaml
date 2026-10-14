@@ -1,7 +1,7 @@
 name: dzep_mobile
 description: "Džep for iPhone and Android: your ideas, todos, notes and omp sessions, synced through your own Supabase."
 publish_to: 'none'
-version: 0.2.0+2
+version: 0.3.0+3
 resolution: workspace
 
 environment:

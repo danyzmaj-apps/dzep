@@ -46,14 +46,20 @@ It walks you through the rest:
 5. It deploys the edge functions: `ask`, `device`, `pair` and `push`.
 6. It asks for your AI provider (see [AI provider](#ai-provider)). You can skip this.
 
-At the end it prints a **setup link**: `dzep://setup?url=…&key=…`. It holds only your project URL and its publishable key, both of which are safe in an app; row-level security protects your data.
+At the end it prints a **setup link**: `dzep://setup?url=…&key=…`. It holds only your project URL and its publishable key, both of which are safe in an app; row-level security protects your data. It's for the Mac: phones need the Mac's code, which adds a sign-in code to the same link.
 
 ## Connect the apps
 
 - **Mac**: install Džep from [Releases](https://github.com/danyzmaj-apps/dzep/releases/latest), then open the setup link (the script offers to) or paste it into Džep's setup screen (**I already have one: connect it**). Sign in with GitHub.
-- **iPhone and Android**: on the Mac, **Settings → Set up phone…** shows a QR code. In the phone app, tap **Scan the code from your Mac**. The code carries the server address, its publishable key and a one-time sign-in code, so the phone signs in as you without GitHub. It works once and expires after 10 minutes; anyone who scans it gets into your account, so only show it to your own phone. No camera? **Paste a setup link instead** takes the same link.
+- **iPhone and Android**: phones sign in only with a code from your Mac, never with GitHub. On the Mac, **Settings → Set up phone…** shows a QR code. In the phone app, tap **Scan the code from your Mac**. The code carries the server address, its publishable key and a one-time sign-in code, so the phone signs in as you. It works once and expires after 10 minutes; anyone who scans it gets into your account, so only show it to your own phone. No camera? **Paste a code instead** takes the same code as text (the whole `dzep://setup?…&code=…` link). A phone that signs out, or whose sign-in ends, is back on that screen and needs a new code.
 
 The first account that signs in **owns the server**.
+
+## App Store and Play review
+
+Reviewers can't scan your Mac, and must not get into your account. On the Mac, **Settings → Reviewer access → Codes…** makes a **reviewer code**: it signs a phone into a separate demo account on your server (`reviewer@<project-ref>.dzep.invalid`, made the first time), works as often as needed for 7, 30 or 90 days, and can be revoked there at any time. Give the reviewer its link (**Copy**) or its QR (**Save QR as PNG**); in the phone app it goes into **Paste a code instead**, or the camera reads the QR. The code is shown only when it's made: your server keeps a hash of it.
+
+The demo account sees none of your ideas, todos, notes or chats, but Ask works for it, on your AI key, so revoke the code when the review is done. No email is ever sent to the demo address, and it isn't let in through `allowed_signups`: the `pair` function makes it with the service role.
 
 ## AI provider
 
@@ -116,10 +122,13 @@ A relay only reaches apps signed with the publisher's ids. A fork that ships its
 
 | What you see | What to do |
 | --- | --- |
-| "GitHub sign-in is off on this project" | Run the setup script again, or turn GitHub on under Authentication → Sign In / Providers. |
+| "GitHub sign-in is off on this project" (Mac) | Run the setup script again, or turn GitHub on under Authentication → Sign In / Providers. |
 | The browser shows `redirect_uri is not associated` | The GitHub OAuth app's callback URL must be exactly `https://<ref>.supabase.co/auth/v1/callback`. |
 | Sign-in finishes in the browser but the app stays signed out | Authentication → URL Configuration must allow `dzep://login-callback` (`supabase config push` sets it). |
 | "This Džep server is private" | Expected for everyone but the owner; see [Sharing](#sharing). |
+| Phone: "That code doesn't work" | It ran out (10 minutes), was used already or was revoked: make a new one on the Mac (**Settings → Set up phone…**). |
+| Phone: "Too many tries" | Ten wrong codes from one place in ten minutes: wait a few minutes, then use a fresh code. |
+| Phone: "Your server is older than this app" | Run the setup script again (or update from the Mac's wizard): the server needs the new `pair` function and migration. |
 | Ask: "The server has no AI key yet" | Set `AI_API_KEY` (see [AI provider](#ai-provider)). |
 | Ask: "… rejected the server's API key" / "doesn't know the model" | Check `AI_API_KEY` / `AI_MODEL` for your provider. |
 | "The project refused this key" on the setup screen | Use the **publishable** key (Project Settings → API Keys), never a secret one. |

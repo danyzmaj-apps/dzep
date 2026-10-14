@@ -229,8 +229,8 @@ secure_password_change = false
 max_frequency = "1s"
 # Number of characters used in the email OTP.
 otp_length = 6
-# Number of seconds before the email OTP expires (defaults to 1 hour). Pairing codes (functions/pair)
-# are magic-link tokens too, so 10 minutes.
+# Number of seconds before the email OTP expires (defaults to 1 hour). functions/pair swaps a phone's
+# code for a magic-link token that the phone uses at once, so 10 minutes is plenty.
 otp_expiry = 600
 
 # Use a production-ready SMTP server
@@ -275,8 +275,8 @@ max_frequency = "5s"
 # Force log out if the user has been inactive longer than the specified duration.
 # inactivity_timeout = "8h"
 
-# Only the server's owner (the first account) and emails in public.allowed_signups may sign up
-# (supabase/migrations/*_private_server.sql).
+# Only the server's owner (the first account), the reviewer demo account functions/pair makes and
+# emails in public.allowed_signups may sign up (supabase/migrations/*_private_server.sql, *_pairing_codes.sql).
 [auth.hook.before_user_created]
 enabled = true
 uri = "pg-functions://postgres/public/before_user_created"

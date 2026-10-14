@@ -6,10 +6,11 @@ import 'package:dzep_core/native.dart';
 import 'package:flutter/foundation.dart';
 
 /// The Supabase project Džep syncs through: each user runs their own (see
-/// docs/SELF_HOSTING.md). Entered once per device on the setup screen, or by
-/// opening a setup link (`dzep://setup?url=…&key=…`, printed by
-/// tool/setup-backend.sh and shown in the Mac's Settings). Kept in the App
-/// Group, where the iPhone's Siri intents and widget read it too
+/// docs/SELF_HOSTING.md). The Mac enters it on its setup screen or opens a
+/// setup link (`dzep://setup?url=…&key=…`, printed by tool/setup-backend.sh);
+/// a phone learns it only from the Mac's code, a setup link with a sign-in
+/// code in it (`…&code=…`, functions/pair). Kept in the App Group, where the
+/// iPhone's Siri intents and widget read it too
 /// (apps/dzep-mobile/ios/Shared/DzepShared.swift).
 @immutable
 class Backend {
@@ -52,7 +53,8 @@ class Backend {
     return (backend: Backend(url: u, key: k), error: null);
   }
 
-  /// A `dzep://setup?url=…&key=…` link.
+  /// A `dzep://setup?url=…&key=…` link (its sign-in code, if any, is
+  /// [pairingCode]'s).
   static Backend? fromLink(Uri uri) {
     if (uri.scheme != 'dzep' || uri.host != 'setup') return null;
     final url = uri.queryParameters['url'];
@@ -61,7 +63,18 @@ class Backend {
     return parse(url, key).backend;
   }
 
+  /// The sign-in code in a setup link (the Mac's QR), if it has one.
+  static String? pairingCode(Uri uri) {
+    if (fromLink(uri) == null) return null;
+    final code = uri.queryParameters['code']?.trim() ?? '';
+    return code.isEmpty ? null : code;
+  }
+
   Uri get link => Uri(scheme: 'dzep', host: 'setup', queryParameters: {'url': url, 'key': key});
+
+  /// [link] with a sign-in code: what the Mac's QR holds.
+  Uri linkWithCode(String code) =>
+      Uri(scheme: 'dzep', host: 'setup', queryParameters: {'url': url, 'key': key, 'code': code});
 
   /// The host, for display.
   String get host => Uri.parse(url).host;
@@ -83,8 +96,9 @@ class Backend {
   }
 
   /// Asks the project's auth server for its settings: reachable, the key is
-  /// accepted, GitHub sign-in is on. Null when all is well, else what's wrong.
-  Future<String?> check() async {
+  /// accepted and, for a device that signs in with it ([github], the Mac),
+  /// GitHub sign-in is on. Null when all is well, else what's wrong.
+  Future<String?> check({bool github = true}) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
     try {
       final req = await client.getUrl(Uri.parse('$url/auth/v1/settings'));
@@ -98,8 +112,7 @@ class Backend {
       if (res.statusCode != 200) return 'The project answered with an error (${res.statusCode}).';
       final settings = jsonDecode(body);
       final external = settings is Map ? settings['external'] : null;
-      final github = external is Map && external['github'] == true;
-      if (!github) {
+      if (github && !(external is Map && external['github'] == true)) {
         return 'GitHub sign-in is off on this project. Run tool/setup-backend.sh again, or turn it on under '
             'Authentication → Sign In / Providers (docs/SELF_HOSTING.md).';
       }

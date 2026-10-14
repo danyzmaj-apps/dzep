@@ -6,6 +6,7 @@ import 'package:dzep_core/backend.dart';
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/idea.dart';
 import 'package:dzep_core/kitty.dart';
+import 'package:dzep_core/session.dart';
 import 'package:dzep_core/store.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_macos/controller.dart';
@@ -205,6 +206,40 @@ class FakeApp extends AppController {
   /// No kitty sockets here.
   @override
   Kitty get kitty => Kitty(socketDir: '/nonexistent-dzep-test');
+
+  /// The server's active reviewer codes, newest first, without links (the
+  /// server keeps hashes); what was asked of it in [madeCodes] and [revoked].
+  final reviewer = <ReviewerCode>[];
+  final madeCodes = <({int days, String label})>[];
+  final revoked = <String>[];
+
+  /// Makes [createReviewerCode] and [revokeReviewerCode] fail with this.
+  String? reviewerFailure;
+
+  @override
+  Future<ReviewerCode> createReviewerCode({required int days, String label = ''}) async {
+    if (reviewerFailure case final f?) throw PairingException(f);
+    madeCodes.add((days: days, label: label));
+    final id = 'code-${madeCodes.length}';
+    final expiresAt = DateTime.now().add(Duration(days: days));
+    reviewer.insert(0, ReviewerCode(id: id, label: label, expiresAt: expiresAt));
+    return ReviewerCode(
+      id: id,
+      label: label,
+      expiresAt: expiresAt,
+      link: backend.linkWithCode('REVW-${madeCodes.length}AAA-BBBB-CCCC-DDDD-EEEE-FFFF'),
+    );
+  }
+
+  @override
+  Future<List<ReviewerCode>> reviewerCodes() async => [...reviewer];
+
+  @override
+  Future<void> revokeReviewerCode(String id) async {
+    if (reviewerFailure case final f?) throw PairingException(f);
+    revoked.add(id);
+    reviewer.removeWhere((c) => c.id == id);
+  }
 }
 
 /// A `claude` that answers from [list] (its `plugin list --json`) and records

@@ -13,7 +13,7 @@ What happens to that data on your server is up to you and Supabase's terms. You 
 ## What the apps send, and to whom
 
 - **To your server:** everything you save, so your devices stay in sync; the name of the device something was added on (e.g. "Danijel's MacBook Pro"); and, for push notifications, the phone's push token and a key the phone generated (below).
-- **To GitHub:** when you sign in with GitHub, GitHub's usual sign-in exchange. Phones that pair with a Mac don't sign in to GitHub.
+- **To GitHub:** when you sign in with GitHub on the Mac, GitHub's usual sign-in exchange. Phones never sign in to GitHub: they sign in with a code from your Mac, which your server checks (it keeps only a hash of the code).
 - **To your AI provider:** only if you set up Ask. Your questions, the recent turns of that chat and attached images go from **your server** to the OpenAI-compatible provider you chose, with your key. The apps never contact the provider themselves.
 - **To the publisher's push relay** (phones only, when push is on):
   - Every notification is encrypted on your server with an AES-256 key that only your phone and your server know. The relay receives the phone's push token, the kind of notification (reminder, terminal, or session state), a collapse id (a todo id or an omp session key) and the ciphertext.

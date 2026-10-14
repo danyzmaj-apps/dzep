@@ -1,4 +1,5 @@
-/// Signing in and who is signed in: the same on the Mac and the phones.
+/// Signing in with GitHub (the Mac only: phones sign in with the Mac's code)
+/// and who is signed in (the avatar, Mac and phones).
 library;
 
 import 'dart:async';

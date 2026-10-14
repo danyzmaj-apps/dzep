@@ -15,6 +15,7 @@ import 'package:dzep_macos/controller.dart';
 import 'package:dzep_macos/integrations.dart';
 import 'package:dzep_macos/onboarding/connect_ai.dart';
 import 'package:dzep_macos/onboarding/pair.dart';
+import 'package:dzep_macos/onboarding/reviewer.dart';
 import 'package:dzep_macos/setup_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1629,6 +1630,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
                           label: 'Your server',
                           sub: '${app.backend?.host ?? ''} · Scan a code with your phone to connect it',
                           trailing: _button('Set up phone…', () => unawaited(showPairingQr(context, app))),
+                        ),
+                        _row(
+                          label: 'Reviewer access',
+                          sub: 'For App Store / Play review: a code for a separate demo account',
+                          trailing: _button('Codes…', () => unawaited(showReviewerAccess(context, app))),
                         ),
                         ListenableBuilder(
                           listenable: app.chats!,

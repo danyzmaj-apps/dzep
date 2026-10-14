@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Scanning the setup code the Mac shows (mobile_scanner); asked for when the scanner opens. -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- A phone without a camera can still paste the setup link. -->
+    <!-- A phone without a camera can still paste the Mac's code. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!-- allowBackup off: the device token, the push key and the session stay on this phone. -->
@@ -43,7 +43,7 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Setup links (dzep://setup?…), GitHub sign-in's dzep://login-callback, and the
+            <!-- Setup links with the Mac's sign-in code (dzep://setup?…&code=…), and the
                  widgets' and followed sessions' links. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -105,7 +105,7 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- url_launcher: links in answers and on the setup page open in the browser. -->
+        <!-- url_launcher: links in answers open in the browser. -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
