@@ -4,8 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
   test("the pair function's own reason comes through", () {
-    const noEmail = "Your account has no email address, so it can't pair. Sign in with GitHub on the phone instead.";
-    expect(pairingProblem(const FunctionsHttpException(status: 400, details: {'error': noEmail})), noEmail);
+    const used = "That code doesn't work: it may have run out, been used already or been revoked.";
+    expect(pairingProblem(const FunctionsHttpException(status: 400, details: {'error': used})), used);
     expect(
       pairingProblem(const FunctionsHttpException(status: 401, details: {'error': 'Sign in first'})),
       'Sign in first',

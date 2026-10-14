@@ -55,6 +55,7 @@ The script checks the prerequisites above, builds and archives the app, and expo
 
 1. An **App Store Connect** record for bundle id `com.danyzmaj.dzep` (the id in `config/Dzep.xcconfig`), with the App Group and the widget, push extension and Siri targets' ids registered (automatic signing does this on the first `-allowProvisioningUpdates` build, see [BUILDING.md](BUILDING.md)).
 2. App privacy answers, a privacy policy URL, screenshots and a support URL in App Store Connect.
+3. **App Review sign-in.** The phone app signs in only with a code from the Mac (no GitHub, so guideline 4.8's Sign in with Apple doesn't apply). For the reviewers, on the Mac: **Settings → Reviewer access → Codes…**, 90 days, label "App Store review". In App Store Connect → App Review Information, put in the notes: "There is no user name or password. Open Džep, tap **Paste a code instead**, paste this link, tap **Sign in**:" followed by the link (**Copy**), and attach the QR (**Save QR as PNG**). It signs into a demo account on your server that sees none of your data. Make a new code before it expires, and revoke old ones.
 
 ### Each release
 
@@ -76,6 +77,7 @@ Pushes from TestFlight and App Store builds use APNs production; the relay handl
 3. `apps/dzep-mobile/android/key.properties` (git-ignored, from `key.properties.example`) points at that keystore.
 4. `apps/dzep-mobile/android/app/google-services.json` (git-ignored) from the Firebase project whose service account the relay holds. A release without it has no push.
 5. Play Console: store listing, privacy policy URL, data safety form, content rating, target audience, and the notification permission declaration.
+6. Play Console → App content → **App access**: "All or some functionality is restricted", with the same instructions and a reviewer code of its own (label "Play review"), as for App Review above.
 
 ### Each release
 

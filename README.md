@@ -64,9 +64,9 @@ Coming soon: Google Play. The link will be added here and to the release notes w
 
 1. **Install the Mac app** and open it.
 2. **Let the wizard set up your server.** It asks for a Supabase access token, picks or creates a project, walks you through a GitHub OAuth app for sign-in, and optionally takes an AI key (skip it and connect one later in **Settings → AI**). Then it creates the tables, deploys the functions and connects. Sign in with GitHub; the first account owns the server. Prefer a terminal? See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
-3. **Pair your phone.** On the Mac, **Settings → Set up phone…** shows a QR code. In the phone app, tap **Scan the code from your Mac**. The phone connects and signs in as you; no GitHub login on the phone. The code works once, for 10 minutes.
+3. **Pair your phone.** On the Mac, **Settings → Set up phone…** shows a QR code. In the phone app, tap **Scan the code from your Mac** (or **Paste a code instead** with the same code as text). The phone connects and signs in as you. The code works once, for 10 minutes.
 
-Phones don't set up servers: they only pair with one a Mac has set up.
+Phones sign in only with a code from your Mac, never with GitHub, and they don't set up servers: they only pair with one a Mac has set up. For App Store or Play review, **Settings → Reviewer access** makes a revocable code for a separate demo account on your server ([Self-hosting](docs/SELF_HOSTING.md#app-store-and-play-review)).
 
 **Terminal from the phone** also needs kitty with remote control (`allow_remote_control socket-only` and `listen_on unix:/tmp/kitty` in kitty.conf).
 

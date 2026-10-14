@@ -5,14 +5,14 @@ import 'package:dzep_core/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-/// How long a pairing code works (the project's OTP expiry, config.toml).
+/// How long a phone's code works (functions/pair, action create).
 const pairingLifetime = Duration(minutes: 10);
 
 /// A QR the phone opens in Džep (its Scan button, or the iPhone's Camera):
 /// the server's address plus a one-time sign-in code, so the phone is set up
-/// and signed in by the scan alone. Anyone who scans it in time gets into the
-/// account, so it is made fresh when shown, works once, and hides itself
-/// when it runs out.
+/// and signed in by the scan alone (a phone has no other way in). Anyone who
+/// scans it in time gets into the account, so it is made fresh when shown,
+/// works once, and hides itself when it runs out.
 class PairingQr extends StatefulWidget {
   const PairingQr({required this.session, super.key});
   final Session session;

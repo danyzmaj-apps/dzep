@@ -1,0 +1,24 @@
+# Signs the app in with a code from the Mac, a phone's only way in: pastes
+# SETUP_LINK (a reviewer code's link from Settings → Reviewer access, or a
+# fresh Settings → Set up phone… code) into "Paste a code instead". Does
+# nothing when the app is signed in already, so it's safe in a full run.
+#   maestro test -e SETUP_LINK='dzep://setup?url=…&key=…&code=…' sign_in.yaml
+appId: com.danyzmaj.dzep
+---
+- launchApp
+# A signed-in app opens on Todos once its store is read.
+- extendedWaitUntil:
+    visible: "Todos.*"
+    timeout: 5000
+    optional: true
+- runFlow:
+    when:
+      visible: "Scan the code from your Mac"
+    commands:
+      - tapOn: "Paste a code instead"
+      - tapOn: "dzep://setup.*"
+      - inputText: ${SETUP_LINK}
+      - tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Todos.*"
+    timeout: 20000

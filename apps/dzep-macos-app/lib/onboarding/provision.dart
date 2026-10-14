@@ -188,7 +188,7 @@ create table if not exists supabase_migrations.schema_migrations (version text p
       'external_github_secret': githubSecret.trim(),
       'hook_before_user_created_enabled': true,
       'hook_before_user_created_uri': hook,
-      // Pairing codes (functions/pair) are magic-link tokens: 10 minutes.
+      // functions/pair swaps a phone's code for a magic-link token used at once.
       'mailer_otp_exp': 600,
     });
   }

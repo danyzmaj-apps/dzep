@@ -102,8 +102,8 @@ say "Done. Your backend is ready."
 cat <<EOF
 
 Connect Džep on this Mac by opening the setup link (or paste it into Džep's
-setup screen). On the iPhone, open it from Notes or Messages, or copy it from
-the Mac's Settings once you're signed in.
+setup screen). Phones sign in with a code from the Mac: once you're signed in
+there, Settings → Set up phone….
 
   $LINK
 

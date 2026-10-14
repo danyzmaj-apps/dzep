@@ -5,8 +5,9 @@ import 'package:dzep_core/ui.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-/// Opens the camera to read the setup code the Mac shows (Settings → Set up
-/// phone). Pops with the setup link, or null when cancelled.
+/// Opens the camera to read the code the Mac shows (Settings → Set up phone,
+/// or a reviewer code): a setup link with a sign-in code in it. Pops with
+/// that link, or null when cancelled.
 Future<Uri?> scanSetupCode(BuildContext context) =>
     Navigator.of(context).push<Uri>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const _ScanPage()));
 
@@ -32,15 +33,19 @@ class _ScanPageState extends State<_ScanPage> {
 
   void _onDetect(BarcodeCapture capture) {
     if (_done) return;
+    String? problem;
     for (final code in capture.barcodes) {
       final link = Uri.tryParse(code.rawValue ?? '');
-      if (link != null && Backend.fromLink(link) != null) {
+      if (link == null || Backend.fromLink(link) == null) continue;
+      if (Backend.pairingCode(link) != null) {
         _done = true;
         Navigator.of(context).pop(link);
         return;
       }
+      problem = 'That code has no sign-in in it. On your Mac: Settings → Set up phone…';
     }
-    if (_notOurs == null) setState(() => _notOurs = "That's not a Džep code. Scan the one on your Mac.");
+    problem ??= "That's not a Džep code. Scan the one on your Mac.";
+    if (_notOurs != problem) setState(() => _notOurs = problem);
   }
 
   @override
@@ -144,8 +149,8 @@ class _CameraProblem extends StatelessWidget {
         child: Text(
           error.errorCode == MobileScannerErrorCode.permissionDenied
               ? 'Džep needs the camera to read the code. Allow it in Settings → Džep → Camera, '
-                    'or paste the setup link instead.'
-              : "The camera didn't start (${error.errorCode.name}). Paste the setup link instead.",
+                    'or paste the code instead.'
+              : "The camera didn't start (${error.errorCode.name}). Paste the code instead.",
           textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.white, height: 1.5),
         ),
