@@ -1,4 +1,4 @@
-name: Bug
+name: Bug report
 description: Something doesn't work as it should.
 labels: [bug]
 body:
@@ -14,14 +14,14 @@ body:
     attributes:
       label: Where
       multiple: true
-      options: [Mac app, iPhone app, Android app, Widget, Siri, Notifications / push, Backend setup, Pairing a phone, Quick questions (AI), Terminal from phone]
+      options: [Mac app, iPhone app, Android app, Widget, Siri, Notifications / push, Backend setup, Pairing a phone, Quick questions (AI), Terminal from phone, omp / Claude Code integration]
     validations:
       required: true
   - type: input
     id: versions
     attributes:
       label: Versions
-      description: Džep version (Mac → Džep → About; phone → Settings), macOS / iOS / Android version, phone model.
+      description: Džep version (Mac → Džep → About Džep; phone → its TestFlight or Google Play page), macOS / iOS / Android version, phone model.
     validations:
       required: true
   - type: textarea

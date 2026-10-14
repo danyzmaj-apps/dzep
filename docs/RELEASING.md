@@ -32,9 +32,11 @@ Each release is a notarized DMG on GitHub Releases, plus an `appcast.xml` that i
 3. **Sparkle signing key.** The private half lives in the login keychain; its public half is `SUPublicEDKey` in `apps/dzep-macos-app/macos/Runner/Info.plist`. Check it (in `apps/dzep-macos-app`) with `macos/Pods/Sparkle/bin/generate_keys -p`. **Back it up**: without it, installed copies won't accept new updates.
    ```sh
    # in apps/dzep-macos-app; write it straight to your keys folder, never into the repo
-   macos/Pods/Sparkle/bin/generate_keys -x ~/Dev/keys/dzep-sparkle-private-key && chmod 600 ~/Dev/keys/dzep-sparkle-private-key
+   macos/Pods/Sparkle/bin/generate_keys -x <keys-folder>/dzep-sparkle-private-key && chmod 600 <keys-folder>/dzep-sparkle-private-key
    ```
 4. `gh auth login`, with push access to the repo.
+
+**A fork shipping its own Mac app** makes its own Sparkle key the same way, puts its public half in `SUPublicEDKey` and its own feed in `SUFeedURL` (`https://github.com/<owner>/<repo>/releases/latest/download/appcast.xml`, same `Info.plist`), and runs `release.sh` with `REPO=<owner>/<repo>`. Otherwise its copies would look for updates from upstream and refuse them. Its team and bundle id come from `config/Local.xcconfig` ([BUILDING.md](BUILDING.md#your-signing-identity)), its push relay from `PUSH_RELAY_URL` ([SELF_HOSTING.md](SELF_HOSTING.md#your-own-app-id-and-relay)).
 
 ### Each release
 

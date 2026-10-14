@@ -41,7 +41,7 @@ One Dart pub workspace (root `pubspec.yaml`): the Mac app in `apps/dzep-macos-ap
 | `mobile/android/…/Reminders.kt`, `OmpActivities.kt` | Android: local reminders (AlarmManager, re-armed after boot) with **Done**; the ongoing notification per followed coding session |
 | `mobile/android/…/TodosWidget.kt`, `NewIdeaWidget.kt` | Android home-screen widgets |
 | `mobile/ios/DzepPush/` | Notification Service Extension: decrypts pushes |
-| `mobile/ios/Runner/AddIdeaIntent.swift` | Siri / Action Button intents (Add Idea, Add Todo) |
+| `mobile/ios/Runner/AddIdeaIntent.swift` | Siri / Action Button intents (Add Idea, Add Todo, Add Note) |
 | `mobile/ios/DzepWidget/` | WidgetKit extension (Todos, New idea, the coding session Live Activity) |
 | `mac/macos/DzepWidget/` | Mac WidgetKit extension (Todos), sandboxed; its ticks go through the running app |
 | `mobile/ios/Shared/DzepShared.swift` | App Group storage + `device` function client (app and widget; the Mac's app and widget compile it too, from this path) |

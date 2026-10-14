@@ -21,7 +21,8 @@ The repo is a pub workspace: `apps/dzep-macos-app` (Mac app and the backend), `a
   deno check apps/dzep-macos-app/supabase/functions/*/index.ts
   # in apps/dzep-macos-app (Docker)
   supabase db start && supabase db lint --level error
-  # the Claude Code plugin, locally (CI can't: Claude Code mods need a logged-in claude)
+  # the Claude Code plugin, in apps/dzep-macos-app/integrations/claude, locally
+  # (CI can't: Claude Code mods need a logged-in claude)
   claude plugin validate . && claude plugin test plugins/dzep
   ```
 - Add a test when you change behavior that can quietly break: parsing, sync, reminders.

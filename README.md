@@ -1,109 +1,181 @@
 # Džep
 
-**A pocket for ideas, todos, notes and quick AI questions.** A Mac menu-bar app with an ⇧⌘Space popup, plus iPhone and Android apps, all synced through **your own** free Supabase server. From the phone you can also follow and prompt [omp](https://github.com/can1357/oh-my-pi) and [Claude Code](https://github.com/anthropics/claude-code) sessions and other [kitty](https://sw.kovidgoyal.net/kitty/) windows running on your Mac.
-
-*Džep* (Croatian, "pocket") is pronounced roughly "jep".
-
 [![CI](https://github.com/danyzmaj-apps/dzep/actions/workflows/ci.yml/badge.svg)](https://github.com/danyzmaj-apps/dzep/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-There is no Džep cloud. Your data lives in a Supabase project you own; the Mac app creates it for you in a few minutes, and the phones pair with it by scanning a code.
+**A pocket for ideas, todos, notes and quick AI questions.** Džep is a Mac menu-bar app with an ⇧⌘Space popup, plus iPhone and Android apps, all synced through **your own** free Supabase server. There is no Džep cloud: the Mac app sets up the server for you in a few minutes, and your phones join it by scanning a code. From the phone you can also follow and prompt the [omp](https://github.com/can1357/oh-my-pi) and [Claude Code](https://github.com/anthropics/claude-code) sessions and other [kitty](https://sw.kovidgoyal.net/kitty/) windows running on your Mac.
 
-## Features
+*Džep* (Croatian, "pocket") is pronounced roughly "jep".
 
-### Mac
+- **Capture anywhere.** A popup on the Mac, Siri and widgets on the iPhone, widgets on Android, `/idea`, `/do` and `/note` in your coding agent.
+- **Todos with reminders.** End a todo with `!15:00` or `!tomorrow` and every device reminds you; tick it off on one and it's done on all.
+- **Notes.** Free text, saved as you type; on the Mac one can float in its own window.
+- **Ask.** Short streamed chats with any OpenAI-compatible AI, with images. Chats sync between devices; the AI key stays on your server.
+- **Terminal from the phone.** Your Mac's coding sessions as a conversation on the phone, with Live Activities (iPhone) or an ongoing notification (Android) and a push when the agent finishes or needs you.
+- **Private.** Everything lives in a Supabase project you own. Notifications reach your phones encrypted with a key only they have.
 
-- **Popup.** ⇧⌘Space opens a Raycast-style popup, straight into the mode you used last: **Idea**, **Todo**, **Note** or **Ask** (⌘1–⌘4, or click the strip on top; ⌘5 opens the app), field focused, ↵ saves. In Idea and Todo, ⌘↵ saves and stays for the next one, ⇥ adds a description (or completes an `@project`), ↓ browses the list below, ⌘D ticks off the selected todo and ⌘O opens the app on the selected item. Esc or ⌘W hides it. The menu-bar icon shows the open-todo count.
-- **Main window.** Todos (finished ones fold away at the bottom), Ideas (grouped by project, with descriptions), Notes and Ask. ⌘N new item, ⌘F or / search, ↑/↓ move, ⌫ deletes (with Undo), ⌘, Settings.
-- **Note window.** A note can float in a small window of its own over whatever you're doing: from the note's header in the main window, or ⌘P in the popup's Note mode.
-- **Widget.** A **Todos** widget (desktop or Notification Center) lists open todos; click a circle to tick one off.
-- **Terminal.** `/idea`, `/do` (a todo) and `/note` in omp ([integrations/omp/idea.ts](apps/dzep-macos-app/integrations/omp/idea.ts)) and in Claude Code (Džep's plugin, [integrations/claude](apps/dzep-macos-app/integrations/claude)) save through the Mac app's localhost API, filed under the current repo's name. **Settings → Coding agent** picks which agent a session started from your phone runs, and the row under it installs or updates Džep's integration for it. Other tools can use the same [terminal API](docs/ARCHITECTURE.md#terminal-api-mac).
-- Updates itself (Sparkle). macOS 13+, the widget needs 14+.
+## Contents
 
-### iPhone
+- [What you need](#what-you-need)
+- [Install](#install)
+- [Set up](#set-up)
+- [Add your phone](#add-your-phone)
+- [Use it](#use-it)
+- [Privacy and security](#privacy-and-security)
+- [Troubleshooting](#troubleshooting)
+- [Build from source and contribute](#build-from-source-and-contribute)
+- [License](#license)
 
-- Todos, Ideas, Notes and Ask tabs; swipe right to tick a todo off, left to delete.
-- "Hey Siri, add a todo / an idea / a note to Džep" (or the Action Button) saves without opening the app.
-- Widgets: **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
-- **Terminal** tab (below), with omp and Claude Code sessions as **Live Activities** on the Lock Screen and in the Dynamic Island.
-- Push notifications for reminders and for coding sessions that need you.
-- iOS 17+.
+## What you need
 
-### Android
+- **A Mac** with macOS 13 or newer (the desktop widget needs 14).
+- **A free [Supabase](https://supabase.com) account.** It hosts your server; the free plan is plenty for one person.
+- **A [GitHub](https://github.com) account**, to make a free GitHub OAuth app: it's how you sign in to your server on the Mac.
+- **Optional: an API key for an OpenAI-compatible AI** (DeepSeek, OpenAI, OpenRouter, Groq, a local Ollama, …) for Ask. You can add it any time later.
+- **Optional, for Terminal from the phone:** [kitty](https://sw.kovidgoyal.net/kitty/) on the Mac, and [omp](https://github.com/can1357/oh-my-pi) or [Claude Code](https://github.com/anthropics/claude-code) (2.1.287 or later).
+- **A phone, if you like:** an iPhone with iOS 17 or newer, or an Android phone with Android 8.0 or newer.
 
-The same as the iPhone app, except Siri: there is no voice-assistant integration on Android.
+## Install
 
-- Todos, Ideas, Notes, Ask and Terminal tabs, the same gestures.
-- Home-screen widgets: **Todos** (tick todos off) and **New idea**.
-- A followed omp or Claude Code session shows as an **ongoing notification** (working, needs you, finished), the Android counterpart of a Live Activity.
-- Push notifications for reminders (with a **Done** action) and for coding sessions, through Firebase Cloud Messaging, end-to-end encrypted like on the iPhone.
-- Android 8.0 (API 26) or newer.
+| Device | Where |
+| --- | --- |
+| **Mac** | Download `Dzep-x.y.z.dmg` from [GitHub Releases](https://github.com/danyzmaj-apps/dzep/releases/latest) and drag Džep to Applications. It's notarized by Apple and updates itself (Sparkle). |
+| **iPhone** | TestFlight: *link coming soon* |
+| **Android** | Google Play (open testing): *link coming soon* |
 
-### Everywhere
-
-- **Notes.** Free text, the first line is the title, saved as you type.
-- **Quick questions.** A small streamed chat with any OpenAI-compatible API (DeepSeek by default, or OpenAI, OpenRouter, Groq, a local Ollama, …). Chats sync: start on one device, continue on another. Paste or attach up to 4 images per question. The AI key stays on your server; the apps never have one. No AI yet? Connect one any time from the Mac: **Settings → AI**.
-- **Reminders.** End a todo with `!` and a time: `call bank !15:00`, `!9`, `!3pm`, `!tomorrow 9`, `!mon 14:30`, `!30m`, `!2h`. A chip under the field shows what it will set. At that time your devices notify you; **Done** ticks the todo off. Phones get reminders by push, so one set on the Mac arrives with the phone app closed, and one ticked off elsewhere never goes off.
-- **Terminal from the phone.** The Terminal tab lists the Mac's omp and Claude Code sessions and other kitty windows. A session opens as a conversation laid out for the phone: your prompts, the agent's answers as Markdown, tool calls as cards. Prompt it (with images), stop it, answer its questions, tool approvals and plan reviews, page back through older messages. While omp works you can steer it or queue a prompt; Claude Code can't be steered, so a prompt sent while it works waits for the run to end. Any window, a shell included, also opens as its live screen you can type into. **+** opens a new kitty window in one of the Mac's projects, with a shell or the agent chosen in **Settings → Coding agent**. When a run ends or the agent needs you while you're away from the Mac, a push takes you to that session. Off until you turn on **Settings → Terminal from phone** on the Mac.
-
-## Get it
-
-### Mac
-
-Download `Dzep-x.y.z.dmg` from [GitHub Releases](https://github.com/danyzmaj-apps/dzep/releases/latest) and drag Džep to Applications. It is notarized by Apple and updates itself. The first notarized release is being prepared; until it's there, [build it from source](docs/BUILDING.md#mac).
-
-### iPhone
-
-Coming soon: TestFlight, then the App Store. The links will be added here and to the release notes when they are live. Until then you can [build it from source](docs/BUILDING.md#iphone).
-
-### Android
-
-Coming soon: Google Play. The link will be added here and to the release notes when it is live. Until then you can [build it from source](docs/BUILDING.md#android).
+> **Coming soon.** The first notarized Mac release, the TestFlight link and the Google Play link are being prepared; they'll be added here and to the release notes when they're live. Until then, [build the apps from source](docs/BUILDING.md).
 
 ## Set up
 
-1. **Install the Mac app** and open it.
-2. **Let the wizard set up your server.** It asks for a Supabase access token, picks or creates a project, walks you through a GitHub OAuth app for sign-in, and optionally takes an AI key (skip it and connect one later in **Settings → AI**). Then it creates the tables, deploys the functions and connects. Sign in with GitHub; the first account owns the server. Prefer a terminal? See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
-3. **Pair your phone.** On the Mac, **Settings → Set up phone…** shows a QR code. In the phone app, tap **Scan the code from your Mac** (or **Paste a code instead** with the same code as text). The phone connects and signs in as you. The code works once, for 10 minutes.
+Open Džep on the Mac. With no server yet, it starts a wizard (**Set up my server**):
 
-Phones sign in only with a code from your Mac, never with GitHub, and they don't set up servers: they only pair with one a Mac has set up. For App Store or Play review, **Settings → Reviewer access** makes a revocable code for a separate demo account on your server ([Self-hosting](docs/SELF_HOSTING.md#app-store-and-play-review)).
+1. **Supabase access token.** Click **Open Supabase access tokens**, create one (`sbp_…`) and paste it. It's used for this setup only and never saved.
+2. **Project.** **Create a new project** (the region is guessed from your time zone), or **Use an existing project**. A project of its own is best: Džep won't take one that already has accounts or tables of the same names, and says which of its settings it would replace. The free plan allows two active projects; pause one if it's full.
+3. **GitHub sign-in.** Click **Open GitHub: new OAuth app**. The wizard shows the **Application name** and **Authorization callback URL** to copy into GitHub's form. Register the app, generate a client secret, and paste the **Client ID** and **Client secret** back.
+4. **AI (optional).** Pick DeepSeek, OpenAI, OpenRouter or **Other** (any OpenAI-compatible URL and model) and paste its key, then **Set up my server**. Or **Skip AI for now** and connect one later in **Settings → AI**.
+5. **Setting up your server.** Džep creates the tables and security rules, turns on GitHub sign-in and private sign-up, and deploys its functions. It takes about a minute. If a step fails, **Retry** picks up from it.
+6. **Connect and sign in** with GitHub. The first account to sign in owns the server.
 
-**Terminal from the phone** also needs kitty with remote control (`allow_remote_control socket-only` and `listen_on unix:/tmp/kitty` in kitty.conf).
+Prefer a terminal? [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) does the same with a script. Already have a Džep server? **I already have one: connect it** on the first screen takes its setup link.
 
-**`/idea`, `/do`, `/note` and sessions on the phone** need Džep's integration in your coding agent. On the Mac, pick the agent in **Settings → Coding agent** and click **Install** (or **Update**) on the row under it, then restart its running sessions. To do it by hand:
+## Add your phone
 
-- **omp**: copy [integrations/omp/idea.ts](apps/dzep-macos-app/integrations/omp/idea.ts) and [live.ts](apps/dzep-macos-app/integrations/omp/live.ts) to `~/.omp/agent/extensions/`.
-- **Claude Code** 2.1.287 or later, with mods on: from a checkout of this repo, `claude plugin marketplace add apps/dzep-macos-app/integrations/claude`, then `claude plugin install dzep@dzep`. Claude Code keeps mods off until it has fetched its settings while you're logged in: if Settings says mods are off, run `claude /login`, start `claude` once, then restart your sessions.
+1. On the Mac, open **Settings → Set up phone…**. It shows a QR code.
+2. In the phone app, tap **Scan the code from your Mac** and point it at the screen. No camera? **Paste a code instead** takes the same code as text.
+3. The phone connects to your server and signs in as you.
+
+A code works **once** and lasts **10 minutes**, and anyone who scans it gets into your account, so show it only to your own phone. Phones never use a password or GitHub, and never set up servers: they only join one your Mac set up. A phone that signs out needs a new code.
+
+For App Store or Google Play review, **Settings → Reviewer access → Codes…** makes a revocable code for a separate demo account on your server ([details](docs/SELF_HOSTING.md#app-store-and-play-review)).
+
+## Use it
+
+### The popup (Mac)
+
+⇧⌘Space opens the popup, in the mode you used last, with its field focused. Change the shortcut in **Settings → Quick capture shortcut**. The menu-bar icon shows how many todos are open.
+
+| Key | What it does |
+| --- | --- |
+| ⌘1 ⌘2 ⌘3 ⌘4 | **Idea**, **Todo**, **Note**, **Ask** (or click the strip on top) |
+| ⌘5 | Open the main window |
+| ↵ | Save (Idea, Todo); send the question (Ask) |
+| ⌘↵ | Save and stay for the next one (Idea, Todo); save the note (Note) |
+| ⇥ | Add a description, or complete an `@project` (Idea, Todo) |
+| ↓ ↑ | Browse the list below the field; ↵ opens the selected item |
+| ⌘D | Tick off the selected todo |
+| ⌘O | Open the app on the selected item (or on Notes, or on the chat) |
+| ⌘P | Float the note in its own window (Note) |
+| ⌘N | New chat (Ask) |
+| ⇧⌘C | Copy the last answer (Ask) |
+| Esc, ⌘W | Hide the popup |
+
+`@project` in an idea's title files it under that project.
+
+### The main window and the note window (Mac)
+
+The main window has **Todos** (finished ones fold away at the bottom), **Ideas** (grouped by project, with descriptions), **Notes** and **Ask**. ⌘N adds, ⌘F or / searches, ↑/↓ move, ⌫ deletes (with Undo), ⌘, opens Settings.
+
+A note can float in a small window of its own over whatever you're doing: open it from the note's header in the main window, or with ⌘P in the popup.
+
+### Reminders
+
+End a todo with `!` and a time. A chip under the field shows what it will set. When it's due, your devices notify you, and **Done** ticks the todo off.
+
+| Write | Reminds you |
+| --- | --- |
+| `!15:00`, `!9`, `!9.30`, `!3pm` | At that time today, or tomorrow if it's already past |
+| `!tomorrow`, `!tmr`, `!fri` | That day at 9:00 |
+| `!tomorrow 9`, `!mon 14:30` | That day at that time (a weekday is the next one ahead) |
+| `!today 18:00` | Today at that time |
+| `!30m`, `!2h`, `!1d`, `!1h30m` | That long from now |
+
+For example `call bank !15:00`. Phones get reminders by push, so one set on the Mac arrives with the phone app closed, and one ticked off elsewhere never goes off.
+
+### The phone apps
+
+- **Tabs:** Todos, Ideas, Notes, Ask and Terminal. Swipe a row right to tick a todo off, left to delete.
+- **Widgets:** **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field), on iPhone and Android. The Mac has a **Todos** widget too (desktop or Notification Center).
+- **Siri (iPhone):** "Hey Siri, add a todo to Džep", "add an idea to Džep" or "add a note to Džep" saves without opening the app. The Action Button can do it too: Settings → Action Button → Shortcut → Džep. Android has no voice-assistant integration.
+- **Account:** the avatar at the top opens Sign out and Delete account.
+
+### Ask
+
+A small streamed chat with the AI you connected. Paste or attach up to 4 images per question. Chats sync: start on one device, continue on another. No AI yet? Connect one from the Mac: **Settings → AI → Connect…** (or **Connect an AI…** in Ask). The key stays on your server; the apps never see it.
+
+### Terminal from the phone
+
+The phone's Terminal tab lists the Mac's omp and Claude Code sessions and other kitty windows.
+
+- **A coding session** opens as a conversation laid out for the phone: your prompts, the agent's answers, tool calls as cards. Prompt it (with images), stop it, answer its questions, tool approvals and plan reviews. While omp works you can steer it or queue a prompt; Claude Code can't be steered, so a prompt waits for its run to end.
+- **Any window**, a shell included, also opens as its live screen you can type into.
+- **+** opens a new kitty window in one of the Mac's projects, with a shell or your coding agent.
+- When a run ends or the agent needs you while you're away from the Mac, a push takes you to that session. A session you follow shows as a **Live Activity** on the iPhone (Lock Screen, Dynamic Island) and as an **ongoing notification** on Android.
+
+To turn it on:
+
+1. In `kitty.conf`, allow remote control: `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty`.
+2. On the Mac, turn on **Settings → Terminal from phone**. It's off by default.
+3. In **Settings → Coding agent**, pick omp or Claude Code: it's what a new session from your phone starts. The row under it, **Džep in …**, installs or updates Džep's integration for that agent. Restart running sessions afterwards.
+
+The integration also adds three commands to your agent, saved through the Mac app and filed under the current repo's name:
+
+| Command | Saves |
+| --- | --- |
+| `/idea <text>` | An idea (`/idea list` lists this project's) |
+| `/do <text>` | A todo, reminders included: `/do call bank !15:00` |
+| `/note <text>` | A note |
+
+To install the integration by hand instead:
+
+- **omp:** copy [idea.ts](apps/dzep-macos-app/integrations/omp/idea.ts) and [live.ts](apps/dzep-macos-app/integrations/omp/live.ts) to `~/.omp/agent/extensions/`.
+- **Claude Code** (2.1.287 or later, with mods on): from a checkout of this repo, `claude plugin marketplace add apps/dzep-macos-app/integrations/claude`, then `claude plugin install dzep@dzep`. If Settings says mods are off, run `claude /login`, start `claude` once, then restart your sessions.
+
+Other tools can use the same [local API](docs/ARCHITECTURE.md#terminal-api-mac).
 
 ## Privacy and security
 
-- **Your server.** Everything you write lives in your Supabase project, behind row-level security. The apps hold only its publishable key. The first account owns the server and new sign-ups are refused unless you allow their email ([Sharing](docs/SELF_HOSTING.md#sharing)).
+- **Your data, your server.** Everything you write lives in your Supabase project, behind row-level security. The apps hold only its publishable key. The first account owns the server, and anyone else's sign-up is refused unless you allow their email ([Sharing](docs/SELF_HOSTING.md#sharing)).
 - **AI key.** A secret on your server; it never reaches the apps. Questions go from your server to the AI provider you chose.
-- **Push.** Only the app's publisher can talk to Apple's (APNs) and Google's (FCM) push services for Džep, so your server sends notifications through the publisher's relay. Each phone makes its own AES-256 key and gives it only to your server, which encrypts every notification with it. The relay sees the device's push token, the kind of notification (reminder, terminal or session state), a collapse id (a todo id or a coding session's key) and ciphertext; it never sees titles, todo text or terminal output, and it stores nothing. One exception: iPhone Live Activity updates can't be encrypted (iOS shows them without running the app's code), so for those the relay sees the session's state (working, needs you, finished) and since when, nothing else. On Android those updates are encrypted too.
-- **Terminal from the phone** lets anyone signed in to your account type into your terminals. It is off by default and runs over a Realtime channel only your account can join; nothing it carries is stored.
-- Delete your account and everything in it from Settings, on any device.
-- Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
-- The full privacy policy (also the one the app stores link to): [docs/PRIVACY.md](docs/PRIVACY.md).
+- **What the publisher's relay sees.** Only the app's publisher can reach Apple's and Google's push services for Džep, so your server sends notifications through the publisher's relay. Each phone makes its own AES-256 key and gives it only to your server, which encrypts every notification with it. The relay sees the phone's push token, the kind of notification (reminder, terminal or session state), a collapse id (a todo id or a session key) and ciphertext. It never sees titles, todo text or terminal output, and it stores nothing. One exception: iPhone Live Activity updates can't be encrypted, so for those it sees the session's state (working, needs you, finished) and since when. On Android those are encrypted too.
+- **Terminal from the phone** lets anyone signed in to your account type into your terminals. It's off by default and runs over a Realtime channel only your account can join; nothing it carries is stored.
+- **Delete everything** from Mac Settings → **Delete account**, or the phone's account menu.
+- Report vulnerabilities privately: [SECURITY.md](SECURITY.md). The full privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md).
 
-## Repository
+## Troubleshooting
 
-A Dart pub workspace (root `pubspec.yaml`) with three members:
+Most problems are in the [troubleshooting table](docs/SELF_HOSTING.md#troubleshooting): GitHub sign-in, a phone code that doesn't work, a server older than the app, Ask without an AI key. Still stuck? [Open an issue](https://github.com/danyzmaj-apps/dzep/issues/new/choose).
 
-| Path | What |
-| --- | --- |
-| [`apps/dzep-macos-app/`](apps/dzep-macos-app/) | The Mac app, and the backend it bundles and deploys: `supabase/` (migrations, edge functions), `tool/` (setup, relay and release scripts), `integrations/` (omp's extensions, the Claude Code plugin) |
-| [`apps/dzep-mobile/`](apps/dzep-mobile/) | The iPhone and Android app (`ios/`, `android/`) |
-| [`packages/dzep_core/`](packages/dzep_core/) | Shared Dart: sync store, session, chat, reminders, terminal protocol, UI |
-| [`config/`](config/) | Apple team, bundle id and App Group for every Xcode target |
-| [`docs/`](docs/) | Architecture, building, releasing, self-hosting |
+## Build from source and contribute
 
-## Building from source
+- [docs/BUILDING.md](docs/BUILDING.md): build the Mac, iPhone and Android apps, with your own signing identity.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the pieces fit, and why some of them look odd.
+- [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md): the server, by script, and updating it.
+- [docs/RELEASING.md](docs/RELEASING.md): how releases are made.
+- [CONTRIBUTING.md](CONTRIBUTING.md): issues and pull requests are welcome.
 
-See [docs/BUILDING.md](docs/BUILDING.md). [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the pieces fit, [docs/RELEASING.md](docs/RELEASING.md) how releases are made.
+The repo is a Dart pub workspace: the Mac app and the backend it deploys in [`apps/dzep-macos-app/`](apps/dzep-macos-app/), the iPhone and Android app in [`apps/dzep-mobile/`](apps/dzep-mobile/), shared code in [`packages/dzep_core/`](packages/dzep_core/).
 
-## Contributing
-
-Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+**Forking?** The Apple team, bundle ids, Android package, Sparkle update feed and push relay default to the publisher's. Builds for yourself override the team and ids in `config/Local.xcconfig` ([BUILDING.md](docs/BUILDING.md#your-signing-identity)). A fork that ships its own apps also sets its own Android package ([BUILDING.md](docs/BUILDING.md#android)), Sparkle key and feed ([RELEASING.md](docs/RELEASING.md#one-time-setup-maintainers-mac)) and push relay ([SELF_HOSTING.md](docs/SELF_HOSTING.md#your-own-app-id-and-relay)).
 
 ## License
 
