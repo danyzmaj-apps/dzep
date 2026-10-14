@@ -393,6 +393,7 @@ async function helloFrame($: EngineInterface): Promise<Frame> {
 		agent: "claude",
 		session: { id: await $.session.id(), title: m.title, cwd: await $.session.cwd(), model: m.model },
 		window: windowKey(await $.env.get("KITTY_LISTEN_ON"), await $.env.get("KITTY_WINDOW_ID")),
+		term: await termOf($),
 		pid: instance,
 		busy: turnId !== undefined,
 		ctx: m.ctx,
@@ -400,6 +401,41 @@ async function helloFrame($: EngineInterface): Promise<Frame> {
 		older: start > 0,
 		commands: list,
 	};
+}
+
+/** Where Claude runs, as Džep maps it to a terminal window (packages/dzep_core/lib/terminal.dart): the
+ * terminals' variables, and its tty where only a tty tells (Terminal, Ghostty); read once. */
+let term: Record<string, string> | undefined;
+async function termOf($: EngineInterface): Promise<Record<string, string>> {
+	if (term) return term;
+	const vars: [string, string | undefined][] = [
+		["TERM_PROGRAM", await $.env.get("TERM_PROGRAM")],
+		["KITTY_WINDOW_ID", await $.env.get("KITTY_WINDOW_ID")],
+		["KITTY_PID", await $.env.get("KITTY_PID")],
+		["KITTY_LISTEN_ON", await $.env.get("KITTY_LISTEN_ON")],
+		["TMUX", await $.env.get("TMUX")],
+		["TMUX_PANE", await $.env.get("TMUX_PANE")],
+		["WEZTERM_PANE", await $.env.get("WEZTERM_PANE")],
+		["WEZTERM_UNIX_SOCKET", await $.env.get("WEZTERM_UNIX_SOCKET")],
+		["ITERM_SESSION_ID", await $.env.get("ITERM_SESSION_ID")],
+		["TERM_SESSION_ID", await $.env.get("TERM_SESSION_ID")],
+	];
+	const found: Record<string, string> = {};
+	for (const [name, v] of vars) if (v) found[name] = v;
+	if (!found.TMUX && (found.TERM_PROGRAM === "Apple_Terminal" || found.TERM_PROGRAM === "ghostty")) {
+		try {
+			// The hook's process shares Claude's controlling terminal; its parent is Claude.
+			const r: unknown = await $.process.run(
+				["/bin/sh", "-c", "t=$(ps -o tty= -p $$); case $t in ttys*) ;; *) t=$(ps -o tty= -p $PPID);; esac; echo $t"],
+				{ timeoutMs: 3000 },
+			);
+			const out = r && typeof r === "object" && "stdout" in r ? r.stdout : undefined;
+			const tty = typeof out === "string" ? out.trim() : "";
+			if (/^ttys\d+$/.test(tty)) found.tty = `/dev/${tty}`;
+		} catch {}
+	}
+	term = found;
+	return found;
 }
 
 /** What isn't stored yet: the answer being written, and the question on screen. */

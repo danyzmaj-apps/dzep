@@ -4,10 +4,10 @@ import 'dart:io';
 import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/idea.dart';
-import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/native.dart';
 import 'package:dzep_core/session.dart';
 import 'package:dzep_core/store.dart';
+import 'package:dzep_core/terminals.dart';
 import 'package:dzep_macos/live_hub.dart';
 import 'package:dzep_macos/terminal_bridge.dart';
 import 'package:flutter/foundation.dart';
@@ -87,14 +87,14 @@ class AppController extends Session {
 
   static const _terminalKey = 'terminal_bridge';
 
-  /// The phone may see and type into kitty and the coding sessions
-  /// (lib/terminal_bridge.dart). Off until turned on in Settings: whoever
-  /// holds the account can then type here.
+  /// The phone may see and type into the Mac's terminals and the coding
+  /// sessions (lib/terminal_bridge.dart). Off until turned on in Settings:
+  /// whoever holds the account can then type here.
   bool get terminalOn => _prefs.getBool(_terminalKey) ?? false;
   TerminalBridge? _bridge;
 
-  /// kitty's remote control, through the sockets in [kittyDir].
-  final kitty = Kitty(socketDir: kittyDir(Platform.environment));
+  /// The Mac's terminals (kitty's sockets in [kittyDir]).
+  late final Terminals terminals = Terminals.standard(kittyDir: kittyDir(Platform.environment));
 
   /// Where kitty's sockets are: /tmp, or the directory `DZEP_KITTY_DIR`
   /// names, so a second Džep under test talks to a kitty of its own.
@@ -102,6 +102,17 @@ class AppController extends Session {
   static String kittyDir(Map<String, String> env) {
     final dir = env['DZEP_KITTY_DIR'];
     return dir != null && dir.isNotEmpty ? dir : '/tmp';
+  }
+
+  static const _terminalAppKey = 'terminal_app';
+
+  /// The terminal app new sessions from the phone open in: an app's id
+  /// (lib/terminal.dart), or `auto` (the one used last).
+  String get terminalApp => _prefs.getString(_terminalAppKey) ?? 'auto';
+
+  Future<void> setTerminalApp(String id) async {
+    await _prefs.setString(_terminalAppKey, id);
+    notifyListeners();
   }
 
   static const _agentKey = 'coding_agent';
@@ -115,7 +126,8 @@ class AppController extends Session {
   }
 
   /// The coding sessions reporting to the local API (integrations/).
-  late final live = LiveHub()..events.listen((e) => unawaited(_onLive(e)));
+  late final live = LiveHub(locate: (term, cwd) => terminals.locate(term, cwd: cwd))
+    ..events.listen((e) => unawaited(_onLive(e)));
 
   Future<void> setTerminal({required bool on}) async {
     await _prefs.setBool(_terminalKey, on);
@@ -131,7 +143,9 @@ class AppController extends Session {
     final old = _bridge;
     _bridge = null;
     await old?.stop();
-    if (want) await (_bridge = TerminalBridge(client, user.id, kitty, live, () => codingAgent)).start();
+    if (want) {
+      await (_bridge = TerminalBridge(client, user.id, terminals, live, () => codingAgent, () => terminalApp)).start();
+    }
   }
 
   /// A run ended, or the agent waits for an answer: the phones hear about

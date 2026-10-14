@@ -132,6 +132,12 @@ A relay only reaches apps signed with the publisher's ids. A fork that ships its
 | Ask: "The server has no AI key yet" | Set `AI_API_KEY` (see [AI provider](#ai-provider)). |
 | Ask: "… rejected the server's API key" / "doesn't know the model" | Check `AI_API_KEY` / `AI_MODEL` for your provider. |
 | "The project refused this key" on the setup screen | Use the **publishable** key (Project Settings → API Keys), never a secret one. |
+| Terminal: "Džep may not control iTerm2" (or Terminal, Ghostty) | Allow it in System Settings → Privacy & Security → Automation → Džep. |
+| Terminal: "kitty isn't listening" | On the Mac, **Settings → Terminals → Set up…** next to kitty, then restart kitty. |
+| Terminal: Ghostty windows show no screen | Expected: Ghostty's screen can't be read. Install tmux (`brew install tmux`) and start sessions from the phone: they run inside tmux with full control. |
+| Terminal: can't answer or press keys in a Terminal (macOS) window | Expected: Terminal takes only whole lines. Same fix: install tmux and start sessions from the phone. |
+| Terminal: a Ghostty session isn't matched to its window | Ghostty tells no tty, so Džep matches the session by its folder: keep one Ghostty window per folder. |
+| Terminal: closing a Ghostty window from the phone asks on the Mac first | Ghostty confirms closing a window that runs something. Windows Džep opened (and ones an agent reported) are closed without asking; for others, confirm on the Mac or quit what runs in it first. |
 
 A local Supabase (`supabase start`) works for development, but it doesn't check API keys, so the setup screen accepts any key there.
 

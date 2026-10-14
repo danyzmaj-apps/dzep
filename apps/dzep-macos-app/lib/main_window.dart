@@ -1,15 +1,16 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dzep_core/account.dart';
 import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/chat_view.dart';
 import 'package:dzep_core/idea.dart';
-import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/logo.dart';
 import 'package:dzep_core/native.dart';
 import 'package:dzep_core/remind.dart';
 import 'package:dzep_core/store.dart';
+import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_macos/controller.dart';
 import 'package:dzep_macos/integrations.dart';
@@ -1441,8 +1442,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
   bool? _launchAtLogin;
   String? _launchError;
 
-  /// kitty as the bridge would find it: its window count, or what's wrong.
-  ({int? windows, String? error})? _kitty;
+  /// The terminals as the bridge would find them, and their windows.
+  List<TermStatus>? _terminals;
+  int _windowCount = 0;
+
+  /// What a one-click fix did, by terminal id.
+  final _fixed = <String, String>{};
 
   /// The chosen coding agent's Džep integration, and how installing it went.
   IntegrationState? _integration;
@@ -1465,7 +1470,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
   void initState() {
     super.initState();
     unawaited(Native.launchAtLogin().then((v) => mounted ? setState(() => _launchAtLogin = v) : null));
-    unawaited(_checkKitty());
+    unawaited(_checkTerminals());
     unawaited(_checkIntegration());
     unawaited(app.chats?.checkAi());
     // Taken even from a focused field (autofocus wouldn't), so Esc closes
@@ -1478,14 +1483,70 @@ class _SettingsSheetState extends State<SettingsSheet> {
     });
   }
 
-  Future<void> _checkKitty() async {
-    ({int? windows, String? error}) r;
+  Future<void> _checkTerminals() async {
+    final statuses = await app.terminals.statuses();
+    var windows = 0;
     try {
-      r = (windows: (await app.kitty.windows()).length, error: null);
-    } on KittyException catch (e) {
-      r = (windows: null, error: e.message);
+      windows = (await app.terminals.windows()).length;
+    } on TerminalException {
+      // Counted as none.
     }
-    if (mounted) setState(() => _kitty = r);
+    if (!mounted) return;
+    setState(() {
+      _terminals = statuses;
+      _windowCount = windows;
+    });
+  }
+
+  /// Settings' one click for [s]: kitty's lines appended to kitty.conf, or
+  /// System Settings opened where Automation is allowed.
+  Future<void> _fix(TermStatus s) async {
+    switch (s.fix) {
+      case TermFix.kittyConfig:
+        try {
+          await app.terminals.kitty.configure();
+          _fixed[s.id] =
+              'Added to kitty.conf (the old one is kitty.conf.dzep-backup). Quit and reopen kitty to let Džep in.';
+        } on Object catch (e) {
+          _fixed[s.id] = "Couldn't change kitty.conf: $e";
+        }
+      case TermFix.automation:
+        await Process.run('/usr/bin/open', [
+          'x-apple.systempreferences:com.apple.preference.security?Privacy_Automation',
+        ]);
+        _fixed[s.id] = 'Turn on ${s.label} under Džep, then come back here.';
+      case null:
+        return;
+    }
+    if (mounted) setState(() {});
+    await _checkTerminals();
+  }
+
+  /// A terminal's row: how it stands, and its one-click fix if it has one.
+  Widget _terminalRow(TermStatus s) {
+    final state = switch (s.state) {
+      TermState.ready => 'Ready',
+      TermState.limited => 'Limited',
+      TermState.setup => 'Needs setup',
+      TermState.idle => 'Not running',
+      TermState.missing => 'Not installed',
+    };
+    // Only tmux shows while missing, with how to get it.
+    final note =
+        _fixed[s.id] ??
+        (s.state == TermState.missing || s.note.isEmpty || s.note == state
+            ? (s.note.isEmpty ? state : s.note)
+            : '$state · ${s.note}');
+    return _row(
+      label: s.label,
+      sub: note,
+      subError: s.state == TermState.setup && _fixed[s.id] == null,
+      trailing: switch (s.fix) {
+        TermFix.kittyConfig when _fixed[s.id] == null => _button('Set up', () => unawaited(_fix(s))),
+        TermFix.automation => _button('Allow…', () => unawaited(_fix(s))),
+        _ => const SizedBox.shrink(),
+      },
+    );
   }
 
   Future<void> _checkIntegration() async {
@@ -1545,6 +1606,18 @@ class _SettingsSheetState extends State<SettingsSheet> {
       _installFailed = error != null || _modsOff;
     });
     if (error != null) await _checkIntegration();
+  }
+
+  /// Where a session from the phone opens, and what tmux adds there.
+  String get _opensInSub {
+    final chosen = app.terminals.apps.where((h) => h.id == app.terminalApp).firstOrNull;
+    final where = chosen == null ? 'Auto: the terminal app you used last' : 'Always ${chosen.label}';
+    final tmux = _terminals?.where((s) => s.id == 'tmux').firstOrNull;
+    if (tmux == null) return where;
+    return tmux.state == TermState.missing
+        ? '$where · in Terminal and Ghostty your phone can’t press keys or (Ghostty) see the screen: '
+              'brew install tmux for full control'
+        : '$where · in Terminal and Ghostty they run in tmux, so your phone has full control';
   }
 
   /// Where the chosen agent's integration stands, for its row.
@@ -1712,19 +1785,17 @@ class _SettingsSheetState extends State<SettingsSheet> {
                         _row(
                           label: 'Terminal from phone',
                           sub: !app.terminalOn
-                              ? 'Your phone sees and types into kitty and coding sessions while this Mac is awake'
-                              : _kitty?.error ??
-                                    (_kitty == null
-                                        ? 'Looking for kitty…'
-                                        : '${_count(_kitty!.windows ?? 0, 'kitty window')} · '
-                                              '${_count(app.live.sessions.length, 'coding session')} '
-                                              '· keeps this Mac from idle sleep'),
-                          subError: app.terminalOn && _kitty?.error != null,
+                              ? 'Your phone sees and types into your terminals and coding sessions while this Mac is awake'
+                              : _terminals == null
+                              ? 'Looking for terminals…'
+                              : '${_count(_windowCount, 'terminal window')} · '
+                                    '${_count(app.live.sessions.length, 'coding session')} '
+                                    '· keeps this Mac from idle sleep',
                           trailing: Switch(
                             value: app.terminalOn,
                             onChanged: (v) {
                               unawaited(app.setTerminal(on: v));
-                              unawaited(_checkKitty());
+                              unawaited(_checkTerminals());
                             },
                           ),
                         ),
@@ -1757,6 +1828,40 @@ class _SettingsSheetState extends State<SettingsSheet> {
                                   ),
                                   _ => const SizedBox.shrink(),
                                 },
+                        ),
+                      ]),
+                      _group('TERMINALS', [
+                        for (final s in _terminals ?? const <TermStatus>[])
+                          if (s.state != TermState.missing || s.id == 'tmux') _terminalRow(s),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('New sessions open in', style: TextStyle(fontSize: 13)),
+                              Text(_opensInSub, style: const TextStyle(fontSize: 11, color: C.dim)),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  _button(
+                                    'Auto',
+                                    () => unawaited(app.setTerminalApp('auto')),
+                                    active: app.terminalApp == 'auto',
+                                  ),
+                                  for (final h in app.terminals.apps)
+                                    if (_terminals?.any((s) => s.id == h.id && s.state != TermState.missing) ?? false)
+                                      _button(
+                                        h.label,
+                                        () => unawaited(app.setTerminalApp(h.id)),
+                                        active: app.terminalApp == h.id,
+                                      ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ]),
                       const SizedBox(height: 18),

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -336,6 +337,36 @@ function windowKey(): string | null {
 	return listen && window ? `${basename(listen.replace(/^unix:/, ""))}/${window}` : null;
 }
 
+/** The terminal variables Džep maps to the window omp runs in (packages/dzep_core/lib/terminal.dart). */
+const TERM_VARS = [
+	"TERM_PROGRAM",
+	"KITTY_WINDOW_ID",
+	"KITTY_PID",
+	"KITTY_LISTEN_ON",
+	"TMUX",
+	"TMUX_PANE",
+	"WEZTERM_PANE",
+	"WEZTERM_UNIX_SOCKET",
+	"ITERM_SESSION_ID",
+	"TERM_SESSION_ID",
+];
+
+/** Where omp runs: those variables, and its tty (`/dev/ttys012`), read once. */
+let term: Record<string, string> | undefined;
+function termOf(): Record<string, string> {
+	if (term) return term;
+	term = {};
+	for (const name of TERM_VARS) {
+		const v = process.env[name];
+		if (v) term[name] = v;
+	}
+	try {
+		const tty = execFileSync("/bin/ps", ["-o", "tty=", "-p", String(process.pid)], { encoding: "utf8" }).trim();
+		if (/^ttys\d+$/.test(tty)) term.tty = `/dev/${tty}`;
+	} catch {}
+	return term;
+}
+
 function metaOf(ctx: ExtensionContext): { title: string; model: string; ctx: number | null } {
 	let percent: number | null = null;
 	try {
@@ -516,6 +547,7 @@ export default function liveExtension(pi: ExtensionAPI) {
 			agent: "omp",
 			session: { id: c.sessionManager.getSessionId(), title: m.title, cwd: c.cwd, model: m.model },
 			window: windowKey(),
+			term: termOf(),
 			pid: process.pid,
 			busy: !c.isIdle(),
 			ctx: m.ctx,

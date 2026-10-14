@@ -5,25 +5,17 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/ansi.dart';
-import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/live.dart';
 import 'package:dzep_core/live_activity.dart';
+import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/terminal_channel.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 // The phone side of the terminal protocol (lib/live.dart): the Mac's coding
-// sessions and kitty windows, what the phone watches, and a disk cache so
+// sessions and terminal windows, what the phone watches, and a disk cache so
 // the Terminal tab shows the last known state before the Mac answers.
-
-class TerminalException implements Exception {
-  const TerminalException(this.message);
-  final String message;
-
-  @override
-  String toString() => message;
-}
 
 enum TerminalLink {
   /// Joining the topic.
@@ -39,7 +31,7 @@ enum TerminalLink {
   offline,
 }
 
-/// A kitty window's text as the phone has it: version [v] of its [lines]
+/// A terminal window's text as the phone has it: version [v] of its [lines]
 /// (ANSI), and how many lines have scrolled off the top since the phone
 /// first saw it ([base]), so a view can keep its place while it scrolls.
 class TermScreen {
@@ -59,7 +51,7 @@ class _Watch {
 }
 
 /// The phone side: the Mac's coding sessions (structured, per [LiveView]) and
-/// kitty windows (as screens). The channel and the hellos run between
+/// terminal windows (as screens). The channel and the hellos run between
 /// [attach] and [detach]: while the app is in front.
 class TerminalRemote extends ChangeNotifier {
   TerminalRemote(this._client, this._userId, this._cacheDir, {@visibleForTesting TerminalSend? send, String? from})
@@ -116,7 +108,16 @@ class TerminalRemote extends ChangeNotifier {
   /// What a new session starts on the Mac (its setting).
   Agent agent = Agent.omp;
 
-  /// The Mac couldn't reach kitty (not listening, no kitten).
+  /// Where a session the phone starts opens ("iTerm2", "Terminal (in tmux)");
+  /// null from a Mac that doesn't say.
+  String? opensIn;
+
+  /// The Mac's terminals (installed ones, and tmux) and how each stands;
+  /// empty from a Mac that doesn't say.
+  List<TermStatus> terminals = const [];
+
+  /// What the Mac can't do with its terminals, as it says it (none reachable,
+  /// one not set up …).
   String? error;
 
   /// Phone: the sessions followed (Live Activities, Android notifications); set by the app (null
@@ -144,7 +145,7 @@ class TerminalRemote extends ChangeNotifier {
 
   final _screens = <String, TermScreen>{};
 
-  /// Each watched window's colors, as kitty draws it.
+  /// Each watched window's colors, as its terminal draws it.
   final colors = <String, TermColors>{};
 
   final _watches = <_Watch>[];
@@ -305,6 +306,8 @@ class TerminalRemote extends ChangeNotifier {
     projects = (p['projects'] as List?)?.cast<String>() ?? projects;
     home = p['home'] as String? ?? home;
     agent = Agent.parse(p['agent']);
+    opensIn = p['opensIn'] as String?;
+    terminals = [for (final t in p['terminals'] as List? ?? const []) TermStatus.fromJson((t as Map).cast())];
   }
 
   void _onState(Map<String, dynamic> p) {
@@ -434,13 +437,13 @@ class TerminalRemote extends ChangeNotifier {
   /// Types [text] into [window], then Enter.
   Future<void> send(String window, String text) => _run({'op': 'send', 'window': window, 'text': text});
 
-  /// One of [Kitty.keys].
+  /// One of [phoneKeys], where the window's terminal can press keys.
   Future<void> press(String window, String key) => _run({'op': 'key', 'window': window, 'key': key});
 
   /// Closes [window] on the Mac, with what runs in it.
   Future<void> close(String window) => _run({'op': 'close', 'window': window});
 
-  /// A new kitty window in [cwd], running the Mac's coding [agent] if
+  /// A new terminal window in [cwd] (where [opensIn] says), running the Mac's coding [agent] if
   /// [startAgent]; its window key.
   Future<String> launch(String cwd, {required bool startAgent}) async =>
       (await _run({'op': 'launch', 'cwd': cwd, 'agent': startAgent}))['window'] as String;
@@ -557,6 +560,8 @@ class TerminalRemote extends ChangeNotifier {
         'projects': projects,
         'home': home,
         'agent': agent.name,
+        'opensIn': ?opensIn,
+        'terminals': [for (final t in terminals) t.toJson()],
         'at': stateAt?.millisecondsSinceEpoch ?? now,
       };
     } else {

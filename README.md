@@ -3,7 +3,7 @@
 [![CI](https://github.com/danyzmaj-apps/dzep/actions/workflows/ci.yml/badge.svg)](https://github.com/danyzmaj-apps/dzep/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**A pocket for ideas, todos, notes and quick AI questions.** Džep is a Mac menu-bar app with an ⇧⌘Space popup, plus iPhone and Android apps, all synced through **your own** free Supabase server. There is no Džep cloud: the Mac app sets up the server for you in a few minutes, and your phones join it by scanning a code. From the phone you can also follow and prompt the [omp](https://github.com/can1357/oh-my-pi) and [Claude Code](https://github.com/anthropics/claude-code) sessions and other [kitty](https://sw.kovidgoyal.net/kitty/) windows running on your Mac.
+**A pocket for ideas, todos, notes and quick AI questions.** Džep is a Mac menu-bar app with an ⇧⌘Space popup, plus iPhone and Android apps, all synced through **your own** free Supabase server. There is no Džep cloud: the Mac app sets up the server for you in a few minutes, and your phones join it by scanning a code. From the phone you can also follow and prompt the [omp](https://github.com/can1357/oh-my-pi) and [Claude Code](https://github.com/anthropics/claude-code) sessions and other terminal windows running on your Mac.
 
 *Džep* (Croatian, "pocket") is pronounced roughly "jep".
 
@@ -32,7 +32,7 @@
 - **A free [Supabase](https://supabase.com) account.** It hosts your server; the free plan is plenty for one person.
 - **A [GitHub](https://github.com) account**, to make a free GitHub OAuth app: it's how you sign in to your server on the Mac.
 - **Optional: an API key for an OpenAI-compatible AI** (DeepSeek, OpenAI, OpenRouter, Groq, a local Ollama, …) for Ask. You can add it any time later.
-- **Optional, for Terminal from the phone:** [kitty](https://sw.kovidgoyal.net/kitty/) on the Mac, and [omp](https://github.com/can1357/oh-my-pi) or [Claude Code](https://github.com/anthropics/claude-code) (2.1.287 or later).
+- **Optional, for Terminal from the phone:** any of [kitty](https://sw.kovidgoyal.net/kitty/), [iTerm2](https://iterm2.com), [WezTerm](https://wezterm.org), [Ghostty](https://ghostty.org) or Terminal (macOS's) on the Mac, optionally [tmux](https://github.com/tmux/tmux), and [omp](https://github.com/can1357/oh-my-pi) or [Claude Code](https://github.com/anthropics/claude-code) (2.1.287 or later).
 - **A phone, if you like:** an iPhone with iOS 17 or newer, or an Android phone with Android 8.0 or newer.
 
 ## Install
@@ -124,18 +124,32 @@ A small streamed chat with the AI you connected. Paste or attach up to 4 images 
 
 ### Terminal from the phone
 
-The phone's Terminal tab lists the Mac's omp and Claude Code sessions and other kitty windows.
+The phone's Terminal tab lists the Mac's omp and Claude Code sessions and other terminal windows.
 
 - **A coding session** opens as a conversation laid out for the phone: your prompts, the agent's answers, tool calls as cards. Prompt it (with images), stop it, answer its questions, tool approvals and plan reviews. While omp works you can steer it or queue a prompt; Claude Code can't be steered, so a prompt waits for its run to end.
 - **Any window**, a shell included, also opens as its live screen you can type into.
-- **+** opens a new kitty window in one of the Mac's projects, with a shell or your coding agent.
+- **+** opens a new window in one of the Mac's projects, with a shell or your coding agent. It opens without taking the focus from what you're doing on the Mac.
 - When a run ends or the agent needs you while you're away from the Mac, a push takes you to that session. A session you follow shows as a **Live Activity** on the iPhone (Lock Screen, Dynamic Island) and as an **ongoing notification** on Android.
+
+What works depends on the terminal:
+
+| Terminal | Sessions & screens | Colors | Keys & answers from phone | Close |
+| --- | --- | --- | --- | --- |
+| kitty | ✓ | ✓ | ✓ | ✓ |
+| iTerm2 | ✓ | – | ✓ | ✓ |
+| WezTerm | ✓ | ✓ | ✓ | ✓ |
+| tmux (in any terminal) | ✓ | ✓ | ✓ | ✓ |
+| Ghostty | Sessions, no screen | – | ✓ | ✓ |
+| Terminal (macOS's) | ✓, whole lines only | – | – (answer asks and menus on the Mac) | ✓ |
+
+With tmux installed (`brew install tmux`), sessions the phone starts in Terminal or Ghostty run inside tmux and get full control.
 
 To turn it on:
 
-1. In `kitty.conf`, allow remote control: `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty`.
-2. On the Mac, turn on **Settings → Terminal from phone**. It's off by default.
-3. In **Settings → Coding agent**, pick omp or Claude Code: it's what a new session from your phone starts. The row under it, **Džep in …**, installs or updates Džep's integration for that agent. Restart running sessions afterwards.
+1. On the Mac, turn on **Settings → Terminal from phone**. It's off by default.
+2. **Settings → Terminals** lists the terminals Džep found, each Ready, Limited (and why) or Needs setup. For kitty, click **Set up…**, then restart kitty: it backs up `kitty.conf` (`.dzep-backup`) and appends `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty`. For iTerm2, Terminal and Ghostty, macOS asks once whether Džep may control them; if you said no, click **Allow…** there, or turn Džep on in System Settings → Privacy & Security → Automation.
+3. **New sessions open in** picks the terminal a session from your phone opens in: **Auto** (the running terminal you used last, else the first that works) or a specific one.
+4. In **Settings → Coding agent**, pick omp or Claude Code: it's what a new session from your phone starts. The row under it, **Džep in …**, installs or updates Džep's integration for that agent. Restart running sessions afterwards.
 
 The integration also adds three commands to your agent, saved through the Mac app and filed under the current repo's name:
 

@@ -86,6 +86,41 @@ void main() {
     await until(() => hub['pid:42'] != null);
   });
 
+  test("a reported term names the window: tmux's pane over kitty variables leaked into it", () async {
+    (await connect()).send({
+      't': 'hello',
+      'v': 1,
+      'session': {'id': 's1', 'cwd': '/Users/me/Dev/dzep'},
+      // A newer extension still sends kitty's `window` from the leaked variables.
+      'window': 'kitty-23224/116',
+      'term': {
+        'TERM_PROGRAM': 'tmux',
+        'KITTY_WINDOW_ID': '116',
+        'KITTY_PID': '23224',
+        'TMUX': '/private/tmp/tmux-501/default,4226,0',
+        'TMUX_PANE': '%0',
+      },
+      'pid': 42,
+      'items': const <Object>[],
+    });
+    await until(() => hub['tmux:default/0'] != null);
+    expect(hub['kitty-23224/116'], isNull);
+  });
+
+  test('a term that names no window keys the session by pid, not by the leaked kitty window', () async {
+    (await connect()).send({
+      't': 'hello',
+      'v': 1,
+      'session': {'id': 's1', 'cwd': '/Users/me/Dev/dzep'},
+      'window': 'kitty-23224/116',
+      'term': {'TERM_PROGRAM': 'ghostty', 'KITTY_WINDOW_ID': '116', 'KITTY_PID': '23224', 'tty': '/dev/ttys011'},
+      'pid': 42,
+      'items': const <Object>[],
+    });
+    await until(() => hub['pid:42'] != null);
+    expect(hub['kitty-23224/116'], isNull);
+  });
+
   test('slash commands come with the hello and change with a meta that has them', () async {
     final ext = await connect();
     ext.hello(

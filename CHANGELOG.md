@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Any terminal, not just kitty**: Terminal from the phone now works with iTerm2, WezTerm, Ghostty, Terminal (macOS's) and tmux too. What a window can do depends on its terminal (kitty, WezTerm and tmux everything; iTerm2 without colors; Ghostty without a screen; Terminal without keys), and the phone shows only what works; with tmux installed, sessions the phone starts in Terminal or Ghostty run in tmux with full control. New windows open without taking the focus. The Mac's new **Settings → Terminals** shows each terminal as Ready, Limited or Needs setup, sets kitty up in one click (**Set up…**, then restart kitty) and picks where **New sessions open in**. macOS asks once whether Džep may control iTerm2, Terminal and Ghostty.
+
 ## 0.3.0
 
 The first release on GitHub Releases; it also carries everything listed under 0.2.0. **Backend:** update your server: re-run `apps/dzep-macos-app/tool/setup-backend.sh`, or the Mac's setup wizard on the same project (new migrations, `ask`, `pair` and `push` changed).

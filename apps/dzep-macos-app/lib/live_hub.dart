@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/live.dart';
+import 'package:dzep_core/terminal.dart';
 import 'package:flutter/foundation.dart';
 
 /// One extension's connection, whatever carries it (lib/local_api.dart): a
@@ -35,7 +36,8 @@ class LiveSession {
 
   final LiveLink _link;
 
-  /// The kitty window it runs in (`kitty-<pid>/<id>`), or `pid:<pid>`.
+  /// The terminal window it runs in (lib/terminal.dart's keys:
+  /// `kitty-<pid>/<id>`, `tmux:default/3` …), or `pid:<pid>`.
   final String key;
   LiveLog log;
   Agent agent = Agent.omp;
@@ -130,6 +132,12 @@ class LiveAsked extends LiveEvent {
 /// API (lib/local_api.dart) and keep it up to date; the terminal bridge
 /// passes them on to the phone.
 class LiveHub {
+  /// [locate]: where a session runs, from the `term` its extension reports
+  /// and its folder (Terminals.locate); [windowOfTerm] by default.
+  LiveHub({Future<String?> Function(Map<String, dynamic>? term, String cwd)? locate})
+    : _locate = locate ?? ((term, _) async => windowOfTerm(term));
+
+  final Future<String?> Function(Map<String, dynamic>? term, String cwd) _locate;
   final _byKey = <String, LiveSession>{};
 
   /// Transcript changes, per session.
@@ -159,7 +167,7 @@ class LiveHub {
           continue;
         }
         if (m['t'] == 'hello') {
-          session = _hello(link, session, m);
+          session = await _hello(link, session, m);
         } else if (session != null && identical(_byKey[session.key], session)) {
           _handle(session, m);
         }
@@ -177,9 +185,21 @@ class LiveHub {
     }
   }
 
-  LiveSession _hello(LiveLink link, LiveSession? current, Map<String, dynamic> m) {
+  /// The session's key is the window it runs in: where its `term` says
+  /// (an older extension reports only kitty's, as `window`), else its pid.
+  /// A `term` that names no window is trusted over `window`, which an
+  /// extension also reads from KITTY_* variables leaked from a kitty that
+  /// started the terminal (they'd name a window of that kitty).
+  Future<LiveSession> _hello(LiveLink link, LiveSession? current, Map<String, dynamic> m) async {
     final s = (m['session'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final window = m['window'] as String?;
+    final term = (m['term'] as Map?)?.cast<String, dynamic>();
+    String? window;
+    try {
+      window = await _locate(term, s['cwd'] as String? ?? '');
+    } on Object catch (e) {
+      debugPrint('Džep: where a live session runs: $e');
+    }
+    if (term == null) window ??= m['window'] as String?;
     final key = window ?? 'pid:${m['pid']}';
     final log = LiveLog([
       for (final i in m['items'] as List? ?? const []) LiveItem.fromJson((i as Map).cast()),
