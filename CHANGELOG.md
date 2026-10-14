@@ -20,6 +20,7 @@
 - Mac: Terminal from the phone restarts its connection whenever the signed-in account changes, including when the server ends the session.
 - iPhone: a widget tick or notification **Done** queued while offline can no longer be lost when the app reads the queue at the same moment, and the phone registers for push only once it has made its encryption key.
 - Server functions cut long text between characters, never through one: a reviewer-code label or a phone's name ending in an emoji past the limit no longer fails to save, and a coding session's alert whose text is cut inside an emoji now opens on the iPhone instead of showing only "Terminal".
+- Sync: a device coming back online no longer misses what other devices changed while it was away. The realtime echo of its own push could move the sync cursor past those rows before the pull ran, so they never arrived, and its stale copies could later overwrite them.
 
 ## 0.3.0
 

@@ -100,6 +100,9 @@ class FakeStore extends ChangeNotifier implements IdeaStore {
   Future<void> syncNow() async {}
 
   @override
+  void receive(Map<String, dynamic> row) {}
+
+  @override
   Future<void> close() async {}
 }
 

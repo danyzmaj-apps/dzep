@@ -40,6 +40,15 @@ class IdeaStore extends ChangeNotifier {
     return store;
   }
 
+  /// A store from [file] that syncs only when told ([syncNow], [receive]):
+  /// no realtime, no timers.
+  @visibleForTesting
+  static Future<IdeaStore> cached(SupabaseClient client, String userId, File file, String device) async {
+    final store = IdeaStore._(client, userId, file, device);
+    await store._load();
+    return store;
+  }
+
   final SupabaseClient _client;
   final String userId;
   final String device;
@@ -192,7 +201,7 @@ class IdeaStore extends ChangeNotifier {
           table: 'ideas',
           filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
           callback: (payload) {
-            if (payload.newRecord.isNotEmpty) _merge([payload.newRecord]);
+            if (payload.newRecord.isNotEmpty) receive(payload.newRecord);
           },
         )
         .subscribe((status, _) {
@@ -207,6 +216,13 @@ class IdeaStore extends ChangeNotifier {
     await _push();
     await _pull();
   }
+
+  /// A row realtime brought. It leaves the pull cursor where it is: realtime
+  /// skips rows (while offline, a dropped event) and runs ahead of the pull
+  /// (the echo of this device's own push), so only a pull may say "everything
+  /// up to here is in".
+  @visibleForTesting
+  void receive(Map<String, dynamic> row) => _merge([row], advanceCursor: false);
 
   Future<void> _pull() async {
     try {
@@ -228,7 +244,7 @@ class IdeaStore extends ChangeNotifier {
     }
   }
 
-  void _merge(List<Map<String, dynamic>> rows) {
+  void _merge(List<Map<String, dynamic>> rows, {bool advanceCursor = true}) {
     if (_closed || rows.isEmpty) return;
     for (final row in rows) {
       final incoming = Idea.fromServer(row);
@@ -241,7 +257,7 @@ class IdeaStore extends ChangeNotifier {
       } else if (!local.dirty) {
         local.absorb(incoming);
       }
-      if (_cursor == null || incoming.updatedAt.isAfter(_cursor!)) _cursor = incoming.updatedAt;
+      if (advanceCursor && (_cursor == null || incoming.updatedAt.isAfter(_cursor!))) _cursor = incoming.updatedAt;
     }
     notifyListeners();
     _scheduleSave();
