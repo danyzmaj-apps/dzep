@@ -73,11 +73,15 @@ The phone connects and signs in as you. A code works **once**, for **10 minutes*
 - **Phones:** tabs for Todos, Ideas, Notes, Ask and Terminal; **Todos** and **New idea** widgets.
 - **Coding agents:** `/idea`, `/do` and `/note` in omp and Claude Code, filed under the current repo.
 
+
+**Does the Mac have to be on?** Not for your data: ideas, todos, notes, reminders and Ask live on your server, so the phones work on their own with the Mac off. The Mac is needed only to add a new phone (its code) and for Terminal from the phone (below).
 All the keys, the reminder syntax and more: [docs/USING.md](docs/USING.md).
 
 ## Terminal from the phone
 
 The phone's Terminal tab shows the Mac's omp and Claude Code sessions as conversations (prompt with images, stop, answer questions, approvals and plan reviews) and any other terminal window as a live screen you can type into. **+** opens a new session in one of your projects. When a run ends or the agent needs you, a push takes you there; a session you follow is a Live Activity (iPhone) or an ongoing notification (Android).
+
+> **Your Mac has to be awake, with Džep running and Settings → Terminal from phone on.** The sessions and windows are on the Mac; the phone only shows and drives them. While Terminal from phone is on, Džep keeps the Mac from going to sleep when idle, but a closed lid (without an external display) or a shut-down Mac still ends it: the phone then says the Mac isn't answering. Pushes for a run that ends while you're away need the Mac awake too.
 
 ```mermaid
 flowchart LR
