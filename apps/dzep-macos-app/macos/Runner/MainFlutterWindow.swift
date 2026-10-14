@@ -222,9 +222,7 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
       result(nil)
     case "takePending":
       // Todos ticked off in the widget, for Dart to apply.
-      let pending = DzepShared.defaults.stringArray(forKey: "pending") ?? []
-      DzepShared.defaults.removeObject(forKey: "pending")
-      result(pending)
+      result(DzepShared.takePending())
     case "getBackend":
       result(DzepShared.backend.map { ["url": $0.url, "key": $0.key] })
     case "setBackend":
@@ -242,6 +240,20 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  /// Džep is quitting: Dart takes its address out of cli.json (lib/local_api.dart)
+  /// so the terminal's integrations stop calling a port nobody owns now.
+  /// [done] runs once Dart has, or after a second at most.
+  func quitting(_ done: @escaping () -> Void) {
+    var finished = false
+    let finish = {
+      if finished { return }
+      finished = true
+      done()
+    }
+    channel.invokeMethod("quitting", arguments: nil) { _ in finish() }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: finish)
   }
 
   private func showPopup() {

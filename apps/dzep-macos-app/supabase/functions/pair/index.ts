@@ -14,10 +14,16 @@
 //     {"action": "list"}                          → {"codes": [{id, label, expires_at, created_at, last_used_at}]}
 //         the caller's active reviewer codes
 //     {"action": "revoke", "id"}                  → {"revoked": true}
+//         once no reviewer code works (revoked or run out), the demo account
+//         is signed out everywhere (public.end_idle_demo_sessions)
 //   POST /functions/v1/pair  (no token)
 //     {"action": "redeem", "code"}                → {"token_hash"}
 //         one failure reads the same whatever the reason (unknown, expired,
 //         used, revoked); 429 after 10 failures from one caller in 10 minutes
+//         (callers as Supabase's edge names them; no throttle when it doesn't)
+//
+// The demo account can make phone codes for itself only while one of its
+// reviewer codes still works (public.reviewer_access_active).
 //
 // Deployed with --no-verify-jwt: the token is checked here with auth.getUser.
 import { createClient, type User } from "jsr:@supabase/supabase-js@2";
@@ -90,19 +96,21 @@ async function insertCode(row: {
   return { id: data.id, code };
 }
 
-/** Who sends the request, as best the platform tells: for the throttle only. */
-function caller(req: Request): string {
-  return (
-    req.headers.get("cf-connecting-ip") ??
-    req.headers.get("x-real-ip") ??
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-    "unknown"
-  );
+/**
+ * Who sends the request, for the throttle only: the address Cloudflare, in
+ * front of Supabase's edge, puts in cf-connecting-ip (it replaces whatever a
+ * client sent). Null where nothing trustworthy names the caller (a local
+ * stack): x-forwarded-for and x-real-ip are whatever the client says.
+ */
+function caller(req: Request): string | null {
+  return req.headers.get("cf-connecting-ip")?.trim() || null;
 }
 
 const unusable =
   "That code doesn't work: it may have run out, been used already or been revoked. " +
   "Make a new one in Džep on your Mac (Settings → Set up phone…).";
+
+const reviewerAccessEnded = "This reviewer access has ended. Ask the server's owner for a new reviewer code.";
 
 async function redeem(req: Request, code: unknown): Promise<Response> {
   const normalized = typeof code === "string" ? normalize(code) : "";
@@ -134,9 +142,21 @@ Deno.serve(async (req) => {
   const { data: { user } } = await createClient(url, anonKey, { auth: { persistSession: false } }).auth.getUser(token);
   if (!user) return json(401, { error: "Sign in first" });
 
+  // Listing and revoking go through the caller's own token: row level
+  // security keeps them to their own codes, without the hashes.
+  const own = createClient(url, anonKey, {
+    auth: { persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+
   try {
     if (action === "create") {
       if (!user.email) return json(400, { error: "Your account has no email address, so it can't pair a phone." });
+      if (isDemo(user)) {
+        const { data: active, error } = await own.rpc("reviewer_access_active");
+        if (error) return json(500, { error: error.message });
+        if (active !== true) return json(403, { error: reviewerAccessEnded });
+      }
       // Spent and run-out phone codes of this user have no further use.
       await admin
         .from("pairing_codes")
@@ -166,13 +186,6 @@ Deno.serve(async (req) => {
       });
       return json(200, { id, code, label, expires_at });
     }
-
-    // Listing and revoking go through the caller's own token: row level
-    // security keeps them to their own codes, without the hashes.
-    const own = createClient(url, anonKey, {
-      auth: { persistSession: false },
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
 
     if (action === "list") {
       const { data, error } = await own

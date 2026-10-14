@@ -14,6 +14,17 @@ Everything the apps do, in detail. For installing and setting up, see the [READM
 
 ⇧⌘Space opens the popup, in the mode you used last, with its field focused. Change the shortcut in **Settings → Quick capture shortcut**. The menu-bar icon shows how many todos are open.
 
+<table>
+  <tr>
+    <td><img src="images/mac-popup-todo.png" alt="The popup in Todo mode: a todo with a reminder chip, the similar open todos below" width="400"></td>
+    <td><img src="images/mac-popup-ask.png" alt="The popup in Ask mode: a question, its answer and the recent chats" width="400"></td>
+  </tr>
+  <tr>
+    <td><img src="images/mac-popup-idea.png" alt="The popup in Idea mode, filing an idea under a project" width="400"></td>
+    <td><img src="images/mac-popup-note.png" alt="The popup in Note mode with recent notes" width="400"></td>
+  </tr>
+</table>
+
 | Key | What it does |
 | --- | --- |
 | ⌘1 ⌘2 ⌘3 ⌘4 | **Idea**, **Todo**, **Note**, **Ask** (or click the strip on top) |
@@ -35,6 +46,8 @@ Everything the apps do, in detail. For installing and setting up, see the [READM
 ## The main window and the note window (Mac)
 
 The main window has **Todos** (finished ones fold away at the bottom), **Ideas** (grouped by project, with descriptions), **Notes** and **Ask**. ⌘N adds, ⌘F or / searches, ↑/↓ move, ⌫ deletes (with Undo), ⌘, opens Settings.
+
+<p align="center"><img src="images/mac-main.png" alt="The main window: sidebar with Todos, Ideas, Notes, Ask and projects; a list and the selected idea" width="820"></p>
 
 A note can float in a small window of its own over whatever you're doing: open it from the note's header in the main window, or with ⌘P in the popup.
 
@@ -62,7 +75,21 @@ The iPhone and Android apps do the same things.
 - **Widgets:** **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
 - **Account:** the avatar at the top opens Sign out and Delete account.
 
-A phone signs in only with a code from your Mac (**Settings → Set up phone…** on the Mac); see [Add your phone](../README.md#add-your-phone).
+<table>
+  <tr>
+    <td><img src="images/phone-ideas.png" alt="Phone: Ideas tab with project filters" width="250"></td>
+    <td><img src="images/phone-notes.png" alt="Phone: Notes tab" width="250"></td>
+    <td><img src="images/phone-ask.png" alt="Phone: an Ask chat" width="250"></td>
+  </tr>
+</table>
+
+### Adding a phone
+
+A phone signs in only with a code from your Mac, never with a password or GitHub. On the Mac, open **Settings → Set up phone…**: it shows a QR code. In the phone app, tap **Scan the code from your Mac** (or **Paste a code instead**). The phone connects to your server and signs in as you.
+
+A code works **once**, for **10 minutes**, and anyone who scans it gets into your account, so show it only to your own phone. For App Store or Play review, **Settings → Reviewer access** makes a code for a separate demo account ([details](SELF_HOSTING.md#app-store-and-play-review)).
+
+**Does the Mac have to be on?** Not for your data: ideas, todos, notes, reminders and Ask live on your server, so the phones work on their own with the Mac off. The Mac is needed only to add a phone (its code) and for [Terminal from the phone](#terminal-from-the-phone).
 
 ## Ask
 
@@ -74,6 +101,13 @@ No AI yet? Connect one from the Mac: **Settings → AI → Connect…** (or **Co
 
 The phone's Terminal tab lists the Mac's coding sessions (omp and Claude Code) and its other terminal windows.
 
+<table>
+  <tr>
+    <td><img src="images/phone-terminal.png" alt="Phone: the Terminal tab listing the Mac's coding sessions and windows" width="260"></td>
+    <td><img src="images/phone-session.png" alt="Phone: a coding session as a conversation, with tool-call cards" width="260"></td>
+  </tr>
+</table>
+
 - **A coding session** opens as a conversation laid out for the phone: your prompts, the agent's answers, tool calls as cards. Prompt it (with images), stop it, answer its questions, tool approvals and plan reviews. While omp works you can steer it or queue a prompt; Claude Code can't be steered, so a prompt waits for its run to end. Typing `/` suggests the agent's slash commands.
 - **Any window**, a shell included, also opens as its live screen you can type into.
 - **+** opens a new window in one of the Mac's projects, with a shell or your coding agent. It opens without taking the focus from what you're doing on the Mac.
@@ -81,11 +115,15 @@ The phone's Terminal tab lists the Mac's coding sessions (omp and Claude Code) a
 
 What works in a window depends on its terminal: see the [table in the README](../README.md#terminal-from-the-phone). The phone shows only what works. With tmux installed (`brew install tmux`), sessions the phone starts in Terminal or Ghostty run inside tmux and get full control.
 
+The Mac has to be awake, with Džep running and **Terminal from phone** on: the sessions and windows are on the Mac, and the phone only shows and drives them. While it's on, Džep keeps the Mac from idle sleep, but a closed lid (without an external display) or a shut-down Mac ends it, and the phone says the Mac isn't answering.
+
 ### Turning it on
+
+<p align="center"><img src="images/mac-settings-terminals.png" alt="Mac Settings: Terminal from phone, Coding agent, and each terminal Ready or Limited" width="400"></p>
 
 1. On the Mac, turn on **Settings → Terminal from phone**. It's off by default.
 2. **Settings → Terminals** lists the terminals Džep found, each **Ready**, **Limited** (and why) or **Needs setup**.
-   - **kitty:** click **Set up…**, then restart kitty. It backs up `kitty.conf` (`.dzep-backup`) and appends `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty`.
+   - **kitty:** click **Set up…**, then restart kitty. It backs up `kitty.conf` (`.dzep-backup`) and appends `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty`. Only kitty windows of your own macOS account show up.
    - **iTerm2, Terminal and Ghostty:** macOS asks once whether Džep may control them. If you said no, click **Allow…** there, or turn Džep on in System Settings → Privacy & Security → Automation.
    - **tmux and WezTerm** need nothing.
 3. **New sessions open in** picks the terminal a session from your phone opens in: **Auto** (the running terminal you used last, else the first that works) or a specific one.

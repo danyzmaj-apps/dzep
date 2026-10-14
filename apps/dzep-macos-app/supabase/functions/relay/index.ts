@@ -15,7 +15,15 @@
 //   POST {"platform": "android", "token": FCM registration token,
 //         "kind": "reminder"|"terminal"|"activity", "enc": base64, "collapse"?: string}
 //   → 200 sent · 410 the phone is gone (uninstalled, signed out): forget it ·
-//     501 FCM not configured here · 4xx/5xx otherwise
+//     429 over a rate limit (Retry-After) · 501 FCM not configured here · 4xx/5xx otherwise
+//
+// Trust: any caller may use it (self-hosted servers have no credentials of
+// the publisher's), so whoever knows a device token can make that phone show
+// a generic "Džep / Reminder" alert, or move or end one of its Live
+// Activities, and nothing more: the real text needs the key only that phone
+// and its server hold. Rate limits (limits.ts) keep floods cheap: per caller
+// address, per device token, and fewer still for a caller whose tokens keep
+// turning out unknown or malformed.
 //
 // A Live Activity push (a coding session on the Lock Screen) can't be
 // encrypted: the iPhone's notification extension never sees it. So it carries
@@ -39,6 +47,7 @@ import {
   parseServiceAccount,
   type ServiceAccount,
 } from "./fcm.ts";
+import { callerOf, relayLimits } from "./limits.ts";
 
 const keyId = Deno.env.get("APNS_KEY_ID")!;
 const teamId = Deno.env.get("APNS_TEAM_ID")!;
@@ -46,6 +55,21 @@ const topic = Deno.env.get("APNS_TOPIC") ?? "com.danyzmaj.dzep";
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+const limits = relayLimits();
+
+const tooMany = () =>
+  new Response(JSON.stringify({ error: "Too many pushes; try again in a minute" }), {
+    status: 429,
+    headers: { "content-type": "application/json", "retry-after": "60" },
+  });
+
+/** Counts a push to [token]; false once that device had its share this minute. */
+async function tokenAllowed(token: string): Promise<boolean> {
+  // Hashed: an FCM token can be kilobytes long.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return limits.token.take(String.fromCharCode(...new Uint8Array(digest)));
+}
 
 // The .p8 is PEM: base64 PKCS#8 between the BEGIN/END lines.
 const signingKey = crypto.subtle.importKey(
@@ -106,6 +130,7 @@ async function android(body: Record<string, unknown>): Promise<Response> {
   // FCM takes 4 KB of data in all.
   if (typeof body.enc !== "string" || body.enc.length > 3000) return json(400, { error: "enc missing or too long" });
   const collapse = typeof body.collapse === "string" && body.collapse.length <= 64 ? body.collapse : undefined;
+  if (!(await tokenAllowed(body.token))) return tooMany();
 
   let access: FcmAccess;
   try {
@@ -163,7 +188,18 @@ function liveActivity(body: Record<string, unknown>): { payload: string; priorit
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "POST only" });
-  const body = await req.json().catch(() => ({}));
+  const caller = callerOf(req);
+  if (caller && (limits.bad.full(caller) || !limits.caller.take(caller))) return tooMany();
+  const body: unknown = await req.json().catch(() => null);
+  const res = body && typeof body === "object" && !Array.isArray(body)
+    ? await push(body as Record<string, unknown>)
+    : json(400, { error: "the body must be a JSON object" });
+  // Malformed requests and tokens no phone has: what guessing looks like.
+  if (caller && (res.status === 400 || res.status === 410)) limits.bad.take(caller);
+  return res;
+});
+
+async function push(body: Record<string, unknown>): Promise<Response> {
   if (body.platform === "android") return android(body);
   if (body.platform !== undefined && body.platform !== "ios") return json(400, { error: "platform must be ios or android" });
   const live = body.kind === "liveactivity";
@@ -199,6 +235,7 @@ Deno.serve(async (req) => {
     headers["apns-priority"] = "10";
     if (typeof body.collapse === "string" && body.collapse.length <= 64) headers["apns-collapse-id"] = body.collapse;
   }
+  if (!(await tokenAllowed(body.token))) return tooMany();
 
   // Release builds talk to production, ones run from Xcode / flutter run to
   // the sandbox; a token from the other one is a BadDeviceToken here.
@@ -212,4 +249,4 @@ Deno.serve(async (req) => {
     if (reason !== "BadDeviceToken") return json(502, { error: `APNs ${res.status} ${reason}` });
   }
   return json(410, { gone: true });
-});
+}

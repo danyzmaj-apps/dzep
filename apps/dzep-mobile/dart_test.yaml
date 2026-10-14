@@ -1,5 +1,5 @@
-# The README screenshots (test/screenshots) render only on request:
+# The docs' screenshots (test/screenshots) render only on request:
 #   fvm flutter test --tags screenshots --run-skipped
 tags:
   screenshots:
-    skip: "Renders docs/images/phone-*.png; run with --tags screenshots --run-skipped"
+    skip: "Renders docs/images/phone-*.png and hero.png; run with --tags screenshots --run-skipped"

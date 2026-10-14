@@ -10,7 +10,7 @@ Install Džep and open it. With no server yet, it starts a setup wizard:
 2. **Project.** Let Džep create one (region guessed from your time zone), or pick one you have. A project of its own is best: Džep won't go on one that already has accounts or tables of the same names, and says which of its settings it would replace. The free plan allows two active projects; pause one you don't use if it's full.
 3. **GitHub sign-in.** Džep opens GitHub's "new OAuth app" form with the name and callback URL filled in; paste back the client ID and secret.
 4. **AI (optional).** DeepSeek, OpenAI, OpenRouter or any OpenAI-compatible API, with its key.
-5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in, private sign-up and the `dzep://` redirect, deploys the `ask`, `device`, `pair` and `push` functions and stores the AI key as a function secret. If a step fails, **Retry** resumes from it, and redoes any step whose values you changed after **← Back**. Push notifications need nothing more: each phone registers itself, and your server sends through the app publisher's relay, encrypted so only that phone can read them ([Push](#push)).
+5. **Setup.** Džep creates the tables and security rules, turns on GitHub sign-in (and turns email sign-up off: GitHub is the only way in), private sign-up and the `dzep://` redirect, deploys the `ask`, `device`, `pair` and `push` functions and stores the AI key as a function secret. If a step fails, **Retry** resumes from it, and redoes any step whose values you changed after **← Back**. Push notifications need nothing more: each phone registers itself, and your server sends through the app publisher's relay, encrypted so only that phone can read them ([Push](#push)).
 
 Then sign in with GitHub. For your phones, see [Connect the apps](#connect-the-apps).
 
@@ -23,6 +23,7 @@ Same result from a terminal. You need:
 - a [Supabase](https://supabase.com) account,
 - a GitHub account (Džep signs in with GitHub),
 - the [Supabase CLI](https://supabase.com/docs/guides/cli): `brew install supabase/tap/supabase`, then `supabase login`,
+- `jq` (part of macOS 15 and later; otherwise `brew install jq`, or your Linux package manager's `jq`): the script runs on Linux too,
 - this repository: `git clone https://github.com/danyzmaj-apps/dzep && cd dzep`,
 - optionally, an API key for any OpenAI-compatible AI provider, for quick questions.
 
@@ -40,9 +41,9 @@ apps/dzep-macos-app/tool/setup-backend.sh <project-ref>
 It walks you through the rest:
 
 1. It links the repo to your project.
-2. It asks you to **create a GitHub OAuth app** at [github.com/settings/applications/new](https://github.com/settings/applications/new), with the callback URL `https://<project-ref>.supabase.co/auth/v1/callback`, and to paste its client ID and secret. They are stored in `apps/dzep-macos-app/supabase/.env`, which git ignores.
+2. It asks you to **create a GitHub OAuth app** at [github.com/settings/applications/new](https://github.com/settings/applications/new), with the callback URL `https://<project-ref>.supabase.co/auth/v1/callback`, and to paste its client ID and secret. They are stored in `apps/dzep-macos-app/supabase/.env`, which git ignores. Secrets reach the Supabase CLI through a temporary mode-600 env file, never the command line.
 3. It creates the tables, security rules and storage (`supabase db push`).
-4. It turns on GitHub sign-in, the `dzep://` redirect and private sign-up (`supabase config push`).
+4. It turns on GitHub sign-in, the `dzep://` redirect and private sign-up, and turns email sign-up off (`supabase config push`).
 5. It deploys the edge functions: `ask`, `device`, `pair` and `push`.
 6. It asks for your AI provider (see [AI provider](#ai-provider)). You can skip this.
 
@@ -59,7 +60,7 @@ The first account that signs in **owns the server**.
 
 Reviewers can't scan your Mac, and must not get into your account. On the Mac, **Settings → Reviewer access → Codes…** makes a **reviewer code**: it signs a phone into a separate demo account on your server (`reviewer@<project-ref>.dzep.invalid`, made the first time), works as often as needed for 7, 30 or 90 days, and can be revoked there at any time. Give the reviewer its link (**Copy**) or its QR (**Save QR as PNG**); in the phone app it goes into **Paste a code instead**, or the camera reads the QR. The code is shown only when it's made: your server keeps a hash of it.
 
-The demo account sees none of your ideas, todos, notes or chats, but Ask works for it, on your AI key, so revoke the code when the review is done. No email is ever sent to the demo address, and it isn't let in through `allowed_signups`: the `pair` function makes it with the service role.
+The demo account sees none of your ideas, todos, notes or chats, but Ask works for it, on your AI key, so revoke the code when the review is done. Once no code of it works, the demo account is shut out: revoking the last working code signs every phone on it out at once, a code running out does the same within 10 minutes, and Ask turns it away from then on. If a reviewer taps **Delete account**, the demo account is emptied but stays, with your reviewer codes, so a code you gave Apple or Google keeps working for the next review. No email is ever sent to the demo address, and it isn't let in through `allowed_signups`: the `pair` function makes it with the service role.
 
 ## AI provider
 
@@ -129,7 +130,7 @@ A relay only reaches apps signed with the publisher's ids. A fork that ships its
 | Phone: "That code doesn't work" | It ran out (10 minutes), was used already or was revoked: make a new one on the Mac (**Settings → Set up phone…**). |
 | Phone: "Too many tries" | Ten wrong codes from one place in ten minutes: wait a few minutes, then use a fresh code. |
 | Phone: "Your server is older than this app" | Run the setup script again (or update from the Mac's wizard): the server needs the new `pair` function and migration. |
-| Ask: "The server has no AI key yet" | Set `AI_API_KEY` (see [AI provider](#ai-provider)). |
+| Ask: "No AI is connected yet. Connect one from Džep on your Mac: Settings → AI." | Connect one from the Mac's **Settings → AI**, or set `AI_API_KEY` (see [AI provider](#ai-provider)). |
 | Ask: "… rejected the server's API key" / "doesn't know the model" | Check `AI_API_KEY` / `AI_MODEL` for your provider. |
 | "The project refused this key" on the setup screen | Use the **publishable** key (Project Settings → API Keys), never a secret one. |
 | Terminal: "Džep may not control iTerm2" (or Terminal, Ghostty) | Allow it in System Settings → Privacy & Security → Automation → Džep. |
@@ -143,4 +144,4 @@ A local Supabase (`supabase start`) works for development, but it doesn't check 
 
 ## Removing it
 
-Delete your account in the app's Settings to erase your data, or delete the whole Supabase project in its dashboard. Then delete the GitHub OAuth app.
+Delete your account in the app's Settings to erase your data, or delete the whole Supabase project in its dashboard. Then delete the GitHub OAuth app. If you keep the project, remember that with your account gone the next GitHub sign-in owns the server (and your AI key): delete the OAuth app first, and unset the key (`supabase secrets unset AI_API_KEY`), or delete the project.

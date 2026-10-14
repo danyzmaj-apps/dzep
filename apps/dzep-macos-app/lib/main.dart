@@ -15,9 +15,10 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final device = await Native.deviceName();
   final app = AppController(prefs, device);
-  final api = LocalApi(() => app.store, app.notifyPhone, app.live);
+  final api = LocalApi(() => app.store, app.live);
   try {
     await api.start();
+    app.onQuit = api.stop;
   } on Object catch (e) {
     debugPrint('Džep: terminal API unavailable: $e');
   }

@@ -27,9 +27,11 @@
 		A22F99F5DB1A0C87B20A98C0 /* DzepShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F282ABC65C3976B71350A6FA /* DzepShared.swift */; };
 		D4D28887640318B87505ACB3 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
 		EE55FF83F5BEB2B72B07637F /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B07F5FDC52D9D055C579F441 /* Foundation.framework */; };
-		F1A2B3C4D5E6F7A8B9C0D1F1 /* OmpActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */; };
-		F1A2B3C4D5E6F7A8B9C0D1F2 /* OmpActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */; };
+		F1A2B3C4D5E6F7A8B9C0D1F1 /* SessionActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1F0 /* SessionActivity.swift */; };
+		F1A2B3C4D5E6F7A8B9C0D1F2 /* SessionActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1F0 /* SessionActivity.swift */; };
 		F1A2B3C4D5E6F7A8B9C0D1E3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D1E2 /* PrivacyInfo.xcprivacy */; };
+		F1A2B3C4D5E6F7A8B9C0D2A1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D2A0 /* PrivacyInfo.xcprivacy */; };
+		F1A2B3C4D5E6F7A8B9C0D2A3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F7A8B9C0D2A2 /* PrivacyInfo.xcprivacy */; };
 		F52923C8703C13E38558B605 /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E6DCE7634C573C852A2FA7F /* Pods_RunnerTests.framework */; };
 /* End PBXBuildFile section */
 
@@ -120,8 +122,10 @@
 		D7F963ECF0CF4A09CDBB1DD3 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		DA086895D1496E904500F046 /* DzepWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DzepWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F1A2B3C4D5E6F7A8B9C0D1E2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7A8B9C0D2A0 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7A8B9C0D2A2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F282ABC65C3976B71350A6FA /* DzepShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DzepShared.swift; sourceTree = "<group>"; };
-		F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OmpActivity.swift; sourceTree = "<group>"; };
+		F1A2B3C4D5E6F7A8B9C0D1F0 /* SessionActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionActivity.swift; sourceTree = "<group>"; };
 		F6AAE2D3AE02F294270C2A9D /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		F92AF8CCFA21587D43A34AA6 /* NotificationService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -177,6 +181,7 @@
 			children = (
 				5E38265C13E6F0BF70250A40 /* DzepWidget.swift */,
 				84F37C0AC7B09835A57B155E /* Info.plist */,
+				F1A2B3C4D5E6F7A8B9C0D2A0 /* PrivacyInfo.xcprivacy */,
 				D649B0C14B0E29605AC57344 /* DzepWidget.entitlements */,
 				D649B0C14B0E29605AC57345 /* DzepWidget.xcconfig */,
 			);
@@ -278,6 +283,7 @@
 			children = (
 				F92AF8CCFA21587D43A34AA6 /* NotificationService.swift */,
 				3B9396AAEB198572B5F084DB /* Info.plist */,
+				F1A2B3C4D5E6F7A8B9C0D2A2 /* PrivacyInfo.xcprivacy */,
 				0832AC7E8AC8A1C589B289C8 /* DzepPush.entitlements */,
 				07E388AE79A2640B9161AC70 /* DzepPush.xcconfig */,
 			);
@@ -289,7 +295,7 @@
 			isa = PBXGroup;
 			children = (
 				F282ABC65C3976B71350A6FA /* DzepShared.swift */,
-				F1A2B3C4D5E6F7A8B9C0D1F0 /* OmpActivity.swift */,
+				F1A2B3C4D5E6F7A8B9C0D1F0 /* SessionActivity.swift */,
 			);
 			name = Shared;
 			path = Shared;
@@ -429,6 +435,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F1A2B3C4D5E6F7A8B9C0D2A1 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -448,6 +455,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F1A2B3C4D5E6F7A8B9C0D2A3 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -563,7 +571,7 @@
 			files = (
 				97514C1BAA21D2DA5D20CDE3 /* DzepWidget.swift in Sources */,
 				2911FC697F720799C277815A /* DzepShared.swift in Sources */,
-				F1A2B3C4D5E6F7A8B9C0D1F2 /* OmpActivity.swift in Sources */,
+				F1A2B3C4D5E6F7A8B9C0D1F2 /* SessionActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -575,7 +583,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				A22F99F5DB1A0C87B20A98C0 /* DzepShared.swift in Sources */,
-				F1A2B3C4D5E6F7A8B9C0D1F1 /* OmpActivity.swift in Sources */,
+				F1A2B3C4D5E6F7A8B9C0D1F1 /* SessionActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -678,7 +686,7 @@
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Profile;
@@ -782,7 +790,7 @@
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Profile;
@@ -811,7 +819,7 @@
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Profile;
@@ -870,7 +878,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -924,7 +932,7 @@
 				SUPPORTED_PLATFORMS = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -1002,7 +1010,7 @@
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -1031,7 +1039,7 @@
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -1059,7 +1067,7 @@
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -1089,7 +1097,7 @@
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;

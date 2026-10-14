@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dzep_core/backend.dart';
+import 'package:dzep_core/connect.dart' show ConfirmLink;
 import 'package:dzep_core/logo.dart';
 import 'package:dzep_core/session.dart';
 import 'package:dzep_core/ui.dart';
@@ -99,7 +100,12 @@ class _SetupPageState extends State<SetupPage> {
                 style: TextStyle(color: C.dim, height: 1.5),
               ),
               const SizedBox(height: 20),
-              if (_paste) ..._pasteForm() else ..._scanSteps(),
+              if (session.linkToConfirm case final link?)
+                ConfirmLink(session: session, link: link)
+              else if (_paste)
+                ..._pasteForm()
+              else
+                ..._scanSteps(),
               if (error != null) ...[
                 const SizedBox(height: 12),
                 Text(

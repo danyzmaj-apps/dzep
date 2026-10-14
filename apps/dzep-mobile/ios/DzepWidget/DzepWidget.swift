@@ -154,7 +154,7 @@ struct TodosWidget: Widget {
   }
 }
 
-// MARK: - omp session (Live Activity)
+// MARK: - Coding session (Live Activity)
 
 /// The app's colours (packages/dzep_core/lib/ui.dart's C).
 private enum Palette {
@@ -165,9 +165,9 @@ private enum Palette {
   static let warn = Color(red: 0xFB / 255, green: 0xBF / 255, blue: 0x24 / 255)
 }
 
-private typealias OmpState = OmpActivity.ContentState
+private typealias SessionState = SessionActivity.ContentState
 
-extension OmpActivity.ContentState {
+extension SessionActivity.ContentState {
   fileprivate var color: Color {
     switch state {
     case .working: Palette.accent
@@ -199,8 +199,8 @@ extension OmpActivity.ContentState {
 
 /// Working with the time since it started, Needs you with what for,
 /// Finished, or Ended. A stale one (no word for 8 hours) says so.
-private struct OmpChip: View {
-  let state: OmpState
+private struct SessionChip: View {
+  let state: SessionState
   let stale: Bool
 
   var body: some View {
@@ -230,8 +230,8 @@ private struct OmpChip: View {
   }
 }
 
-private struct OmpLockScreen: View {
-  let context: ActivityViewContext<OmpActivity>
+private struct SessionLockScreen: View {
+  let context: ActivityViewContext<SessionActivity>
 
   var body: some View {
     HStack(spacing: 12) {
@@ -243,16 +243,16 @@ private struct OmpLockScreen: View {
         }
       }
       Spacer(minLength: 8)
-      OmpChip(state: context.state, stale: context.isStale)
+      SessionChip(state: context.state, stale: context.isStale)
     }
     .padding(16)
   }
 }
 
-struct OmpLiveActivity: Widget {
+struct SessionLiveActivity: Widget {
   var body: some WidgetConfiguration {
-    ActivityConfiguration(for: OmpActivity.self) { context in
-      OmpLockScreen(context: context)
+    ActivityConfiguration(for: SessionActivity.self) { context in
+      SessionLockScreen(context: context)
         .activityBackgroundTint(Palette.win)
         .activitySystemActionForegroundColor(.white)
         .widgetURL(context.attributes.link)
@@ -271,7 +271,7 @@ struct OmpLiveActivity: Widget {
           }
         }
         DynamicIslandExpandedRegion(.bottom) {
-          OmpChip(state: state, stale: context.isStale)
+          SessionChip(state: state, stale: context.isStale)
         }
       } compactLeading: {
         Image(systemName: state.symbol).foregroundStyle(state.color)
@@ -304,6 +304,6 @@ struct DzepWidgets: WidgetBundle {
   var body: some Widget {
     TodosWidget()
     NewIdeaWidget()
-    OmpLiveActivity()
+    SessionLiveActivity()
   }
 }

@@ -42,12 +42,12 @@ Each release is a notarized DMG on GitHub Releases, plus an `appcast.xml` that i
 
 1. Bump `version:` in `apps/dzep-macos-app/pubspec.yaml` (for example `0.3.0+3`).
 2. Turn **Unreleased** in `CHANGELOG.md` into a `## 0.3.0` section. Say whether servers need `apps/dzep-macos-app/tool/setup-backend.sh` again (new migrations or function changes) and whether the relay must be redeployed.
-3. Commit, then (in `apps/dzep-macos-app`):
+3. Commit and push to `main`, then (in `apps/dzep-macos-app`):
    ```sh
    tool/release.sh
    ```
 
-The script checks the prerequisites above, builds and archives the app, and exports it with Developer ID signing. It notarizes and staples the app, builds the DMG, and notarizes and staples that too. Then it writes the appcast (keeping older entries), tags `v<version>`, and creates the GitHub release with the DMG and `appcast.xml`.
+The script checks the prerequisites above (and that HEAD is on `origin/main`), builds and archives the app, and exports it with Developer ID signing. It notarizes and staples the app, builds the DMG, signs it with your team's Developer ID certificate, and notarizes and staples that too. Then it writes the appcast (keeping older entries) and creates the GitHub release with the DMG and `appcast.xml`; the release creates the tag `v<version>` on GitHub at HEAD, so a failed upload leaves no tag behind and a rerun just works.
 
 `tool/release.sh --dry-run` runs the same build with development signing, without notarizing or publishing, and leaves `build/release/Dzep-<version>.dmg` (in `apps/dzep-macos-app`).
 
@@ -56,7 +56,7 @@ The script checks the prerequisites above, builds and archives the app, and expo
 ### One-time setup
 
 1. An **App Store Connect** record for bundle id `com.danyzmaj.dzep` (the id in `config/Dzep.xcconfig`), with the App Group and the widget and push extension targets' ids registered (automatic signing does this on the first `-allowProvisioningUpdates` build, see [BUILDING.md](BUILDING.md)).
-2. App privacy answers, a privacy policy URL, screenshots and a support URL in App Store Connect.
+2. App privacy answers, a privacy policy URL, iPhone screenshots (the app is iPhone only, so no iPad ones) and a support URL in App Store Connect.
 3. **App Review sign-in.** The phone app signs in only with a code from the Mac (no GitHub, so guideline 4.8's Sign in with Apple doesn't apply). For the reviewers, on the Mac: **Settings → Reviewer access → Codes…**, 90 days, label "App Store review". In App Store Connect → App Review Information, put in the notes: "There is no user name or password. Open Džep, tap **Paste a code instead**, paste this link, tap **Sign in**:" followed by the link (**Copy**), and attach the QR (**Save QR as PNG**). It signs into a demo account on your server that sees none of your data. Make a new code before it expires, and revoke old ones.
 
 ### Each release
@@ -77,7 +77,7 @@ Pushes from TestFlight and App Store builds use APNs production; the relay handl
 1. A **Google Play Console** developer account and an app with package `com.danyzmaj.dzep`.
 2. **Play App Signing** (the default for new apps): Google holds the app signing key; we sign uploads with an **upload key**. The upload keystore is `dzep-upload.jks` (alias `upload`) in the maintainer's keys folder, its password in the maintainer's Keychain. It is never committed. If it is lost, request an upload key reset in Play Console.
 3. `apps/dzep-mobile/android/key.properties` (git-ignored, from `key.properties.example`) points at that keystore.
-4. `apps/dzep-mobile/android/app/google-services.json` (git-ignored) from the Firebase project whose service account the relay holds. A release without it has no push.
+4. `apps/dzep-mobile/android/app/google-services.json` (git-ignored) from the Firebase project whose service account the relay holds. A release build stops without it (it would have no push).
 5. Play Console: store listing, privacy policy URL, data safety form, content rating, target audience, and the notification permission declaration.
 6. Play Console → App content → **App access**: "All or some functionality is restricted", with the same instructions and a reviewer code of its own (label "Play review"), as for App Review above.
 

@@ -16,7 +16,7 @@ It also carries the backend, because the wizard bundles it as app assets and dep
 | `tool/make_icon.swift` | Draw the app icons |
 | `integrations/omp/` | omp extensions: `idea.ts` (`/idea`, `/do`, `/note`) and `live.ts` (sessions for the phone) |
 | `integrations/claude/` | Claude Code marketplace with Džep's `dzep` plugin: `/idea`, `/do`, `/note` and sessions for the phone (`plugins/dzep/hooks/`); `claude plugin test integrations/claude/plugins/dzep` runs its tests |
-| `test/screenshots/` | The README's Mac screenshots, rendered on made-up data ([BUILDING.md](../../docs/BUILDING.md#screenshots)) |
+| `test/screenshots/` | The docs' Mac screenshots (popup, main window, Settings, setup wizard) and the hero's popup, rendered on made-up data ([BUILDING.md](../../docs/BUILDING.md#screenshots)) |
 
 Run it from this directory:
 

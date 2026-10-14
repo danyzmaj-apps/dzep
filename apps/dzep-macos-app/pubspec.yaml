@@ -8,6 +8,7 @@ environment:
   sdk: ^3.13.4
 
 dependencies:
+  crypto: ^3.0.7
   dzep_core: any
   flutter:
     sdk: flutter

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:dzep_core/idea.dart';
 import 'package:dzep_core/store.dart';
 import 'package:dzep_macos/live_hub.dart';
@@ -11,8 +12,12 @@ import 'package:flutter/foundation.dart';
 /// The terminal's way in (`/idea`, `/do` and `/note` in omp and Claude
 /// Code, and their live sessions): HTTP on 127.0.0.1 at a random port,
 /// guarded by a random token. Both are written to `~/.config/dzep/cli.json`
-/// (mode 600; `DZEP_CLI_JSON` names another file) for the clients to read.
+/// (mode 600; `DZEP_CLI_JSON` names another file) for the clients to read,
+/// and taken out again when Džep quits.
 ///
+///   GET   /v1/ping?nonce=N         → {"app": "dzep", "proof"}: no token; proof is
+///                                  [pingProof], so a client knows it's this Džep
+///                                  before its token goes anywhere
 ///   GET   /v1/ping                 → {"app": "dzep", "pid"}: this Džep is up
 ///   GET   /v1/ideas?project=NAME   → {"ideas": [...]}, oldest first
 ///   GET   /v1/ideas?kind=todo      → {"ideas": [...]}, open todos, oldest first
@@ -20,8 +25,6 @@ import 'package:flutter/foundation.dart';
 ///   POST  /v1/ideas                {title, kind?, notes?, project?} → {"idea": {...}}
 ///                                  (a note: its text in title, or title + notes)
 ///   PATCH /v1/ideas/ID             {done} (todos only) → {"idea": {...}}
-///   POST  /v1/notify               {title, body?} → {"sent": bool}: push to the phones
-///                                  if nobody has used this Mac for a minute
 ///   GET   /v1/live                 WebSocket: a coding session reporting itself (omp's
 ///                                  integrations/omp/live.ts, lib/live_hub.dart)
 ///   POST  /v1/live/http            {conn?, frames, wait?} → {conn, frames}: the same over
@@ -29,13 +32,11 @@ import 'package:flutter/foundation.dart';
 ///
 /// Writes go through the [IdeaStore], so they sync like any other edit.
 class LocalApi {
-  LocalApi(this._store, this._notify, this._live, {File? file}) : file = file ?? _defaultFile();
+  LocalApi(this._store, this._live, {File? file})
+    : file = file ?? _defaultFile(),
+      _ownFolder = file == null && !_named(Platform.environment);
 
   final IdeaStore? Function() _store;
-
-  /// Pushes a notification to the user's phones; false when it didn't go
-  /// (someone is at the Mac, no phone, offline).
-  final Future<bool> Function(String title, String body) _notify;
   final LiveHub _live;
   HttpServer? _server;
   late final String _token = List.generate(
@@ -60,14 +61,26 @@ class LocalApi {
   /// `DZEP_CLI_JSON` names.
   final File file;
 
+  /// [file]'s folder is Džep's own `~/.config/dzep`, kept private (700).
+  /// One `DZEP_CLI_JSON` names (a home folder, a project) keeps its mode.
+  final bool _ownFolder;
+
+  static bool _named(Map<String, String> env) => env['DZEP_CLI_JSON']?.isNotEmpty ?? false;
+
   static File _defaultFile() {
     final env = Platform.environment;
-    final path = env['DZEP_CLI_JSON'];
-    return File(path != null && path.isNotEmpty ? path : '${env['HOME']}/.config/dzep/cli.json');
+    return File(_named(env) ? env['DZEP_CLI_JSON']! : '${env['HOME']}/.config/dzep/cli.json');
   }
 
   /// The port it listens on, once started.
   int? get port => _server?.port;
+
+  /// What /v1/ping?nonce= answers: HMAC-SHA256 under [token] of the
+  /// [port] asked and the client's [nonce], in hex. Only the Džep that
+  /// wrote cli.json can make it, and only for its own port: whatever else
+  /// listens there (after Džep quit, say) can't, nor pass on a real Džep's.
+  static String pingProof(String token, int port, String nonce) =>
+      Hmac(sha256, utf8.encode(token)).convert(utf8.encode('dzep-ping\n$port\n$nonce')).toString();
 
   Future<void> start() async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -84,28 +97,39 @@ class LocalApi {
     _watch = Timer.periodic(_watchEvery, (_) => unawaited(_reclaim()));
   }
 
+  /// Stops listening and takes [file] back out, unless another Džep has it
+  /// now. Runs when Džep quits (AppController.onQuit).
   Future<void> stop() async {
     _watch?.cancel();
     await _server?.close(force: true);
     for (final p in _polls.values.toList()) {
       await p.close();
     }
-    // Another Džep may have it now.
     final f = file;
     if (f.existsSync() && f.readAsStringSync() == _written) f.deleteSync();
   }
 
   /// Writes [_written] to [file] as a whole (a reader never sees half of it),
-  /// private before the token goes in.
+  /// private before the token goes in: a chmod that fails stops it.
   Future<void> _write() async {
     final f = file;
     await f.parent.create(recursive: true);
-    await Process.run('chmod', ['700', f.parent.path]);
+    if (_ownFolder) await _chmod('700', f.parent.path);
     final tmp = File('${f.path}.$pid.tmp');
     await tmp.writeAsString('');
-    await Process.run('chmod', ['600', tmp.path]);
-    await tmp.writeAsString(_written!, flush: true);
-    await tmp.rename(f.path);
+    try {
+      await _chmod('600', tmp.path);
+      await tmp.writeAsString(_written!, flush: true);
+      await tmp.rename(f.path);
+    } on Object {
+      if (tmp.existsSync()) await tmp.delete();
+      rethrow;
+    }
+  }
+
+  static Future<void> _chmod(String mode, String path) async {
+    final r = await Process.run('/bin/chmod', [mode, path]);
+    if (r.exitCode != 0) throw FileSystemException('chmod $mode failed: ${r.stderr}'.trim(), path);
   }
 
   /// Another Džep (a debug build, say) took [file] over and has quit or
@@ -119,9 +143,13 @@ class LocalApi {
     } on FileSystemException {
       text = null;
     }
-    if (!await shouldReclaim(text, _written!, answers: _answers)) return;
+    if (!await shouldReclaim(text, _written!, answers: answers)) return;
     debugPrint('Džep: ${f.path} named no running Džep; writing this one back');
-    await _write();
+    try {
+      await _write();
+    } on Object catch (e) {
+      debugPrint('Džep: ${f.path} not written: $e');
+    }
   }
 
   /// Whether cli.json as it reads now ([text], null when missing) should
@@ -144,15 +172,17 @@ class LocalApi {
     return !await answers(json['port'] as int, json['token'] as String);
   }
 
-  /// A Džep answers /v1/ping at [port] with [token].
-  static Future<bool> _answers(int port, String token) async {
+  /// The Džep that holds [token] answers /v1/ping at [port]: it proves it
+  /// ([pingProof]) without the token being sent.
+  @visibleForTesting
+  static Future<bool> answers(int port, String token) async {
+    final nonce = _newId();
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
     try {
-      final req = await client.get('127.0.0.1', port, '/v1/ping');
-      req.headers.set('authorization', 'Bearer $token');
+      final req = await client.get('127.0.0.1', port, '/v1/ping?nonce=$nonce');
       final res = await req.close().timeout(const Duration(seconds: 2));
-      await res.drain<void>();
-      return res.statusCode == 200;
+      final body = jsonDecode(await utf8.decodeStream(res).timeout(const Duration(seconds: 2)));
+      return res.statusCode == 200 && body is Map && body['proof'] == pingProof(token, port, nonce);
     } on Object {
       return false;
     } finally {
@@ -241,22 +271,17 @@ class LocalApi {
   }
 
   Future<(int, Map<String, dynamic>)> _route(HttpRequest req) async {
-    if (req.headers.value('authorization') != 'Bearer $_token') return (403, {'error': 'Bad token.'});
     final path = req.uri.pathSegments;
-    if (req.method == 'GET' && path.length == 2 && path[0] == 'v1' && path[1] == 'ping') {
-      return (200, {'app': 'dzep', 'pid': pid});
+    final ping = req.method == 'GET' && path.length == 2 && path[0] == 'v1' && path[1] == 'ping';
+    // Before the token: a client asks this way whether to send it here.
+    if (req.uri.queryParameters['nonce'] case final nonce? when ping) {
+      if (nonce.length < 16 || nonce.length > 128) return (400, {'error': 'nonce: 16 to 128 characters.'});
+      return (200, {'app': 'dzep', 'proof': pingProof(_token, port!, nonce)});
     }
+    if (req.headers.value('authorization') != 'Bearer $_token') return (403, {'error': 'Bad token.'});
+    if (ping) return (200, {'app': 'dzep', 'pid': pid});
     final store = _store();
     if (store == null) return (401, {'error': 'Sign in to Džep first.'});
-
-    // A coding session finished (omp's agent_end): tell the phones, unless
-    // someone is at this Mac.
-    if (req.method == 'POST' && path.length == 2 && path[0] == 'v1' && path[1] == 'notify') {
-      final body = jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>;
-      final title = (body['title'] as String? ?? '').trim();
-      if (title.isEmpty) return (400, {'error': 'title is required.'});
-      return (200, {'sent': await _notify(title, (body['body'] as String? ?? '').trim())});
-    }
 
     if (path.length < 2 || path[0] != 'v1' || path[1] != 'ideas') return (404, {'error': 'Not found.'});
 

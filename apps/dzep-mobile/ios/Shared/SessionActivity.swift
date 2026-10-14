@@ -1,7 +1,7 @@
 import ActivityKit
 import Foundation
 
-/// An omp session followed on the Lock Screen and in the Dynamic Island
+/// A coding session (omp or Claude Code) followed on the Lock Screen and in the Dynamic Island
 /// (the app starts it: ios/Runner/AppDelegate.swift; the widget extension
 /// draws it: ios/DzepWidget/DzepWidget.swift). iPhone only: the Mac targets
 /// don't compile this file.
@@ -10,13 +10,13 @@ import Foundation
 /// ContentState. They can't carry text: the notification extension that
 /// decrypts alerts never sees a Live Activity push, so anything in one
 /// would be readable by the relay.
-struct OmpActivity: ActivityAttributes {
+struct SessionActivity: ActivityAttributes {
   struct ContentState: Codable, Hashable {
     enum State: String, Codable, Hashable {
       case working, needs, done, ended
     }
 
-    /// What omp waits for, when it needs you.
+    /// What the session waits for, when it needs you.
     enum Kind: String, Codable, Hashable {
       case question, approval, plan
     }

@@ -28,6 +28,10 @@
 // Whether Ask can answer, so the apps say so before a question fails. The
 // key itself never leaves the server.
 //
+// The reviewer demo account (app_metadata.dzep_demo) gets a 403 once none of
+// its reviewer codes works any more (public.reviewer_access_active), even
+// before its sessions end (at once on a revoke, within 10 minutes of running out).
+//
 // Deployed with --no-verify-jwt: the token is checked here with
 // auth.getUser, which works with the project's signing keys.
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -132,6 +136,13 @@ Deno.serve(async (req) => {
     global: { headers: { authorization } },
     auth: { persistSession: false },
   });
+  if (user.app_metadata?.dzep_demo === true) {
+    const { data: active, error } = await db.rpc("reviewer_access_active");
+    if (error) return json(500, { error: error.message });
+    if (active !== true) {
+      return json(403, { error: "This reviewer access has ended. Ask the server's owner for a new reviewer code." });
+    }
+  }
 
   const body = await req.json().catch(() => ({}));
   const key = Deno.env.get("AI_API_KEY");

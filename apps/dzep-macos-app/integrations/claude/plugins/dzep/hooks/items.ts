@@ -277,3 +277,22 @@ export function promptText(text: string, files: readonly string[]): string {
 	const images = files.map((f) => `[Image: ${f}]`).join("\n");
 	return [text.trim(), images].filter(Boolean).join("\n\n");
 }
+
+/** What Džep answers /v1/ping?nonce= with (pingProof in lib/local_api.dart): HMAC-SHA256 under the token of
+ * the port and the nonce, in hex. Mods have SHA-256 (crypto.subtle.digest) but no HMAC, so it's built here. */
+export async function pingProof(token: string, port: number, nonce: string): Promise<string> {
+	const sha = async (bytes: Uint8Array) => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+	const raw = new TextEncoder().encode(token);
+	const key = new Uint8Array(64);
+	key.set(raw.length > 64 ? await sha(raw) : raw);
+	const message = new TextEncoder().encode(`dzep-ping\n${port}\n${nonce}`);
+	const inner = new Uint8Array(64 + message.length);
+	const outer = new Uint8Array(64 + 32);
+	for (let i = 0; i < 64; i++) {
+		inner[i] = key[i] ^ 0x36;
+		outer[i] = key[i] ^ 0x5c;
+	}
+	inner.set(message, 64);
+	outer.set(await sha(inner), 64);
+	return [...(await sha(outer))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}

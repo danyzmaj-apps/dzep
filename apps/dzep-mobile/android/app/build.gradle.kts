@@ -7,8 +7,8 @@ plugins {
 }
 
 // Push (FCM) needs the Firebase project's google-services.json here (git-ignored;
-// docs/BUILDING.md). Without it the app builds and runs with push off: registerPush
-// answers null and reminders stay local.
+// docs/BUILDING.md). Without it a debug build runs with push off (registerPush
+// answers null, reminders stay local); a release build stops (below).
 val firebase = file("google-services.json").exists()
 if (firebase) apply(plugin = "com.google.gms.google-services")
 
@@ -60,13 +60,21 @@ android {
 }
 
 // A release build without the upload key fails here, before any work, instead of
-// producing an unsigned or debug-signed bundle.
+// producing an unsigned or debug-signed bundle. So does one without
+// google-services.json, which would ship with push silently off; forks without a
+// Firebase project opt out with -PallowNoPush.
 gradle.taskGraph.whenReady {
     val release = allTasks.any { it.project == project && it.name.contains("Release") }
     if (release && !canSignRelease) {
         throw GradleException(
             "Release signing is not set up: copy android/key.properties.example to " +
                 "android/key.properties and fill in the upload keystore (docs/RELEASING.md).",
+        )
+    }
+    if (release && !firebase && !project.hasProperty("allowNoPush")) {
+        throw GradleException(
+            "android/app/google-services.json is missing, so this release would have no push " +
+                "(docs/BUILDING.md). Add it, or build with -PallowNoPush to ship without push.",
         )
     }
 }

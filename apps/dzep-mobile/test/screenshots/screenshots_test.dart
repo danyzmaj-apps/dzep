@@ -1,6 +1,7 @@
-// The README's phone screenshots: the real screens on made-up data, as an iPhone (393×852 at 2×).
+// The phone screenshots in the docs: the real screens on made-up data, as an iPhone (393×852 at 2×).
 // Run from apps/dzep-mobile: `fvm flutter test --tags screenshots --run-skipped` (dart_test.yaml skips them otherwise).
-// They land in the repo's docs/images/phone-*.png; shrink them with `pngquant --quality 70-90 --strip --force --ext .png`.
+// They land in the repo's docs/images/phone-*.png, with hero.png: the Todos tab in a phone's frame next to the
+// Mac's popup, which apps/dzep-macos-app's screenshots render first (build/screenshots/hero-popup.png).
 @Tags(['screenshots'])
 library;
 
@@ -27,6 +28,7 @@ import 'fakes.dart';
 import 'fonts.dart';
 
 final _out = Directory('../../docs/images');
+final _heroPopup = File('../dzep-macos-app/build/screenshots/hero-popup.png');
 final _ios = TargetPlatformVariant.only(TargetPlatform.iOS);
 
 /// Today at [hour]:[minute], [days] from now (local time, as the rows read it).
@@ -432,10 +434,34 @@ void main() {
     return missingFont != null;
   }
 
-  testWidgets('todos', variant: _ios, (tester) async {
+  testWidgets('hero', variant: _ios, (tester) async {
     if (skipped()) return;
-    await app(tester);
-    await save(tester, 'phone-todos.png');
+    if (!_heroPopup.existsSync()) {
+      return markTestSkipped('No ${_heroPopup.path}: run the Mac screenshots first.');
+    }
+    final popup = (await tester.runAsync(() async {
+      final codec = await ui.instantiateImageCodec(_heroPopup.readAsBytesSync());
+      return (await codec.getNextFrame()).image;
+    }))!;
+    addTearDown(popup.dispose);
+    final canvas = _Hero.canvas(popup);
+    tester.view
+      ..physicalSize = canvas * 2
+      ..devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    debugDisableShadows = false;
+    final session = await FakeSession.create(_store(), _chats());
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: shot,
+        child: _Hero(
+          popup: popup,
+          phone: MobileApp(session: session),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await save(tester, 'hero.png');
   });
 
   testWidgets('ideas', variant: _ios, (tester) async {
@@ -537,4 +563,95 @@ class _TerminalTab extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// The README's hero on a transparent canvas: the Mac's [popup] (a 2× PNG
+/// with its shadow) next to [phone] in an iPhone's frame, both at their
+/// real size in points.
+class _Hero extends StatelessWidget {
+  const _Hero({required this.popup, required this.phone});
+  final ui.Image popup;
+  final Widget phone;
+
+  static const _screen = Size(393, 852);
+  static const _bezel = 12.0;
+  static const _radius = 55.0;
+
+  /// Around the phone, for its shadow; the popup brings its own.
+  static const _margin = EdgeInsets.fromLTRB(4, 44, 40, 52);
+
+  static Size _frame() => Size(_screen.width + 2 * _bezel, _screen.height + 2 * _bezel);
+
+  static Size canvas(ui.Image popup) =>
+      Size(popup.width / 2 + _margin.horizontal + _frame().width, _margin.vertical + _frame().height);
+
+  @override
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.ltr,
+    child: Row(
+      children: [
+        RawImage(image: popup, scale: 2),
+        Padding(padding: _margin, child: _phone(context)),
+      ],
+    ),
+  );
+
+  Widget _phone(BuildContext context) {
+    const white = Color(0xFFF2F3F5);
+    const status = TextStyle(
+      fontFamily: 'CupertinoSystemText',
+      fontSize: 17,
+      fontWeight: FontWeight.w600,
+      color: white,
+    );
+    return Container(
+      width: _frame().width,
+      height: _frame().height,
+      padding: const EdgeInsets.all(_bezel),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0A0C),
+        borderRadius: BorderRadius.circular(_radius + _bezel),
+        border: Border.all(color: const Color(0xFF45474D), width: 1.5),
+        boxShadow: const [BoxShadow(color: Color(0x4D000000), blurRadius: 36, offset: Offset(0, 14))],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_radius),
+        child: Stack(
+          children: [
+            MediaQuery(
+              data: MediaQueryData.fromView(View.of(context)).copyWith(
+                size: _screen,
+                padding: const EdgeInsets.only(top: 59, bottom: 34),
+                viewPadding: const EdgeInsets.only(top: 59, bottom: 34),
+              ),
+              child: phone,
+            ),
+            // The status bar and the Dynamic Island, which iOS draws over the app.
+            const Positioned(left: 52, top: 18, child: Text('9:41', style: status)),
+            const Positioned(
+              right: 30,
+              top: 19,
+              child: Row(
+                spacing: 5,
+                children: [
+                  Icon(Icons.signal_cellular_alt, size: 18, color: white),
+                  Icon(Icons.wifi, size: 18, color: white),
+                  Icon(Icons.battery_full, size: 20, color: white),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 11,
+              left: (_screen.width - 125) / 2,
+              child: Container(
+                width: 125,
+                height: 37,
+                decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(19)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

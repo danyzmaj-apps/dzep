@@ -93,6 +93,12 @@ class AppController extends Session {
   bool get terminalOn => _prefs.getBool(_terminalKey) ?? false;
   TerminalBridge? _bridge;
 
+  /// Whose `terminal:<uid>` channel [_bridge] is on.
+  String? _bridgeUser;
+
+  /// [_startBridge] calls, one after the other.
+  Future<void> _bridging = Future.value();
+
   /// The Mac's terminals (kitty's sockets in [kittyDir]).
   late final Terminals terminals = Terminals.standard(kittyDir: kittyDir(Platform.environment));
 
@@ -135,16 +141,26 @@ class AppController extends Session {
     await _startBridge();
   }
 
-  /// One bridge for the signed-in user while [terminalOn].
-  Future<void> _startBridge() async {
-    final user = this.user;
-    final want = terminalOn && user != null;
-    if (want == (_bridge != null)) return;
+  /// One bridge for the signed-in user while [terminalOn]: a new one when
+  /// the user changes, none when they're gone however they went. Calls run
+  /// one at a time, so two at once (the switch while a sign-in lands) don't
+  /// both build one.
+  Future<void> _startBridge() {
+    final next = _bridging.then((_) => _syncBridge());
+    _bridging = next.then((_) {}, onError: (Object _) {});
+    return next;
+  }
+
+  Future<void> _syncBridge() async {
+    final want = terminalOn ? user?.id : null;
+    if (want == _bridgeUser) return;
     final old = _bridge;
     _bridge = null;
+    _bridgeUser = null;
     await old?.stop();
-    if (want) {
-      await (_bridge = TerminalBridge(client, user.id, terminals, live, () => codingAgent, () => terminalApp)).start();
+    if (want != null) {
+      _bridgeUser = want;
+      await (_bridge = TerminalBridge(client, want, terminals, live, () => codingAgent, () => terminalApp)).start();
     }
   }
 
@@ -175,7 +191,6 @@ class AppController extends Session {
     _mainAfterNote = false;
     await closeNoteWindow();
     await super.signOut();
-    await _startBridge();
     _shownTodoCount = 0;
     await Native.setTodoCount(0);
     await Native.setSharedTodos(null);
@@ -206,9 +221,26 @@ class AppController extends Session {
     await _startBridge();
   }
 
+  @override
+  Future<void> onSignedOut() async {
+    try {
+      await _startBridge();
+    } on Object catch (e) {
+      debugPrint('Džep: terminal bridge not stopped: $e');
+    }
+  }
+
+  /// A setup link to another server waits for a yes: in the main window.
+  @override
+  void onLinkToConfirm() => unawaited(openMain());
+
   // ---------------------------------------------------------------- window
 
-  void _onNative(String event, Map<Object?, Object?> args) {
+  /// Runs when Džep quits, before the app goes (a second at most): the
+  /// local API takes itself out of cli.json (lib/main.dart).
+  Future<void> Function()? onQuit;
+
+  FutureOr<void> _onNative(String event, Map<Object?, Object?> args) {
     switch (event) {
       case 'hotKey' || 'togglePopup':
         unawaited(_popupOpen ? closePopup() : openPopup());
@@ -235,6 +267,8 @@ class AppController extends Session {
       case 'pending':
         // Ticks from outside Dart (the desktop widget) wait in the App Group.
         unawaited(drainPending());
+      case 'quitting':
+        return onQuit?.call();
     }
   }
 

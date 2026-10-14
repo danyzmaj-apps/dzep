@@ -209,6 +209,17 @@ void main() {
     expect(fake.requests, isEmpty);
   });
 
+  test("another account's kitty socket in the shared folder is neither listed nor typed into", () async {
+    // The fake's socket is this user's; to a Kitty running as someone else
+    // it is a stranger's.
+    final asOther = Kitty(socketDir: fake.dir.path, restoreFront: false, uid: 4242424);
+    await expectLater(asOther.windows(), throwsA(isA<TerminalException>()));
+    await expectLater(asOther.type('kitty-test/1', 'x'), throwsA(isA<TerminalException>()));
+    expect(fake.requests, isEmpty);
+    await fake.kitty().close('kitty-test/1');
+    expect(fake.requests, hasLength(1));
+  });
+
   test('a kitty that never answers times out', () async {
     fake.answer = (_) => null;
     final watch = Stopwatch()..start();

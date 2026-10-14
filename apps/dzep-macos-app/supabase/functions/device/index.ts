@@ -41,5 +41,5 @@ Deno.serve(async (req) => {
     return json(200, { item });
   }
 
-  return json(400, { error: "action must be add or done" });
+  return json(400, { error: "action must be done" });
 });

@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -30,6 +31,22 @@ function project(cwd: string): string {
 	}
 }
 
+/** Whether the Džep that wrote cli.json answers at [port]: it proves it holds [token] (HMAC-SHA256 of the
+ * port and a fresh nonce, pingProof in lib/local_api.dart) before the token goes there. After Džep quits,
+ * anything could be listening at its old port. */
+async function proven(port: number, token: string): Promise<boolean> {
+	const nonce = randomBytes(16).toString("hex");
+	try {
+		const res = await fetch(`http://127.0.0.1:${port}/v1/ping?nonce=${nonce}`, {
+			signal: AbortSignal.timeout(3000),
+		});
+		const { proof } = (await res.json()) as { proof?: unknown };
+		return proof === createHmac("sha256", token).update(`dzep-ping\n${port}\n${nonce}`).digest("hex");
+	} catch {
+		return false;
+	}
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
 	let conn: { port: number; token: string };
 	try {
@@ -37,6 +54,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 	} catch {
 		throw new DzepError(NOT_RUNNING);
 	}
+	if (!(await proven(conn.port, conn.token))) throw new DzepError(NOT_RUNNING);
 	let res: Response;
 	try {
 		res = await fetch(`http://127.0.0.1:${conn.port}${path}`, {

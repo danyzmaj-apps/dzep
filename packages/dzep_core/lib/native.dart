@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dzep_core/remind.dart';
@@ -22,12 +23,13 @@ class Native {
   /// [takeTappedSession]), pending (an action waits in [takePending], e.g. a
   /// tick from the desktop widget), activityToken ({key, token}: a followed
   /// session's push token, new or changed), activityEnded ({key, token?}: it
-  /// ended or was swiped away) and pushToken (Android: FCM changed this
-  /// phone's token; register again).
-  static void listen(void Function(String event, Map<Object?, Object?> args) onEvent) {
-    _channel.setMethodCallHandler(
-      (call) async => onEvent(call.method, call.arguments as Map<Object?, Object?>? ?? const {}),
-    );
+  /// ended or was swiped away), pushToken (Android: FCM changed this
+  /// phone's token; register again) and quitting (the Mac app is about to
+  /// quit: it waits up to a second for what [onEvent] returns).
+  static void listen(FutureOr<void> Function(String event, Map<Object?, Object?> args) onEvent) {
+    _channel.setMethodCallHandler((call) async {
+      await onEvent(call.method, call.arguments as Map<Object?, Object?>? ?? const {});
+    });
   }
 
   /// Which Flutter view is which window (the engine runs in multi-view mode).
@@ -77,8 +79,8 @@ class Native {
   }
 
   // Phone: followed coding sessions, as Live Activities on iOS
-  // (apps/dzep-mobile/ios/Shared/OmpActivity.swift) and ongoing notifications on Android
-  // (OmpActivities.kt); lib/live_activity.dart. [since]: when it got into
+  // (apps/dzep-mobile/ios/Shared/SessionActivity.swift) and ongoing notifications on Android
+  // (SessionActivities.kt); lib/live_activity.dart. [since]: when it got into
   // [state].
 
   /// Starts one for session [key], or updates the one it has; false when

@@ -1,9 +1,15 @@
 import { expect, mock, test } from "claude-code/testing";
-import { askOf, historyItems, promptText, rowItems, windowKey } from "../hooks/items.ts";
+import { askOf, historyItems, pingProof, promptText, rowItems, windowKey } from "../hooks/items.ts";
 
-/** The local API as the commands reach it: requests recorded, answers from [answer]. */
-function dzep(on: Parameters<Parameters<typeof test>[1]>[1], answer: (method: string, path: string) => unknown) {
+/** The local API as the commands reach it: requests recorded, answers from [answer]. An [impostor] at the
+ * port can't prove it holds the token. */
+function dzep(
+	on: Parameters<Parameters<typeof test>[1]>[1],
+	answer: (method: string, path: string) => unknown,
+	{ impostor = false } = {},
+) {
 	const calls: { method: string; path: string; body?: unknown }[] = [];
+	const pings: { authorization?: string }[] = [];
 	const toasts: string[] = [];
 	mock.env(on, { HOME: "/Users/me" });
 	on("fs.read", ($, e) => ({ value: e.path.endsWith("/.config/dzep/cli.json") ? '{"port":4321,"token":"t0k"}' : "" }));
@@ -13,16 +19,22 @@ function dzep(on: Parameters<Parameters<typeof test>[1]>[1], answer: (method: st
 		toasts.push(e.text);
 		return { value: undefined };
 	});
-	on("http.fetch", ($, e) => {
+	on("http.fetch", async ($, e) => {
 		const url = new URL(e.url);
+		expect(url.host).toBe("127.0.0.1:4321");
+		const nonce = url.searchParams.get("nonce");
+		if (url.pathname === "/v1/ping" && nonce) {
+			pings.push({ authorization: e.init?.headers?.authorization });
+			const proof = impostor ? "0".repeat(64) : await pingProof("t0k", 4321, nonce);
+			return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ app: "dzep", proof }) } };
+		}
 		const method = e.init?.method ?? "GET";
 		const path = url.pathname + url.search;
 		calls.push({ method, path, body: e.init?.body ? JSON.parse(e.init.body) : undefined });
-		expect(url.host).toBe("127.0.0.1:4321");
 		expect(e.init?.headers?.authorization).toBe("Bearer t0k");
 		return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify(answer(method, path)) } };
 	});
-	return { calls, toasts };
+	return { calls, pings, toasts };
 }
 
 const IDEAS = [
@@ -65,6 +77,24 @@ test("a command says Džep isn't running when cli.json is missing", async ($, on
 	});
 	await $.command.run({ command: "note", args: "remember the milk" });
 	expect(toasts).toEqual(["Džep isn't running. Open it (it lives in the menu bar), then try again."]);
+});
+
+test("the token goes only to a Džep that proved it holds it; an impostor at the port gets nothing", async ($, on) => {
+	const { calls, pings, toasts } = dzep(on, () => ({ idea: {} }), { impostor: true });
+	await $.command.run({ command: "note", args: "remember the milk" });
+	expect(pings).toEqual([{ authorization: undefined }]);
+	expect(calls).toEqual([]);
+	expect(toasts).toEqual(["Džep isn't running. Open it (it lives in the menu bar), then try again."]);
+});
+
+test("the ping proof is the one Džep makes (lib/local_api.dart pingProof)", async () => {
+	expect(await pingProof("t0k", 4321, "0123456789abcdef0123456789abcdef")).toBe(
+		"ee3483f8e6f67e9b8744a0108868b85458ae91b3c7799136edbc727aa219479e",
+	);
+	// A token longer than the hash block is hashed first.
+	expect(await pingProof("k".repeat(100), 1, "n")).toBe(
+		"756505d1384d84144cdee4184ba5396779737d0a4b953d83f608bf558ccf2bf0",
+	);
 });
 
 test("rows become the phone's items: prompts, commands, answers, tool calls and results", () => {

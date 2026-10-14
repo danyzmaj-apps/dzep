@@ -61,14 +61,47 @@ class Session extends ChangeNotifier {
   /// Launch: opens the backend this device was set up with, if any, and
   /// listens for setup links (`dzep://setup?url=…&key=…[&code=…]`).
   Future<void> start() async {
-    _links = AppLinks().uriLinkStream.listen((uri) {
-      if (Backend.fromLink(uri) != null) unawaited(connectLink(uri));
-    });
-    final saved = await Backend.load();
-    if (saved != null) await connect(saved);
+    final saved = Backend.load();
+    _links = AppLinks().uriLinkStream.listen((uri) async => openedLink(uri, await saved));
+    final backend = await saved;
+    if (backend != null) await connect(backend);
   }
 
   StreamSubscription<Uri>? _links;
+
+  /// A setup link opened from outside the app (a web page, a message, the
+  /// camera app). One that would connect this signed-out device to a server
+  /// other than its own ([saved] until [connect] is done) waits for the
+  /// person ([linkToConfirm]): anyone can send a link, and everything saved
+  /// afterwards would go to that server.
+  @visibleForTesting
+  void openedLink(Uri uri, Backend? saved) {
+    final backend = Backend.fromLink(uri);
+    if (backend == null) return;
+    if (_user == null && backend != (_backend ?? saved)) {
+      _linkToConfirm = uri;
+      notifyListeners();
+      onLinkToConfirm();
+      return;
+    }
+    unawaited(connectLink(uri));
+  }
+
+  /// A setup link to another server, waiting for [answerLink].
+  Uri? get linkToConfirm => _linkToConfirm;
+  Uri? _linkToConfirm;
+
+  /// The person's answer to [linkToConfirm]: [connect] goes on with it.
+  Future<void> answerLink({required bool connect}) async {
+    final uri = _linkToConfirm;
+    _linkToConfirm = null;
+    notifyListeners();
+    if (connect && uri != null) await connectLink(uri);
+  }
+
+  /// A link now waits in [linkToConfirm]: the Mac brings its window up.
+  @protected
+  void onLinkToConfirm() {}
 
   /// A setup link: connects to its server and, with a sign-in code (the
   /// Mac's QR), signs in too. A phone takes only links with a code. Problems
@@ -243,8 +276,15 @@ class Session extends ChangeNotifier {
   Future<void> onSignedIn(IdeaStore store) async {}
 
   /// Runs before signing out, while the session can still reach the server.
+  /// [accountDeleted]: the server forgot this user already, so there is
+  /// nothing to unregister there.
   @protected
-  Future<void> onSigningOut() async {}
+  Future<void> onSigningOut({required bool accountDeleted}) async {}
+
+  /// Runs once the user is gone, however that happened (signed out here,
+  /// the server ended the session, the account was deleted).
+  @protected
+  Future<void> onSignedOut() async {}
 
   /// Actions queued in the App Group (apps/dzep-mobile/ios/Shared/DzepShared.swift) by what
   /// can't reach this session: the phones' widgets and notification Done
@@ -276,6 +316,7 @@ class Session extends ChangeNotifier {
     final reason = _signedOutReason;
     if (user != null) {
       _signedOutReason = _leaving = null;
+      _linkToConfirm = null;
     } else if (_user != null || _leaving != null) {
       _signedOutReason = _leaving ?? 'Your sign-in ended. Scan a new code from your Mac.';
       _leaving = null;
@@ -303,6 +344,7 @@ class Session extends ChangeNotifier {
     } else {
       // Signed out: none of their todos may still go off here.
       _syncReminders(null);
+      unawaited(onSignedOut());
     }
     notifyListeners();
   }
@@ -366,20 +408,33 @@ class Session extends ChangeNotifier {
     }
   }
 
+  /// Signs out here. The local session goes even when [onSigningOut] or the
+  /// server fails (offline, an account deleted a moment ago): gotrue drops
+  /// it before it calls the server.
   Future<void> signOut() async {
     _leaving ??= 'You signed out.';
+    final accountDeleted = _accountDeleted;
+    _accountDeleted = false;
     try {
-      await onSigningOut();
+      await onSigningOut(accountDeleted: accountDeleted);
+    } on Object catch (e) {
+      debugPrint('Džep: sign-out cleanup failed: $e');
+    }
+    try {
       await client.auth.signOut();
-    } on Object {
-      // Offline: the local session is gone all the same.
+    } on Object catch (e) {
+      debugPrint('Džep: the server missed the sign-out: $e');
     }
     await _setUser(null);
   }
 
+  /// Set by [deleteAccount] for the [signOut] that follows.
+  bool _accountDeleted = false;
+
   /// Deletes the account on the server with everything in it (ideas, todos,
   /// chats and their images, device tokens), then this device's copy, and
-  /// signs out.
+  /// signs out. Images that can't be removed stop it before anything else
+  /// goes: once the account is gone, nobody could reach them again.
   Future<void> deleteAccount() async {
     final id = _user?.id;
     if (id == null) return;
@@ -394,11 +449,18 @@ class Session extends ChangeNotifier {
           await client.storage.from(bucket).remove([for (final f in files) '$id/${f.name}']);
         }
       } on Object catch (e) {
+        // A server from before that bucket: nothing in it to remove.
+        if (e is StorageException && (e.statusCode == '404' || e.message == 'Bucket not found')) continue;
         debugPrint('Džep: $bucket images not removed: $e');
+        throw const AccountDeletionException(
+          "Your images couldn't be removed from your server, so your account stays. "
+          'Check your connection and try again.',
+        );
       }
     }
     await client.rpc<void>('delete_my_account');
     _leaving = 'Your account was deleted.';
+    _accountDeleted = true;
     await signOut();
     final dir = await getApplicationSupportDirectory();
     for (final name in ['ideas-$id.json', 'chats-$id.json']) {
@@ -422,6 +484,16 @@ class Session extends ChangeNotifier {
     unawaited(_chats?.close());
     super.dispose();
   }
+}
+
+/// Why [Session.deleteAccount] stopped before deleting the account, worded
+/// for the person.
+class AccountDeletionException implements Exception {
+  const AccountDeletionException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// Why a pairing or reviewer code couldn't be made (or listed, or revoked),
