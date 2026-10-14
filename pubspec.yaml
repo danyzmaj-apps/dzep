@@ -1,5 +1,5 @@
 name: dzep_workspace
-description: "Džep: the workspace of the Mac app, the iPhone app and the code they share."
+description: "Džep: the workspace of the Mac app, the phone app and the code they share."
 publish_to: 'none'
 
 environment:

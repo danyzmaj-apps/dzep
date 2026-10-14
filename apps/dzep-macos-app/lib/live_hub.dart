@@ -128,7 +128,7 @@ class LiveAsked extends LiveEvent {
 
 /// The coding sessions on this Mac: their extensions connect to the local
 /// API (lib/local_api.dart) and keep it up to date; the terminal bridge
-/// passes them on to the iPhone.
+/// passes them on to the phone.
 class LiveHub {
   final _byKey = <String, LiveSession>{};
 

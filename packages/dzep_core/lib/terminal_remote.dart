@@ -13,7 +13,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
-// The iPhone side of the terminal protocol (lib/live.dart): the Mac's coding
+// The phone side of the terminal protocol (lib/live.dart): the Mac's coding
 // sessions and kitty windows, what the phone watches, and a disk cache so
 // the Terminal tab shows the last known state before the Mac answers.
 
@@ -58,7 +58,7 @@ class _Watch {
   final String? window;
 }
 
-/// The iPhone side: the Mac's coding sessions (structured, per [LiveView]) and
+/// The phone side: the Mac's coding sessions (structured, per [LiveView]) and
 /// kitty windows (as screens). The channel and the hellos run between
 /// [attach] and [detach]: while the app is in front.
 class TerminalRemote extends ChangeNotifier {
@@ -119,7 +119,7 @@ class TerminalRemote extends ChangeNotifier {
   /// The Mac couldn't reach kitty (not listening, no kitten).
   String? error;
 
-  /// iPhone: the sessions followed as Live Activities; set by the app (null
+  /// Phone: the sessions followed (Live Activities, Android notifications); set by the app (null
   /// in tests and wherever there are none).
   LiveActivities? activities;
 

@@ -124,7 +124,7 @@ class Idea {
     'rev': rev,
   };
 
-  /// The JSON the terminal API (`/idea`, `/todo`) sees.
+  /// The JSON the terminal API (`/idea`, `/do`) sees.
   Map<String, dynamic> toApi() => {
     'id': id,
     'kind': kind.name,

@@ -125,7 +125,7 @@ object Notifications {
 }
 
 /**
- * Todo reminders as alarms. Dart picks them (lib/remind.dart) and hands over
+ * Todo reminders as alarms. Dart picks them (packages/dzep_core/lib/remind.dart) and hands over
  * the whole set on every change; they're kept so a reboot can set them again.
  * Exact when Android allows it (Alarms & reminders), else within minutes.
  */

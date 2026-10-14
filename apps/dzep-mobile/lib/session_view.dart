@@ -19,8 +19,6 @@ const _danger = Color(0xFFFCA5A5);
 /// How long a just-launched agent may take to report before the page says so.
 const _startWait = Duration(seconds: 20);
 
-void _unfocus(PointerDownEvent _) => FocusManager.instance.primaryFocus?.unfocus();
-
 /// One coding session, live: its transcript laid out for the phone, what its
 /// agent asks, and a composer that prompts it.
 class SessionPage extends StatefulWidget {
@@ -295,7 +293,10 @@ class _SessionPageState extends State<SessionPage> {
       final starting = widget.starting && !_seen;
       final late = DateTime.now().difference(_openedAt) > _startWait;
       final text = starting
-          ? (late ? "$agent hasn't reported yet. Its screen shows what it's doing." : 'Starting $agent…')
+          ? (late
+                ? "$agent hasn't reported yet. It may be asking something on its screen first (like whether to "
+                      'trust this folder): open the screen to answer.'
+                : 'Starting $agent…')
           : ended
           ? 'This session has ended.'
           : v != null
@@ -303,13 +304,27 @@ class _SessionPageState extends State<SessionPage> {
           : remote.online
           ? 'Loading…'
           : 'Not on this phone yet.';
+      final window = starting ? _windowKey(s) : null;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: C.dim, height: 1.5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                text,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: C.dim, height: 1.5),
+              ),
+              if (window != null && remote.online) ...[
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () => openWindow(context, remote, window),
+                  icon: const Icon(Icons.terminal, size: 18),
+                  label: const Text('Open its screen'),
+                ),
+              ],
+            ],
           ),
         ),
       );
@@ -510,7 +525,7 @@ class _SessionPageState extends State<SessionPage> {
                     },
                     child: TextField(
                       key: const ValueKey('session-input'),
-                      onTapOutside: _unfocus,
+                      onTapOutside: dismissKeyboard,
                       controller: _field,
                       minLines: 1,
                       maxLines: 6,
@@ -938,7 +953,7 @@ class _AskCardState extends State<_AskCard> {
         TextField(
           controller: _other[i],
           enabled: !busy,
-          onTapOutside: _unfocus,
+          onTapOutside: dismissKeyboard,
           onChanged: (t) => setState(() {
             if (!q.multi && t.trim().isNotEmpty) _picks[i].clear();
           }),
@@ -1236,7 +1251,7 @@ class _MenuCardState extends State<_MenuCard> {
                 key: const ValueKey('menu-search'),
                 controller: _search,
                 enabled: widget.remote.online,
-                onTapOutside: _unfocus,
+                onTapOutside: dismissKeyboard,
                 onChanged: _searchChanged,
                 autocorrect: false,
                 style: const TextStyle(fontSize: 14),

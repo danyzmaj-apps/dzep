@@ -18,7 +18,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Events for Dart (lib/native.dart's Native.listen) from wherever they
+ * Events for Dart (packages/dzep_core/lib/native.dart's Native.listen) from wherever they
  * happen: the activity, a notification's Done, the widget, the push service.
  * Dropped while no engine runs; what matters then waits in DzepShared or in
  * [tappedTodo]/[tappedSession] for Dart to take.
@@ -43,7 +43,7 @@ object NativeEvents {
 }
 
 /**
- * Android's half of lib/native.dart (the iPhone's is
+ * Android's half of packages/dzep_core/lib/native.dart (the iPhone's is
  * ios/Runner/AppDelegate.swift; same methods, arguments and results).
  */
 class MainActivity : FlutterActivity() {

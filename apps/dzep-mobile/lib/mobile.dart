@@ -159,11 +159,6 @@ class MobileApp extends StatelessWidget {
   );
 }
 
-/// For fields' `onTapOutside`: a tap anywhere else puts the keyboard away.
-/// (A tap on the field itself never counts, unlike a screen-wide tap
-/// catcher, which can steal the tap that should focus it.)
-void dismissKeyboard(PointerDownEvent _) => FocusManager.instance.primaryFocus?.unfocus();
-
 // ==================================================================== home
 
 typedef _Filter = ({bool project, String id});
@@ -977,7 +972,7 @@ class _AddSheetState extends State<AddSheet> {
 
   void _save() {
     final todo = _kind == Kind.todo;
-    // Todos take a `!` reminder (lib/remind.dart), ideas a `@project`.
+    // Todos take a `!` reminder (packages/dzep_core/lib/remind.dart), ideas a `@project`.
     final remind = todo ? parseReminder(_title.text, DateTime.now()) : null;
     final parsed = remind != null ? (title: remind.title, project: '') : parseTitle(_title.text);
     if (parsed.title.isEmpty) return;

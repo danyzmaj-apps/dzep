@@ -116,15 +116,7 @@ supabase functions serve --no-verify-jwt --env-file supabase/.env.local
 
 ## Checks
 
-```sh
-# in each of packages/dzep_core, apps/dzep-macos-app, apps/dzep-mobile:
-fvm flutter analyze
-fvm flutter test
-# at the root:
-deno check apps/dzep-macos-app/supabase/functions/*/index.ts
-```
-
-CI runs the same checks on every pull request (`.github/workflows/ci.yml`).
+The checks to run before a pull request, and which of them CI runs (`.github/workflows/ci.yml`), are listed in [CONTRIBUTING.md](../CONTRIBUTING.md#pull-requests).
 
 [Maestro](https://maestro.mobile.dev) flows drive the iOS simulator app. They need a simulator signed in to a test backend, and `ask.yaml` needs an AI key there. Set `appId` in each flow to your bundle id.
 

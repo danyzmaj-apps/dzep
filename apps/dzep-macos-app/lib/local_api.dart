@@ -8,7 +8,7 @@ import 'package:dzep_core/store.dart';
 import 'package:dzep_macos/live_hub.dart';
 import 'package:flutter/foundation.dart';
 
-/// The terminal's way in (`/idea`, `/todo` and `/note` in omp and Claude
+/// The terminal's way in (`/idea`, `/do` and `/note` in omp and Claude
 /// Code, and their live sessions): HTTP on 127.0.0.1 at a random port,
 /// guarded by a random token. Both are written to `~/.config/dzep/cli.json`
 /// (mode 600; `DZEP_CLI_JSON` names another file) for the clients to read.
@@ -20,12 +20,12 @@ import 'package:flutter/foundation.dart';
 ///   POST  /v1/ideas                {title, kind?, notes?, project?} → {"idea": {...}}
 ///                                  (a note: its text in title, or title + notes)
 ///   PATCH /v1/ideas/ID             {done} (todos only) → {"idea": {...}}
-///   POST  /v1/notify               {title, body?} → {"sent": bool}: push to the iPhone
+///   POST  /v1/notify               {title, body?} → {"sent": bool}: push to the phones
 ///                                  if nobody has used this Mac for a minute
 ///   GET   /v1/live                 WebSocket: a coding session reporting itself (omp's
 ///                                  integrations/omp/live.ts, lib/live_hub.dart)
 ///   POST  /v1/live/http            {conn?, frames, wait?} → {conn, frames}: the same over
-///                                  HTTP long polls (the Claude Code plugin); lib/live.dart
+///                                  HTTP long polls (the Claude Code plugin); packages/dzep_core/lib/live.dart
 ///
 /// Writes go through the [IdeaStore], so they sync like any other edit.
 class LocalApi {
@@ -33,8 +33,8 @@ class LocalApi {
 
   final IdeaStore? Function() _store;
 
-  /// Pushes a notification to the user's iPhones; false when it didn't go
-  /// (someone is at the Mac, no iPhone, offline).
+  /// Pushes a notification to the user's phones; false when it didn't go
+  /// (someone is at the Mac, no phone, offline).
   final Future<bool> Function(String title, String body) _notify;
   final LiveHub _live;
   HttpServer? _server;
@@ -249,7 +249,7 @@ class LocalApi {
     final store = _store();
     if (store == null) return (401, {'error': 'Sign in to Džep first.'});
 
-    // A coding session finished (omp's agent_end): tell the iPhone, unless
+    // A coding session finished (omp's agent_end): tell the phones, unless
     // someone is at this Mac.
     if (req.method == 'POST' && path.length == 2 && path[0] == 'v1' && path[1] == 'notify') {
       final body = jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>;

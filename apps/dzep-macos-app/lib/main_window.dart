@@ -1551,7 +1551,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
     final s = _integration;
     if (s == null) return 'Checking…';
     if (s.problem case final p?) return p;
-    if (!s.installed) return 'Not installed · /idea, /todo, /note and its sessions on your phone need it';
+    if (!s.installed) return 'Not installed · /idea, /do, /note and its sessions on your phone need it';
     if (_modsOff) return _modsOffHint;
     return s.current ? 'Installed and up to date' : 'Out of date';
   }
@@ -1622,7 +1622,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                         _row(
                           leading: Avatar(url: app.avatarUrl, name: app.userName),
                           label: app.userName,
-                          sub: 'Signed in with GitHub · ${app.store?.ideas.length ?? 0} ideas',
+                          sub: 'Signed in with GitHub · ${_count(app.store?.ideas.length ?? 0, 'idea')}',
                           trailing: _button('Sign out', () => unawaited(app.signOut()), danger: true),
                         ),
                         _row(
@@ -1710,7 +1710,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
                               : _kitty?.error ??
                                     (_kitty == null
                                         ? 'Looking for kitty…'
-                                        : '${_kitty!.windows} kitty windows · ${app.live.sessions.length} coding sessions '
+                                        : '${_count(_kitty!.windows ?? 0, 'kitty window')} · '
+                                              '${_count(app.live.sessions.length, 'coding session')} '
                                               '· keeps this Mac from idle sleep'),
                           subError: app.terminalOn && _kitty?.error != null,
                           trailing: Switch(
@@ -1770,6 +1771,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
       ),
     ),
   );
+
+  /// "1 idea", "2 ideas".
+  static String _count(int n, String noun) => '$n $noun${n == 1 ? '' : 's'}';
 
   Widget _group(String title, List<Widget> rows) => Padding(
     padding: const EdgeInsets.only(top: 18),

@@ -18,9 +18,9 @@ import {
 
 // Džep (github.com/danyzmaj-apps/dzep) for Claude Code, the twin of its omp extensions:
 //
-// - /idea, /todo and /note talk to the Džep menu-bar app over its localhost API, without a Claude turn and
+// - /idea, /do and /note talk to the Džep menu-bar app over its localhost API, without a Claude turn and
 //   while Claude works. Ideas land under the current repo's name as their @project; todos are one global
-//   work list; notes are free text.
+//   work list; notes are free text. The todo command is /do, as in omp (whose own /todo wins there).
 // - This session goes to the phone through Džep: the transcript as items, the answer as it's written,
 //   whether Claude is busy, and the questions, approvals and plan reviews it waits on (answered on the phone
 //   by keys Džep types into this kitty window). From the phone you can prompt (with images), stop, and page
@@ -37,7 +37,7 @@ const RETRY_MS = 3000;
 const APPEND_MS = 100;
 const NOT_RUNNING = "Džep isn't running. Open it (it lives in the menu bar), then try again.";
 const IDEA_USAGE = "Usage: /idea <text> | /idea list | /idea do <n|text>";
-const TODO_USAGE = "Usage: /todo <text> | /todo list | /todo done <n|text>";
+const DO_USAGE = "Usage: /do <text> | /do list | /do done <n|text>";
 
 type Cli = { port: number; token: string };
 type Idea = { id: string; title: string; notes: string; project: string; created_at: string };
@@ -137,7 +137,7 @@ async function ideas($: EngineInterface, proj: string): Promise<Numbered[]> {
 	return ideas.map((idea, i) => ({ ...idea, index: i + 1 }));
 }
 
-/** Open todos, oldest first, numbered like /todo list prints them. */
+/** Open todos, oldest first, numbered like /do list prints them. */
 async function todos($: EngineInterface): Promise<Numbered[]> {
 	const { ideas } = await call<{ ideas: Idea[] }>($, "GET", "/v1/ideas?kind=todo");
 	return ideas.map((todo, i) => ({ ...todo, index: i + 1 }));
@@ -205,11 +205,11 @@ async function idea($: EngineInterface, args: string): Promise<{ text?: string }
 	return {};
 }
 
-/** /todo: add a todo, list the open ones, or mark one done. */
+/** /do: add a todo, list the open ones, or mark one done. */
 async function todo($: EngineInterface, args: string): Promise<{ text?: string }> {
 	const raw = args.trim();
 	if (!raw) {
-		$.ui.toast(TODO_USAGE);
+		$.ui.toast(DO_USAGE);
 		return {};
 	}
 	const head = raw.split(/\s+/)[0] ?? "";
@@ -222,7 +222,7 @@ async function todo($: EngineInterface, args: string): Promise<{ text?: string }
 	}
 	if (sub === "done") {
 		if (!rest) {
-			$.ui.toast("Usage: /todo done <n|text>");
+			$.ui.toast("Usage: /do done <n|text>");
 			return {};
 		}
 		const hit = find(await todos($), rest, "Todo", (t) => t.title);
@@ -248,10 +248,10 @@ async function note($: EngineInterface, args: string): Promise<{ text?: string }
 }
 
 /** Runs a command; Džep's own errors (not running, nothing matches) are a toast, not a failure. */
-async function command($: EngineInterface, name: "idea" | "todo" | "note", args: string): Promise<{ text?: string }> {
+async function command($: EngineInterface, name: "idea" | "do" | "note", args: string): Promise<{ text?: string }> {
 	try {
 		if (name === "idea") return await idea($, args);
-		if (name === "todo") return await todo($, args);
+		if (name === "do") return await todo($, args);
 		return await note($, args);
 	} catch (e) {
 		if (!(e instanceof DzepError)) throw e;
@@ -604,7 +604,7 @@ export function register(on: On): void {
 		if (active) $.clock.after(0, () => void connect($));
 		for (const spec of [
 			{ name: "idea", description: "Capture an idea into Džep (under this repo's project), or /idea list, /idea do <n|text>", argumentHint: "<text> | list | do <n|text>" },
-			{ name: "todo", description: "Add a todo to Džep, or /todo list, /todo done <n|text>", argumentHint: "<text> | list | done <n|text>" },
+			{ name: "do", description: "Add a todo to Džep, or /do list, /do done <n|text>", argumentHint: "<text> | list | done <n|text>" },
 			{ name: "note", description: "Write a quick note into Džep", argumentHint: "<text>" },
 		]) {
 			try {
@@ -615,7 +615,7 @@ export function register(on: On): void {
 	});
 
 	on("command.run", { command: "idea" }, async ($, e) => command($, "idea", e.args));
-	on("command.run", { command: "todo" }, async ($, e) => command($, "todo", e.args));
+	on("command.run", { command: "do" }, async ($, e) => command($, "do", e.args));
 	on("command.run", { command: "note" }, async ($, e) => command($, "note", e.args));
 
 	on("session.end", async ($, e, next) => {

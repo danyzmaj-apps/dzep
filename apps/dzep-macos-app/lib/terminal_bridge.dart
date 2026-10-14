@@ -11,7 +11,7 @@ import 'package:dzep_macos/live_hub.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// The Mac side of Terminal from the iPhone (protocol: lib/live.dart): the
+/// The Mac side of Terminal from the phone (protocol: packages/dzep_core/lib/live.dart): the
 /// coding sessions [LiveHub] knows and kitty's windows go out on the user's
 /// private topic; what the phone asks for is done here. kitty is polled only
 /// while a phone has said hello lately.
@@ -101,7 +101,7 @@ class TerminalBridge {
   static const _menuEvery = Duration(milliseconds: 1500);
   static const _menuIdle = Duration(minutes: 2);
 
-  /// Each session's Live Activity state as last seen (lib/live_activity.dart)
+  /// Each session's Live Activity state as last seen (packages/dzep_core/lib/live_activity.dart)
   /// and as last pushed; a change goes out once it has held for
   /// [_activityWait], so a quick busy flicker between turns stays home.
   final _activitySeen = <String, ActivityStatus>{};
@@ -250,7 +250,7 @@ class TerminalBridge {
   // ------------------------------------------------------------ Live Activities
 
   /// A session started or stopped working, asks or stopped asking, or went:
-  /// its Live Activity on the iPhone hears about it through the server
+  /// its Live Activity on the phone hears about it through the server
   /// (functions/push {action: activity}), which does nothing for a session
   /// no phone follows. A session seen for the first time pushes nothing:
   /// no phone can follow it yet.

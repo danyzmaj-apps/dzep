@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 /// opening a setup link (`dzep://setup?url=…&key=…`, printed by
 /// tool/setup-backend.sh and shown in the Mac's Settings). Kept in the App
 /// Group, where the iPhone's Siri intents and widget read it too
-/// (ios/Shared/DzepShared.swift).
+/// (apps/dzep-mobile/ios/Shared/DzepShared.swift).
 @immutable
 class Backend {
   const Backend({required this.url, required this.key});

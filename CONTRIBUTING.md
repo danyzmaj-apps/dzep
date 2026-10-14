@@ -14,10 +14,15 @@ The repo is a pub workspace: `apps/dzep-macos-app` (Mac app and the backend), `a
 - Run the checks; CI runs them too:
   ```sh
   # in each of packages/dzep_core, apps/dzep-macos-app, apps/dzep-mobile
+  fvm dart format --set-exit-if-changed lib test
   fvm flutter analyze
   fvm flutter test
   # at the repo root
   deno check apps/dzep-macos-app/supabase/functions/*/index.ts
+  # in apps/dzep-macos-app (Docker)
+  supabase db start && supabase db lint --level error
+  # the Claude Code plugin, locally (CI can't: Claude Code mods need a logged-in claude)
+  claude plugin validate . && claude plugin test plugins/dzep
   ```
 - Add a test when you change behavior that can quietly break: parsing, sync, reminders.
 - Database changes go in a **new** migration in `apps/dzep-macos-app/supabase/migrations/`, timestamped after the latest. Never edit one that has shipped: self-hosters have already applied it.

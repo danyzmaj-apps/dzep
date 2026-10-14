@@ -444,7 +444,7 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
     final s = store;
     if (s == null) return;
     final todo = _kind == Kind.todo;
-    // Todos take a `!` reminder (lib/remind.dart), ideas a `@project`.
+    // Todos take a `!` reminder (packages/dzep_core/lib/remind.dart), ideas a `@project`.
     final remind = todo ? parseReminder(_title.text, DateTime.now()) : null;
     final parsed = remind != null ? (title: remind.title, project: '') : parseTitle(_title.text);
     var title = parsed.title;
@@ -876,7 +876,7 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
 
   /// The quick-question chat: the conversation above, the question field
   /// below. It continues where it was left; ⌘N starts a new one and the old
-  /// one stays in the main window's Quick questions (and on the iPhone).
+  /// one stays in the main window's Quick questions (and on the phone).
   /// With no AI connected, the field gives way to the way to connect one.
   Widget _askPane(ChatStore chat) => ListenableBuilder(
     listenable: chat,

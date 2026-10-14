@@ -87,7 +87,7 @@ class AppController extends Session {
 
   static const _terminalKey = 'terminal_bridge';
 
-  /// The iPhone may see and type into kitty and the coding sessions
+  /// The phone may see and type into kitty and the coding sessions
   /// (lib/terminal_bridge.dart). Off until turned on in Settings: whoever
   /// holds the account can then type here.
   bool get terminalOn => _prefs.getBool(_terminalKey) ?? false;
@@ -134,7 +134,7 @@ class AppController extends Session {
     if (want) await (_bridge = TerminalBridge(client, user.id, kitty, live, () => codingAgent)).start();
   }
 
-  /// A run ended, or the agent waits for an answer: the iPhone hears about
+  /// A run ended, or the agent waits for an answer: the phones hear about
   /// it, unless it's showing that session right now.
   Future<void> _onLive(LiveEvent e) async {
     final s = e.session;
@@ -314,7 +314,7 @@ class AppController extends Session {
     notifyListeners();
   }
 
-  /// Pushes [title] / [body] to the user's iPhones (functions/push) when
+  /// Pushes [title] / [body] to the user's phones (functions/push) when
   /// nobody has touched this Mac for a minute: at the desk, the Mac's own
   /// screen says it already. [session]: the coding session a tap opens,
   /// whose Live Activities move to [activity] (done, needs). False if it

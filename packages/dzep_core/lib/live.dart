@@ -3,17 +3,18 @@ import 'dart:math';
 
 import 'package:dzep_core/agent.dart';
 
-// Terminal from the iPhone, version 2. Two kinds of things travel:
+// Terminal from the phone, version 2. Two kinds of things travel:
 //
 // - Coding sessions (omp, Claude Code: lib/agent.dart), live and structured.
-//   Each agent's extension (integrations/omp/live.ts, the Claude Code plugin
-//   in integrations/claude/) reports its session to the Mac app's local API
-//   (lib/local_api.dart → lib/live_hub.dart) as transcript items. The iPhone
+//   Each agent's extension (apps/dzep-macos-app/integrations/omp/live.ts, the
+//   Claude Code plugin in apps/dzep-macos-app/integrations/claude/) reports its session to the Mac app's local API
+//   (apps/dzep-macos-app/lib/local_api.dart → apps/dzep-macos-app/lib/live_hub.dart)
+//   as transcript items. The phone
 //   lays them out itself, so the Mac window's width doesn't matter.
 // - kitty windows, as screens (lib/kitty.dart): shells and anything else,
 //   and the agents' own menus when the phone needs them.
 //
-// Mac ↔ iPhone: the private Realtime broadcast topic `terminal:<user id>`
+// Mac ↔ phone: the private Realtime broadcast topic `terminal:<user id>`
 // (RLS: the user's own topic only). Nothing is stored on the server.
 //
 //   iPhone → Mac  hello  {from, session?, window?}   every 4 s while the app is in front;
@@ -59,9 +60,6 @@ import 'package:dzep_core/agent.dart';
 
 /// The private Storage bucket images from the phone pass through.
 const imageBucket = 'terminal';
-
-/// The extension protocol's version (its hello's `v`).
-const liveVersion = 1;
 
 enum ItemKind { user, assistant, tool, notice }
 
@@ -828,6 +826,10 @@ List<String> menuKeys(int current, int target, {bool enter = true}) {
 }
 
 final _menuCursor = RegExp(r'^\s*❯ ');
+
+/// Claude Code's prompt line: ❯ and a no-break space. It shows only while no
+/// picker is up; the `❯ ` rows above it are prompts in its transcript.
+final _claudePrompt = RegExp('^\\s*❯\u00a0');
 final _menuLeft = RegExp(r'^\s*[│┃║]');
 final _menuRight = RegExp(r'(\s*[│┃║█])+\s*$');
 final _menuChrome = RegExp(r'^[\s─━═╭╮┌┐╔╗├┤╰╯└┘]+|[\s─━═╭╮┌┐╔╗├┤╰╯└┘]+$');
@@ -837,7 +839,11 @@ final _menuStatus = RegExp(
 );
 final _menuGap = RegExp(r'\s{2,}');
 
-/// A picker omp's terminal UI shows (/resume, /model, /tree, a hook's
+/// A numbered row's number (Claude Code's pickers: `1.  Default`), whose gap
+/// is part of the label, not the one before its detail.
+final _menuNumber = RegExp(r'^(\d+\.)\s+');
+
+/// A picker the agent's terminal UI shows (/resume, /model, /tree, a hook's
 /// selector …), read off the plain text of its screen: the rows around the
 /// last cursor (❯) at the cursor's label column, a `title` above them (its
 /// box's top border, or a line of its own) and whether typing filters them
@@ -846,12 +852,13 @@ final _menuGap = RegExp(r'\s{2,}');
 /// detail); otherwise every line is one, with what's indented deeper or
 /// set apart by a wide gap as its detail. Box edges, scrollbars, padding
 /// and lone "…" lines are left out; a footer of keys ends the rows. Null
-/// for anything else, the plan review included.
+/// for anything else: the plan review, or Claude Code's prompt under a
+/// transcript whose prompts read `❯ …` too.
 ({String title, List<MenuItem> items, int current, bool filter})? parseMenu(String screen) {
   if (_planHeader.hasMatch(screen)) return null;
   final lines = [for (final l in screen.split('\n')) l.replaceFirst(_menuLeft, '').replaceFirst(_menuRight, '')];
   final at = lines.lastIndexWhere(_menuCursor.hasMatch);
-  if (at < 0) return null;
+  if (at < 0 || lines.skip(at + 1).any(_claudePrompt.hasMatch)) return null;
   final column = _menuCursor.firstMatch(lines[at])!.end;
   int indent(String s) => s.length - s.trimLeft().length;
   var filter = false;
@@ -892,7 +899,7 @@ final _menuGap = RegExp(r'\s{2,}');
       continue;
     }
     if (isItem(r) && (!blocks || gap || items.isEmpty)) {
-      final row = r.text.substring(column).trim();
+      final row = r.text.substring(column).trim().replaceFirstMapped(_menuNumber, (m) => '${m[1]} ');
       final split = _menuGap.firstMatch(row);
       items.add(split == null ? [row] : [row.substring(0, split.start), row.substring(split.end)]);
     } else if (items.isNotEmpty) {

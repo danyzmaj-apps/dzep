@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Coding sessions followed on the phone: iPhone Live Activities (Lock Screen,
-// Dynamic Island; ios/Shared/OmpActivity.swift) and Android ongoing
+// Dynamic Island; apps/dzep-mobile/ios/Shared/OmpActivity.swift) and Android ongoing
 // notifications (OmpActivities.kt). The app starts one when a prompt goes
 // out from the phone or on "Follow", and updates it itself while it's in
 // front; otherwise the Mac tells the server (functions/push {action:

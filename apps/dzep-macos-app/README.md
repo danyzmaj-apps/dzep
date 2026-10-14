@@ -13,8 +13,9 @@ It also carries the backend, because the wizard bundles it as app assets and dep
 | `tool/setup-backend.sh` | Set up or update a server from a terminal |
 | `tool/deploy-relay.sh` | Deploy the publisher's push relay (APNs and FCM) |
 | `tool/release.sh` | Build, notarize and publish a release |
-| `integrations/omp/` | omp extensions: `idea.ts` (`/idea`, `/todo`, `/note`) and `live.ts` (sessions for the phone) |
-| `integrations/claude/` | Claude Code marketplace with Džep's `dzep` plugin: `/idea`, `/todo`, `/note` and sessions for the phone (`plugins/dzep/hooks/`); `claude plugin test integrations/claude/plugins/dzep` runs its tests |
+| `tool/make_icon.swift` | Draw the app icons |
+| `integrations/omp/` | omp extensions: `idea.ts` (`/idea`, `/do`, `/note`) and `live.ts` (sessions for the phone) |
+| `integrations/claude/` | Claude Code marketplace with Džep's `dzep` plugin: `/idea`, `/do`, `/note` and sessions for the phone (`plugins/dzep/hooks/`); `claude plugin test integrations/claude/plugins/dzep` runs its tests |
 
 Run it from this directory:
 

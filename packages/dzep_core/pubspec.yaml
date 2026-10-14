@@ -1,5 +1,5 @@
 name: dzep_core
-description: "Džep: the code the Mac app and the iPhone app share (sync, sessions, chat, the terminal protocol, UI pieces)."
+description: "Džep: the code the Mac app and the phone app share (sync, sessions, chat, the terminal protocol, UI pieces)."
 publish_to: 'none'
 version: 0.2.0
 resolution: workspace

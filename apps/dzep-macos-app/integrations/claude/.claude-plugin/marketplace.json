@@ -1,6 +1,6 @@
 {
   "name": "dzep",
-  "description": "Džep's Claude Code plugin: /idea, /todo and /note, and your sessions on your phone",
+  "description": "Džep's Claude Code plugin: /idea, /do and /note, and your sessions on your phone",
   "owner": { "name": "Džep", "url": "https://github.com/danyzmaj-apps/dzep" },
   "plugins": [
     {

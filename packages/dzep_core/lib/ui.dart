@@ -67,6 +67,11 @@ InputDecoration setupField(String hint) => InputDecoration(
 /// Flutter's default, which closes the gaps between lines.
 const BoxWidthStyle selectionWidth = BoxWidthStyle.tight;
 
+/// For fields' `onTapOutside`: a tap anywhere else puts the keyboard away.
+/// (A tap on the field itself never counts, unlike a screen-wide tap
+/// catcher, which can steal the tap that should focus it.)
+void dismissKeyboard(PointerDownEvent _) => FocusManager.instance.primaryFocus?.unfocus();
+
 /// Asks before deleting the account; true to go ahead.
 Future<bool> confirmDeleteAccount(BuildContext context) async =>
     await showDialog<bool>(

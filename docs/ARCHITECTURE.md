@@ -21,6 +21,8 @@ One Dart pub workspace (root `pubspec.yaml`): the Mac app in `apps/dzep-macos-ap
 | `core/lib/native.dart` | The `dzep/native` platform channel to the native side of each app (Swift on Mac and iPhone, Kotlin on Android; same methods and events everywhere) |
 | `mac/lib/main.dart`, `controller.dart`, `popup.dart`, `main_window.dart`, `note_window.dart` | Mac app |
 | `core/lib/chat.dart`, `chat_view.dart` | Quick questions: `ChatStore` (synced chats, streaming from `ask`) and the transcript/list/thread widgets (Mac and phone) |
+| `core/lib/ui.dart` | Shared UI pieces (Mac and phone): the palette `C`, fields, key hints, todo rows' checkbox and chips, toasts, `dismissKeyboard` |
+| `core/lib/ansi.dart` | kitty's screen lines: ANSI escapes and the terminal's colors, read into styled text |
 | `core/lib/kitty.dart` | Mac: kitty's remote control, spoken directly over its unix socket (windows, screen lines, typing, keys, new windows) |
 | `core/lib/live.dart` | Terminal from the phone: the protocol and what both sides share (transcript items and their seq/epoch log, questions and the keys that answer them, screen diffs); pure Dart, `core/test/live_test.dart` |
 | `mac/lib/live_hub.dart` | Mac: the coding sessions reporting over the local API (`/v1/live` WebSocket for omp, `/v1/live/http` long polls for Claude Code) |
@@ -28,7 +30,7 @@ One Dart pub workspace (root `pubspec.yaml`): the Mac app in `apps/dzep-macos-ap
 | `core/lib/terminal_channel.dart` | Mac and phone: the private topic, kept joined (a fresh channel and token after any close, refusal or stuck join) |
 | `core/lib/terminal_remote.dart`, `mobile/lib/session_view.dart`, `terminal_view.dart` | Phone: the remote and its disk cache, a coding session's transcript and composer, the Terminal tab, kitty screens and new sessions |
 | `core/lib/live_activity.dart` | Phone: followed coding sessions (Live Activities on iOS, ongoing notifications on Android; start, local updates, push tokens to the server); Mac and phone: a session's state as an activity's (`core/test/live_activity_test.dart`) |
-| `mac/lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea`, `/todo`, `/note`, pushes and the coding agents' live sessions; keeps `cli.json` naming a Džep that runs (`mac/test/local_api_test.dart`, with the long-poll transport) |
+| `mac/lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea`, `/do`, `/note`, pushes and the coding agents' live sessions; keeps `cli.json` naming a Džep that runs (`mac/test/local_api_test.dart`, with the long-poll transport) |
 | `mac/lib/integrations.dart` | Mac: **Settings → Coding agent**'s Install/Update: the bundled integrations copied (omp's to `~/.omp/agent/extensions/`, Claude Code's marketplace to `~/.config/dzep/claude-plugin`, then `claude plugin marketplace add`/`update` and `plugin install`/`update`/`enable dzep@dzep`), whether they're current, whether Claude Code has mods off (`mac/test/integrations_test.dart`) |
 | `mobile/lib/main.dart`, `mobile.dart` | Phone app (iPhone and Android) |
 | `mac/macos/Runner/MainFlutterWindow.swift`, `AppDelegate.swift` | Popup panel, main window and note window on one multi-view engine, menu-bar icon, Carbon hotkey, activation policy, launch at login, reminder notifications, idle time |
@@ -48,8 +50,8 @@ One Dart pub workspace (root `pubspec.yaml`): the Mac app in `apps/dzep-macos-ap
 | `mobile/maestro/` | Simulator flows |
 | `config/Dzep.xcconfig` | Team, bundle id and App Group for every Xcode target of both apps (`Local.xcconfig` overrides them) |
 | `mac/tool/setup-backend.sh`, `release.sh` | Self-hosting setup; Mac release (DMG, notarization, Sparkle appcast) |
-| `mac/integrations/omp/idea.ts`, `live.ts` | omp extensions: `/idea`, `/todo` and `/note`; the session, live, for the phone |
-| `mac/integrations/claude/` | Claude Code marketplace (`.claude-plugin/marketplace.json`) with Džep's `dzep` plugin: `plugins/dzep/hooks/dzep.ts` (`/idea`, `/todo`, `/note`; the session, live, for the phone), `hooks/items.ts` (Claude's transcript as items, its dialogs as asks), `tests/` (`claude plugin test`) |
+| `mac/integrations/omp/idea.ts`, `live.ts` | omp extensions: `/idea`, `/do` (a todo; omp's own `/todo` is its task list) and `/note`; the session, live, for the phone |
+| `mac/integrations/claude/` | Claude Code marketplace (`.claude-plugin/marketplace.json`) with Džep's `dzep` plugin: `plugins/dzep/hooks/dzep.ts` (`/idea`, `/do`, `/note`; the session, live, for the phone), `hooks/items.ts` (Claude's transcript as items, its dialogs as asks), `tests/` (`claude plugin test`) |
 | `core/lib/chat_images.dart` | Images in quick questions: preparing (downscale, PNG), paste and pick, the composer strip and transcript thumbnails |
 
 ## Backend

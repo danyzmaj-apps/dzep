@@ -31,8 +31,8 @@ Each release is a notarized DMG on GitHub Releases, plus an `appcast.xml` that i
    ```
 3. **Sparkle signing key.** The private half lives in the login keychain; its public half is `SUPublicEDKey` in `apps/dzep-macos-app/macos/Runner/Info.plist`. Check it (in `apps/dzep-macos-app`) with `macos/Pods/Sparkle/bin/generate_keys -p`. **Back it up**: without it, installed copies won't accept new updates.
    ```sh
-   # in apps/dzep-macos-app
-   macos/Pods/Sparkle/bin/generate_keys -x sparkle-private-key   # move this file somewhere safe, offline, and delete it here
+   # in apps/dzep-macos-app; write it straight to your keys folder, never into the repo
+   macos/Pods/Sparkle/bin/generate_keys -x ~/Dev/keys/dzep-sparkle-private-key && chmod 600 ~/Dev/keys/dzep-sparkle-private-key
    ```
 4. `gh auth login`, with push access to the repo.
 

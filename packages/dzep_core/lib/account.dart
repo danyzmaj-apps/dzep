@@ -1,4 +1,4 @@
-/// Signing in and who is signed in: the same on the Mac and the iPhone.
+/// Signing in and who is signed in: the same on the Mac and the phones.
 library;
 
 import 'dart:async';

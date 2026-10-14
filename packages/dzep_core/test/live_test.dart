@@ -445,6 +445,35 @@ void main() {
       expect(parseMenu(_planScreen()), isNull);
     });
 
+    test("Claude Code's transcript prompts are not pickers; its /model is", () {
+      // Its prompt line is ❯ and a no-break space, under the transcript's `❯ ` prompts.
+      const idle =
+          '⏺ pong\n'
+          '\n'
+          '› Prompt from the dzep plugin\n'
+          '❯ Reply just: Q3OK\n'
+          '\n'
+          '⏺ Q3OK\n'
+          '────────────────────────────────────────\n'
+          '❯\u00a0\n'
+          '────────────────────────────────────────\n'
+          '  ⏸ manual mode on · ? for shortcuts';
+      expect(parseMenu(idle), isNull);
+      const model =
+          '❯ Reply just: Q3OK\n'
+          '▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔\n'
+          '   Select model\n'
+          '\n'
+          '   ❯ 1.  Default (recommended) ✔  Opus 5.5\n'
+          '     2.  Sonnet 5.5               Most efficient\n'
+          '\n'
+          '   Enter to set as default · Esc to cancel';
+      final menu = parseMenu(model);
+      expect(menu?.title, 'Select model');
+      expect(menu?.current, 0);
+      expect(menu?.items.map((i) => i.label), ['1. Default (recommended) ✔', '2. Sonnet 5.5']);
+    });
+
     test('a picker is on screen while its title is', () {
       const ask = LiveAsk.menu('m1', title: 'Resume Session (current folder)', items: []);
       expect(askOnScreen(ask, resume), isTrue);

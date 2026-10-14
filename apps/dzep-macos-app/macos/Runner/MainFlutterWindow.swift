@@ -504,7 +504,7 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
 
 // MARK: - Todo reminders
 
-/// Local notifications for todo reminders. Dart picks them (lib/remind.dart)
+/// Local notifications for todo reminders. Dart picks them (packages/dzep_core/lib/remind.dart)
 /// and hands over the whole set on every change; a click opens that todo in
 /// the main window, Done ticks it off through the desktop widget's queue (so
 /// a click that launched Džep is applied once the store is open).

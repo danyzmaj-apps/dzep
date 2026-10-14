@@ -17,7 +17,7 @@ There is no Džep cloud. Your data lives in a Supabase project you own; the Mac 
 - **Main window.** Todos (finished ones fold away at the bottom), Ideas (grouped by project, with descriptions), Notes and Ask. ⌘N new item, ⌘F or / search, ↑/↓ move, ⌫ deletes (with Undo), ⌘, Settings.
 - **Note window.** A note can float in a small window of its own over whatever you're doing: from the note's header in the main window, or ⌘P in the popup's Note mode.
 - **Widget.** A **Todos** widget (desktop or Notification Center) lists open todos; click a circle to tick one off.
-- **Terminal.** `/idea`, `/todo` and `/note` in omp ([integrations/omp/idea.ts](apps/dzep-macos-app/integrations/omp/idea.ts)) and in Claude Code (Džep's plugin, [integrations/claude](apps/dzep-macos-app/integrations/claude)) save through the Mac app's localhost API, filed under the current repo's name. **Settings → Coding agent** picks which agent a session started from your phone runs, and the row under it installs or updates Džep's integration for it. Other tools can use the same [terminal API](docs/ARCHITECTURE.md#terminal-api-mac).
+- **Terminal.** `/idea`, `/do` (a todo) and `/note` in omp ([integrations/omp/idea.ts](apps/dzep-macos-app/integrations/omp/idea.ts)) and in Claude Code (Džep's plugin, [integrations/claude](apps/dzep-macos-app/integrations/claude)) save through the Mac app's localhost API, filed under the current repo's name. **Settings → Coding agent** picks which agent a session started from your phone runs, and the row under it installs or updates Džep's integration for it. Other tools can use the same [terminal API](docs/ARCHITECTURE.md#terminal-api-mac).
 - Updates itself (Sparkle). macOS 13+, the widget needs 14+.
 
 ### iPhone
@@ -70,7 +70,7 @@ Phones don't set up servers: they only pair with one a Mac has set up.
 
 **Terminal from the phone** also needs kitty with remote control (`allow_remote_control socket-only` and `listen_on unix:/tmp/kitty` in kitty.conf).
 
-**`/idea`, `/todo`, `/note` and sessions on the phone** need Džep's integration in your coding agent. On the Mac, pick the agent in **Settings → Coding agent** and click **Install** (or **Update**) on the row under it, then restart its running sessions. To do it by hand:
+**`/idea`, `/do`, `/note` and sessions on the phone** need Džep's integration in your coding agent. On the Mac, pick the agent in **Settings → Coding agent** and click **Install** (or **Update**) on the row under it, then restart its running sessions. To do it by hand:
 
 - **omp**: copy [integrations/omp/idea.ts](apps/dzep-macos-app/integrations/omp/idea.ts) and [live.ts](apps/dzep-macos-app/integrations/omp/live.ts) to `~/.omp/agent/extensions/`.
 - **Claude Code** 2.1.287 or later, with mods on: from a checkout of this repo, `claude plugin marketplace add apps/dzep-macos-app/integrations/claude`, then `claude plugin install dzep@dzep`. Claude Code keeps mods off until it has fetched its settings while you're logged in: if Settings says mods are off, run `claude /login`, start `claude` once, then restart your sessions.

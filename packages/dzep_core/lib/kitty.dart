@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 import 'package:dzep_core/agent.dart';
 
-/// One kitty window, as the iPhone sees it (kitty's `ls`, minus everything
+/// One kitty window, as the phone sees it (kitty's `ls`, minus everything
 /// the phone has no business seeing, like the window's environment).
 class TermWindow {
   const TermWindow({
@@ -83,7 +83,7 @@ class Kitty {
       "kitty isn't listening. Add `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty` "
       'to kitty.conf, then restart kitty.';
 
-  /// Keys the iPhone may press, as kitty names them.
+  /// Keys the phone may press, as kitty names them.
   static const keys = {'esc', 'tab', 'up', 'down', 'enter', 'ctrl+c'};
 
   /// The protocol version we claim; kitty refuses clients newer than itself.
@@ -284,7 +284,7 @@ class Kitty {
     await _rc(socket, 'send-text', {'match': match, 'data': 'text:$text', 'bracketed_paste': 'disable'});
   }
 
-  /// Presses one of [keys] (what the iPhone may press).
+  /// Presses one of [keys] (what the phone may press).
   Future<void> press(String key, String name) async {
     if (!keys.contains(name)) throw KittyException('Unknown key: $name');
     await pressKeys(key, [name]);
@@ -299,7 +299,7 @@ class Kitty {
   }
 
   /// Closes the window and whatever runs in it (kitty doesn't ask; the
-  /// iPhone does, before it sends this).
+  /// phone does, before it sends this).
   Future<void> close(String key) async {
     final (socket, match) = _parse(key);
     await _rc(socket, 'close-window', {'match': match});
@@ -336,7 +336,7 @@ class Kitty {
   }
 
   /// Git repositories up to three levels under the usual code folders, for
-  /// the iPhone's New session list.
+  /// the phone's New session list.
   Future<List<String>> projects() async {
     final found = <String>[];
     Future<void> walk(Directory dir, int depth) async {

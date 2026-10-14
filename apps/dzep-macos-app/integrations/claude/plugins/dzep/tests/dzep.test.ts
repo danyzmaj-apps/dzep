@@ -45,11 +45,11 @@ test("/idea list prints the repo's ideas, numbered", async ($, on) => {
 	expect(out.text).toMatch(/^Džep · @repo\n\n1\. Dark mode {2}· .+\n2\. Faster sync {2}· .+\n {5}batch writes$/);
 });
 
-test("/todo done takes a number; an ambiguous word asks for it", async ($, on) => {
+test("/do done takes a number; an ambiguous word asks for it", async ($, on) => {
 	const { calls, toasts } = dzep(on, (method) => (method === "GET" ? { ideas: IDEAS } : { idea: {} }));
-	await $.command.run({ command: "todo", args: "done 2" });
+	await $.command.run({ command: "do", args: "done 2" });
 	expect(calls.at(-1)).toEqual({ method: "PATCH", path: "/v1/ideas/b", body: { done: true } });
-	await $.command.run({ command: "todo", args: "done a" });
+	await $.command.run({ command: "do", args: "done a" });
 	expect(toasts.at(-1)).toBe("Ambiguous — matches #1, #2. Use the number.");
 });
 

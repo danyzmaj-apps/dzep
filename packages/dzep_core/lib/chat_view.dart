@@ -8,7 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Copies [text] and says so: the Mac's toast, the iPhone's snackbar.
+/// Copies [text] and says so: the Mac's toast, the phone's snackbar.
 void copyAnswer(BuildContext context, String? text) {
   if (text == null || text.isEmpty) return;
   unawaited(Clipboard.setData(ClipboardData(text: text)));
@@ -46,7 +46,7 @@ class ChatTranscript extends StatelessWidget {
     return SelectionArea(
       child: ListView(
         reverse: true,
-        // Scrolling the transcript puts the iPhone keyboard away.
+        // Scrolling the transcript puts the phone keyboard away.
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         shrinkWrap: shrinkWrap,
         padding: padding,

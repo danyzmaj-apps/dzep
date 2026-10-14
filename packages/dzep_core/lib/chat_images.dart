@@ -88,7 +88,7 @@ Future<List<Uint8List>> clipboardImages() async {
   return image == null ? const [] : [image];
 }
 
-/// Images picked by the user: Photos on the iPhone, a file dialog on the Mac.
+/// Images picked by the user: the photo picker on the phone, a file dialog on the Mac.
 Future<List<Uint8List>> pickImages({required int limit}) async {
   if (limit <= 0) return const [];
   final picked = limit == 1
@@ -153,15 +153,15 @@ class ChatAttachments extends ChangeNotifier {
   }
 }
 
-/// ⌘V on the Mac (a hardware keyboard on the iPhone pastes through the
-/// field's own menu, so the iPhone has a Paste button instead).
+/// ⌘V on the Mac (a hardware keyboard on the phone pastes through the
+/// field's own menu, so the phone has a Paste button instead).
 bool isPasteKey(KeyEvent e) =>
     e is KeyDownEvent &&
     e.logicalKey == LogicalKeyboardKey.keyV &&
     HardwareKeyboard.instance.isMetaPressed &&
     !HardwareKeyboard.instance.isShiftPressed;
 
-/// 📎: pick images to attach (a file dialog on the Mac, Photos on the iPhone).
+/// 📎: pick images to attach (a file dialog on the Mac, the photo picker on the phone).
 class AttachButton extends StatelessWidget {
   const AttachButton({required this.attachments, this.size = 18, this.around, super.key});
   final ChatAttachments attachments;

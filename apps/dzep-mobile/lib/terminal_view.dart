@@ -23,8 +23,6 @@ const _monoStrut = StrutStyle(
 );
 const double _lineHeight = 11 * 1.2;
 
-void _unfocus(PointerDownEvent _) => FocusManager.instance.primaryFocus?.unfocus();
-
 /// Shows what went wrong at the bottom of the screen.
 void termToast(BuildContext context, Object e) => ScaffoldMessenger.of(context)
   ..hideCurrentSnackBar()
@@ -641,7 +639,7 @@ class _TerminalPageState extends State<TerminalPage> {
                         Expanded(
                           child: TextField(
                             key: const ValueKey('term-input'),
-                            onTapOutside: _unfocus,
+                            onTapOutside: dismissKeyboard,
                             controller: _field,
                             minLines: 1,
                             maxLines: 6,
@@ -778,7 +776,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: TextField(
                     key: const ValueKey('session-folder'),
-                    onTapOutside: _unfocus,
+                    onTapOutside: dismissKeyboard,
                     controller: _query,
                     autocorrect: false,
                     style: const TextStyle(fontSize: 15),
