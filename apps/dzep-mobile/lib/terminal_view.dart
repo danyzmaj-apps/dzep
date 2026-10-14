@@ -712,16 +712,11 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
     super.dispose();
   }
 
-  /// A folder typed in, as the Mac's path: `/x` as is, `~/x` and anything
-  /// else with a `/` (`dev/app`) from the Mac's home. Plain words only
-  /// search the projects.
+  /// `~/x` and `/x` typed in, as the Mac's path.
   String? get _typed {
-    var q = _query.text.trim();
-    if (q.isEmpty || !(q.startsWith('~') || q.contains('/'))) return null;
-    if (q.length > 1 && q.endsWith('/')) q = q.substring(0, q.length - 1);
-    if (q.startsWith('/')) return q;
-    final rest = q.startsWith('~') ? q.substring(1).replaceFirst(RegExp('^/'), '') : q;
-    return rest.isEmpty ? remote.home : '${remote.home}/$rest';
+    final q = _query.text.trim();
+    if (q.startsWith('~')) return '${remote.home}${q.substring(1)}';
+    return q.startsWith('/') ? q : null;
   }
 
   Future<void> _launch(String cwd) async {
@@ -784,16 +779,9 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                     onTapOutside: dismissKeyboard,
                     controller: _query,
                     autocorrect: false,
-                    enableSuggestions: false,
-                    textInputAction: TextInputAction.go,
-                    // Enter starts the typed folder, else the one project found.
-                    onSubmitted: (_) {
-                      final pick = typed ?? (places.length == 1 ? places.single : null);
-                      if (pick != null && remote.online) unawaited(_launch(pick));
-                    },
                     style: const TextStyle(fontSize: 15),
                     decoration: InputDecoration(
-                      hintText: 'Find a project, or type a folder: ~/Dev/app',
+                      hintText: 'Find a project, or type ~/path',
                       prefixIcon: const Icon(Icons.folder_outlined, size: 20, color: C.dim),
                       filled: true,
                       fillColor: C.field,
@@ -807,30 +795,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   child: ListView(
                     keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                     children: [
-                      if (typed != null)
-                        ListTile(
-                          key: const ValueKey('typed-folder'),
-                          dense: true,
-                          enabled: remote.online,
-                          onTap: () => unawaited(_launch(typed)),
-                          leading: const Icon(Icons.subdirectory_arrow_right, size: 18, color: C.accent),
-                          title: Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: _agent ? 'Start ${remote.agent.label} in ' : 'Open a shell in ',
-                                  style: const TextStyle(color: C.dim),
-                                ),
-                                TextSpan(text: shortPath(remote, typed)),
-                              ],
-                            ),
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          trailing: _launching == typed
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                              : null,
-                        ),
-                      for (final p in places.where((p) => p != typed))
+                      for (final p in [?typed, ...places])
                         ListTile(
                           dense: true,
                           enabled: remote.online,
