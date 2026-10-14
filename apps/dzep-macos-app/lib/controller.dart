@@ -191,9 +191,6 @@ class AppController extends Session {
     _mainAfterNote = false;
     await closeNoteWindow();
     await super.signOut();
-    _shownTodoCount = 0;
-    await Native.setTodoCount(0);
-    await Native.setSharedTodos(null);
   }
 
   int _shownTodoCount = 0;
@@ -221,8 +218,14 @@ class AppController extends Session {
     await _startBridge();
   }
 
+  /// However the user went (signed out here, the server refused a refresh,
+  /// the account was deleted on another device): the desktop widget and the
+  /// Dock badge stop showing their todos, and the terminal bridge stops.
   @override
   Future<void> onSignedOut() async {
+    _shownTodoCount = 0;
+    await Native.setTodoCount(0);
+    await Native.setSharedTodos(null);
     try {
       await _startBridge();
     } on Object catch (e) {

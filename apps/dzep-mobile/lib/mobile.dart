@@ -111,17 +111,11 @@ class MobileSession extends Session {
   Future<void> onSigningOut({required bool accountDeleted}) async {
     final token = _prefs.getString(_tokenKey);
     final pushToken = _prefs.getString(_pushTokenKey);
-    await _prefs.remove(_tokenKey);
-    await _prefs.remove(_tokenUserKey);
-    await _prefs.remove(_pushTokenKey);
-    await _prefs.remove(_pushUserKey);
-    remindersByPush = false;
-    await Native.setSharedToken(null);
-    // The followed sessions are this account's: they go from the Lock
-    // Screen now, and the server stops updating them (iOS gives each its
-    // own token, which 'unregister' below doesn't know).
-    for (final a in await Native.liveActivities()) {
-      await Native.endActivity(a.key, immediate: true);
+    final activities = await _forgetHere();
+    // The followed sessions are this account's: the server stops updating
+    // them too (iOS gives each its own token, which 'unregister' below
+    // doesn't know).
+    for (final a in activities) {
       if (a.token case final activityToken? when !accountDeleted) {
         await _tryServer(
           'activity end',
@@ -143,6 +137,32 @@ class MobileSession extends Session {
         () => client.functions.invoke('push', body: {'action': 'unregister', 'token': pushToken}),
       );
     }
+  }
+
+  /// However the account went, also without [signOut] here (the server
+  /// refused a refresh, the account was deleted on another device, the
+  /// reviewer access ended): its widget token and followed sessions leave
+  /// this phone.
+  @override
+  Future<void> onSignedOut() async {
+    await _forgetHere();
+  }
+
+  /// Drops what this phone keeps for the account: the widget's device token
+  /// (which also empties the widgets), the push registration's record, and
+  /// the followed sessions, ended at once. Returns those sessions.
+  Future<List<({String key, String? token})>> _forgetHere() async {
+    await _prefs.remove(_tokenKey);
+    await _prefs.remove(_tokenUserKey);
+    await _prefs.remove(_pushTokenKey);
+    await _prefs.remove(_pushUserKey);
+    remindersByPush = false;
+    await Native.setSharedToken(null);
+    final activities = await Native.liveActivities();
+    for (final a in activities) {
+      await Native.endActivity(a.key, immediate: true);
+    }
+    return activities;
   }
 
   /// One server call of the sign-out; a failed one (offline) doesn't stop

@@ -22,6 +22,7 @@
 - Server functions cut long text between characters, never through one: a reviewer-code label or a phone's name ending in an emoji past the limit no longer fails to save, and a coding session's alert whose text is cut inside an emoji now opens on the iPhone instead of showing only "Terminal".
 - Sync: a device coming back online no longer misses what other devices changed while it was away. The realtime echo of its own push could move the sync cursor past those rows before the pull ran, so they never arrived, and its stale copies could later overwrite them.
 - Connecting to a server whose connection drops mid-answer (a captive portal, a proxy) now says it couldn't reach the server instead of leaving the phone's setup screen or the Mac's connect form spinning until the app is restarted.
+- When the server ends a session (the account deleted on another device, a refresh refused, reviewer access ended), the Mac's desktop widget and Dock count and the phone's widgets and followed sessions now let go of that account's todos, as an ordinary sign-out does; before, they kept showing them, and a phone's widget could still tick them.
 
 ## 0.3.0
 
