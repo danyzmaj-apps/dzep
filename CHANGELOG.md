@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+The first release on GitHub Releases; it also carries everything listed under 0.2.0. **Backend:** update your server: re-run `apps/dzep-macos-app/tool/setup-backend.sh`, or the Mac's setup wizard on the same project (new migrations, `ask`, `pair` and `push` changed).
 
 - **Android app**: everything the iPhone app does except Siri. Todos, Ideas, Notes, Ask and Terminal tabs; **Todos** and **New idea** home-screen widgets; reminders with a **Done** action; omp sessions you follow show as an ongoing notification (working, needs you, finished) instead of a Live Activity. Pairs with your server by scanning the Mac's code.
 - **Android push**: reminders, omp notifications and session updates reach Android through Firebase Cloud Messaging, encrypted by your server with a key only that phone has, exactly like the iPhone's. The relay only passes ciphertext on. **Backend:** run `apps/dzep-macos-app/tool/setup-backend.sh` (new migration: a `platform` column on `push_devices` and `activity_tokens`; `push` redeployed); the publisher redeploys `relay` with the Firebase service account.
