@@ -126,7 +126,7 @@ class Native {
       (key: m['key']! as String, token: m['token'] as String?),
   ];
 
-  // What the widgets (and the iPhone's Siri intents) read:
+  // What the widgets read:
   // apps/dzep-mobile/ios/Shared/DzepShared.swift, android/…/DzepShared.kt.
   static Future<void> setSharedToken(String? token) => _channel.invokeMethod('setSharedToken', {'token': token});
 
@@ -141,8 +141,7 @@ class Native {
       await _channel.invokeMethod<bool>('setHotKey', {'keyCode': key.keyCode, 'modifiers': key.carbonModifiers}) ??
       false;
 
-  /// The backend (lib/backend.dart) kept where the widgets (and the
-  /// iPhone's Siri intents) read it.
+  /// The backend (lib/backend.dart) kept where the widgets read it.
   static Future<({String url, String key})?> getBackend() async {
     final m = await _channel.invokeMapMethod<String, String>('getBackend');
     final url = m?['url'];

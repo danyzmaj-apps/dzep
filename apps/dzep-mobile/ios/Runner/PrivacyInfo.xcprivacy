@@ -13,7 +13,7 @@
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>
-			<!-- The app's settings, and the App Group it shares with its widget and Siri intents. -->
+			<!-- The app's settings, and the App Group it shares with its widget. -->
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>

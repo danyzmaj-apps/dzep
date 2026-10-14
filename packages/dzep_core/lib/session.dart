@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:app_links/app_links.dart';
 import 'package:dzep_core/backend.dart';
 import 'package:dzep_core/chat.dart';
-import 'package:dzep_core/idea.dart';
 import 'package:dzep_core/live.dart' show imageBucket;
 import 'package:dzep_core/native.dart';
 import 'package:dzep_core/remind.dart';
@@ -248,9 +247,8 @@ class Session extends ChangeNotifier {
   Future<void> onSigningOut() async {}
 
   /// Actions queued in the App Group (apps/dzep-mobile/ios/Shared/DzepShared.swift) by what
-  /// can't reach this session: the iPhone's Siri intents and widget while
-  /// offline, the Mac's widget always. {action: add, kind, title} or
-  /// {action: done, id}.
+  /// can't reach this session: the phones' widgets and notification Done
+  /// actions while offline, the Mac's widget always. Only {action: done, id}.
   Future<void> drainPending() async {
     final store = this.store;
     if (store == null) return;
@@ -260,14 +258,6 @@ class Session extends ChangeNotifier {
         if (j['action'] == 'done') {
           final todo = store.byId(j['id'] as String? ?? '');
           if (todo != null && todo.isTodo) store.update(todo, done: true);
-        } else if ((j['title'] as String? ?? '').trim().isNotEmpty) {
-          final title = j['title'] as String;
-          switch (Kind.parse(j['kind'])) {
-            case Kind.note:
-              store.addNote(title);
-            case final kind:
-              store.add(title: title, kind: kind);
-          }
         }
       } on Object catch (e) {
         debugPrint('Džep: dropped unreadable queued action: $e');

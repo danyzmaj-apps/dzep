@@ -1,9 +1,7 @@
-// What the iPhone does without a Supabase session (Siri / Action Button
-// intents, the interactive Todos widget), authorised by a device token
+// What the phones and the Mac widget do without a Supabase session (the
+// interactive Todos widgets, notification Done actions), authorised by a device token
 // (see device_tokens) in the x-dzep-token header. Deployed --no-verify-jwt.
 //
-//   POST /functions/v1/device  {"action": "add", "kind": "idea"|"todo"|"note", "title", "notes"?, "created_at"?}
-//                              (a note keeps its whole text in notes, its first line as the title)
 //   POST /functions/v1/device  {"action": "done", "id"}   → marks a todo done
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -26,28 +24,6 @@ Deno.serve(async (req) => {
   await admin.from("device_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", device.id);
 
   const body = await req.json().catch(() => ({}));
-
-  if (body.action === "add") {
-    const title = typeof body.title === "string" ? body.title.trim() : "";
-    if (!title) return json(400, { error: "title is required" });
-    const kind = body.kind === "todo" || body.kind === "note" ? body.kind : "idea";
-    const notes = typeof body.notes === "string" ? body.notes.trim() : "";
-    const { data: item, error } = await admin
-      .from("ideas")
-      .insert({
-        id: crypto.randomUUID(),
-        user_id: device.user_id,
-        kind,
-        title,
-        notes: kind === "note" ? (notes ? `${title}\n${notes}` : title) : notes,
-        device: device.label,
-        ...(typeof body.created_at === "string" ? { created_at: body.created_at } : {}),
-      })
-      .select("id, kind, title")
-      .single();
-    if (error) return json(500, { error: error.message });
-    return json(201, { item });
-  }
 
   if (body.action === "done") {
     if (typeof body.id !== "string") return json(400, { error: "id is required" });

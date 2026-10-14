@@ -14,7 +14,7 @@ body:
     attributes:
       label: Where
       multiple: true
-      options: [Mac app, iPhone app, Android app, Widget, Siri, Notifications / push, Backend setup, Pairing a phone, Quick questions (AI), Terminal from phone, omp / Claude Code integration]
+      options: [Mac app, iPhone app, Android app, Widget, Notifications / push, Backend setup, Pairing a phone, Quick questions (AI), Terminal from phone, omp / Claude Code integration]
     validations:
       required: true
   - type: input
