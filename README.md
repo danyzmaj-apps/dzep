@@ -73,8 +73,8 @@ The phone connects and signs in as you. A code works **once**, for **10 minutes*
 - **Phones:** tabs for Todos, Ideas, Notes, Ask and Terminal; **Todos** and **New idea** widgets.
 - **Coding agents:** `/idea`, `/do` and `/note` in omp and Claude Code, filed under the current repo.
 
-
 **Does the Mac have to be on?** Not for your data: ideas, todos, notes, reminders and Ask live on your server, so the phones work on their own with the Mac off. The Mac is needed only to add a new phone (its code) and for Terminal from the phone (below).
+
 All the keys, the reminder syntax and more: [docs/USING.md](docs/USING.md).
 
 ## Terminal from the phone
