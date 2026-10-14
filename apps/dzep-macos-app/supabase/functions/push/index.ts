@@ -176,7 +176,7 @@ async function ensureConfig() {
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "POST only" });
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
 
   if (body.action === "tick") {
     const { data: config } = await admin.from("push_config").select("secret").maybeSingle();
@@ -200,9 +200,11 @@ Deno.serve(async (req) => {
     if (platform === "android") {
       if (!fcmToken(body.token)) return json(400, { error: "token must be the FCM registration token" });
     } else if (!apnsToken(body.token)) return json(400, { error: "token must be the APNs device token (hex)" });
-    if (typeof body.key !== "string" || decodeBase64(body.key).length !== 32) {
-      return json(400, { error: "key must be 32 bytes" });
-    }
+    let key: Uint8Array | null = null;
+    try {
+      if (typeof body.key === "string") key = decodeBase64(body.key);
+    } catch { /* not base64 */ }
+    if (key?.length !== 32) return json(400, { error: "key must be 32 bytes, base64" });
     const { error } = await admin.from("push_devices").upsert({
       token: body.token,
       user_id: user,

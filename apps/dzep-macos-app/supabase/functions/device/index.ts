@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
   if (!device) return json(401, { error: "Unknown device token" });
   await admin.from("device_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", device.id);
 
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
 
   if (body.action === "done") {
     if (typeof body.id !== "string") return json(400, { error: "id is required" });

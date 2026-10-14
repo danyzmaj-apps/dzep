@@ -131,3 +131,10 @@ Deno.test("a long reviewer label is cut between characters, never through one", 
   assertEquals(halfCharacter.test(label), false, "no half character reaches the database");
   assertEquals(label, `a${"😀".repeat(39)}`);
 });
+
+Deno.test("revoking takes a code's id and nothing else", async () => {
+  supabase({ user: owner });
+  const res = await pair(post({ action: "revoke", id: "not-a-uuid" }, { authorization: "Bearer owner-token" }));
+  assertEquals(res.status, 400);
+  assertEquals(sent.some((r) => r.url.pathname === "/rest/v1/pairing_codes"), false, "nothing was asked of the database");
+});

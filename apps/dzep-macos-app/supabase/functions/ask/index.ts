@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
   const key = Deno.env.get("AI_API_KEY");
   if (body.action === "status") {
     return json(200, key ? { configured: true, model: MODEL, base_url: BASE_URL } : { configured: false });

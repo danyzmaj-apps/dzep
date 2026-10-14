@@ -131,3 +131,10 @@ Deno.test("a long label or alert is cut between characters, never through one", 
   assertEquals(halfCharacter.test(opened.body), false, "and so does the text");
   assertEquals(opened.body, `a${"😀".repeat(199)}`);
 });
+
+Deno.test("a body that isn't an object, or a key that isn't base64, is refused, not a crash", async () => {
+  server();
+  assertEquals((await push(post("null", signedIn))).status, 400);
+  server();
+  assertEquals((await push(post({ action: "register", token: iphone, key: "not base64!" }, signedIn))).status, 400);
+});

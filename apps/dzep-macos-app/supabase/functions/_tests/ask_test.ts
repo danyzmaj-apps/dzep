@@ -21,6 +21,14 @@ const chatId = "00000000-0000-0000-0000-0000000000c1";
 /** A lone surrogate: half a character, which Postgres refuses in JSON. */
 const halfCharacter = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
+Deno.test("a body that isn't an object is refused, not a crash", async () => {
+  network((req) => {
+    if (new URL(req.url).pathname === "/auth/v1/user") return json(user);
+    throw new Error(`unexpected request: ${req.method} ${req.url}`);
+  });
+  assertEquals((await ask(post("null", signedIn))).status, 400);
+});
+
 Deno.test("a provider's long error is saved cut between characters, never through one", async () => {
   network((req) => {
     const { pathname } = new URL(req.url);

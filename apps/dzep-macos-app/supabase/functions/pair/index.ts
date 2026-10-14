@@ -38,6 +38,8 @@ const json = (status: number, body: unknown) =>
 /** [s] cut to at most [max] UTF-16 units, never through a character: half of one isn't valid JSON for Postgres. */
 const clip = (s: string, max: number) => s.slice(0, /[\uD800-\uDBFF]/.test(s[max - 1] ?? "") ? max - 1 : max);
 
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const phoneLifetimeMs = 10 * 60 * 1000;
 
 // Crockford's base32: no I, L, O or U, so a code read aloud or typed can't be
@@ -203,7 +205,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "revoke") {
-      if (typeof body.id !== "string") return json(400, { error: "id is required" });
+      if (typeof body.id !== "string" || !uuid.test(body.id)) return json(400, { error: "id must be a code's id" });
       const { data, error } = await own
         .from("pairing_codes")
         .update({ revoked_at: new Date().toISOString() })
