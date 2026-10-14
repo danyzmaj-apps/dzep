@@ -8,9 +8,9 @@ The phone app: Todos, Ideas, Notes, Ask and Terminal, pairing with a server by s
 | `ios/` | Runner (native channel, push, Live Activities), `DzepWidget` (widgets and the Live Activity), `DzepPush` (decrypts pushes) |
 | `android/` | `MainActivity` (native channel), FCM service, reminders, the ongoing notification for followed coding sessions, Todos and New idea widgets |
 | `maestro/` | iOS simulator flows |
-| `test/screenshots/` | The README's phone screenshots, rendered on made-up data ([BUILDING.md](../../docs/BUILDING.md#screenshots)) |
+| `test/screenshots/` | The docs' phone screenshots and the README's hero, rendered on made-up data ([BUILDING.md](../../docs/BUILDING.md#screenshots)) |
 
-The two platforms do the same things, push included. Building Android from source, push needs your Firebase project's `android/app/google-services.json` (not committed; [BUILDING.md](../../docs/BUILDING.md#android)); a build without it works and schedules reminders on the phone instead.
+The two platforms do the same things, push included. Building Android from source, push needs your Firebase project's `android/app/google-services.json` (not committed; [BUILDING.md](../../docs/BUILDING.md#android)); a debug build without it works and schedules reminders on the phone instead, and a release build stops unless you pass `-P allowNoPush=true`.
 
 Run it from this directory:
 

@@ -53,16 +53,23 @@ enum DzepShared {
   /// This iPhone's push key (32 bytes): made here, given only to the user's
   /// own server (functions/push), which seals each notification with it; the
   /// DzepPush extension opens them. Made on first use, kept across sign-ins.
+  /// Nil when the system had no random bytes to give: no push then.
   static var pushKey: Data? { defaults.data(forKey: "pushKey") }
 
-  static func makePushKey() -> Data {
+  static func makePushKey() -> Data? {
     if let key = pushKey { return key }
     var bytes = [UInt8](repeating: 0, count: 32)
-    _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+    guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return nil }
     let key = Data(bytes)
     defaults.set(key, forKey: "pushKey")
     return key
   }
+
+  /// Each queued action has a key of its own, `pending.<ms>-<uuid>`: the
+  /// widget, a notification and the app are separate processes, and one
+  /// shared array lost what was queued between the app's read and its
+  /// removal.
+  private static let pendingPrefix = "pending."
 
   /// Actions for the app to replay (the iPhone's offline ones, every tick of
   /// the Mac's widget), as the JSON the `device` function takes.
@@ -70,7 +77,20 @@ enum DzepShared {
     guard let data = try? JSONSerialization.data(withJSONObject: action),
       let entry = String(data: data, encoding: .utf8)
     else { return }
-    defaults.set((defaults.stringArray(forKey: "pending") ?? []) + [entry], forKey: "pending")
+    let ms = Int(Date().timeIntervalSince1970 * 1000)
+    defaults.set(entry, forKey: "\(pendingPrefix)\(ms)-\(UUID().uuidString)")
+  }
+
+  /// The queued actions, oldest first; only the ones read here go.
+  static func takePending() -> [String] {
+    // Queued by a build from before the keys of their own, as one array.
+    var taken = defaults.stringArray(forKey: "pending") ?? []
+    if !taken.isEmpty { defaults.removeObject(forKey: "pending") }
+    for key in defaults.dictionaryRepresentation().keys.filter({ $0.hasPrefix(pendingPrefix) }).sorted() {
+      if let entry = defaults.string(forKey: key) { taken.append(entry) }
+      defaults.removeObject(forKey: key)
+    }
+    return taken
   }
 
   enum Outcome { case done, signedOut, failed }

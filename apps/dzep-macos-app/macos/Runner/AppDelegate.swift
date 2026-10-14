@@ -54,6 +54,13 @@ class AppDelegate: FlutterAppDelegate {
     return false
   }
 
+  // Quit (the menu, ⌘Q, logging out): Dart cleans up first, then the app goes.
+  override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard let window = mainWindow else { return .terminateNow }
+    window.quitting { NSApp.reply(toApplicationShouldTerminate: true) }
+    return .terminateLater
+  }
+
   // Dock icon clicked (or the LaunchServices activation the main window asks
   // for): bring the main window back, unless it's already showing.
   override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

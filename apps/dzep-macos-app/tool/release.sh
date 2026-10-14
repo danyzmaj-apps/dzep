@@ -39,7 +39,12 @@ if ! $DRY; then
   [[ -z "$(git status --porcelain)" ]] || die "the working tree has uncommitted changes"
   git rev-parse "v$VERSION" >/dev/null 2>&1 && die "tag v$VERSION exists; bump the version in pubspec.yaml"
   grep -q "^## $VERSION" $ROOT/CHANGELOG.md || die "CHANGELOG.md has no '## $VERSION' section"
-  security find-identity -v -p codesigning | grep -q "Developer ID Application.*($TEAM)" \
+  git fetch --quiet origin main || die "can't fetch origin/main"
+  git merge-base --is-ancestor HEAD origin/main || die "HEAD isn't on origin/main; release from a pushed main commit"
+  # The SHA-1 of this team's identity, so codesign never finds another team's certificate ambiguous.
+  IDENTITY=$(security find-identity -v -p codesigning \
+    | awk -v t="($TEAM)" '/Developer ID Application/ && index($0, t) { print $2; exit }')
+  [[ -n "$IDENTITY" ]] \
     || die "no 'Developer ID Application' certificate for team $TEAM (Xcode → Settings → Accounts → Manage Certificates → +)"
   xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 \
     || die "no notarytool profile '$NOTARY_PROFILE' (xcrun notarytool store-credentials $NOTARY_PROFILE)"
@@ -86,7 +91,7 @@ step "Making the DMG"
 mkdir -p "$OUT/dmg" && cp -R "$APP" "$OUT/dmg/" && ln -s /Applications "$OUT/dmg/Applications"
 hdiutil create -quiet -volname "Džep $VERSION" -srcfolder "$OUT/dmg" -fs HFS+ -format ULFO "$DMG"
 if ! $DRY; then
-  codesign --sign "Developer ID Application" --timestamp "$DMG"
+  codesign --sign "$IDENTITY" --timestamp "$DMG"
   notarize "$DMG"
   xcrun stapler staple "$DMG"
   spctl --assess --type open --context context:primary-signature "$DMG"
@@ -108,7 +113,8 @@ gh release download --repo "$REPO" --pattern appcast.xml --dir "$OUT/appcast" 2>
 
 step "Publishing v$VERSION"
 awk -v v="$VERSION" '$0 ~ "^## "v {on=1; next} /^## / {on=0} on' $ROOT/CHANGELOG.md >"$OUT/notes.md"
-git tag "v$VERSION" && git push origin "v$VERSION"
-gh release create "v$VERSION" --repo "$REPO" --title "Džep $VERSION" --notes-file "$OUT/notes.md" \
-  "$DMG" "$OUT/appcast/appcast.xml"
+# gh creates the tag on GitHub together with the release, so a failed upload leaves no tag behind.
+gh release create "v$VERSION" --repo "$REPO" --target "$(git rev-parse HEAD)" --title "Džep $VERSION" \
+  --notes-file "$OUT/notes.md" "$DMG" "$OUT/appcast/appcast.xml"
+git fetch --quiet origin tag "v$VERSION"
 echo "Released: https://github.com/$REPO/releases/tag/v$VERSION"

@@ -7,7 +7,8 @@
 #   apps/dzep-macos-app/tool/setup-backend.sh [project-ref]
 #
 # Needs the Supabase CLI (brew install supabase/tap/supabase), logged in
-# (supabase login). Walkthrough: docs/SELF_HOSTING.md.
+# (supabase login), and jq (part of macOS 15 and later; brew or your
+# package manager otherwise). Walkthrough: docs/SELF_HOSTING.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -18,8 +19,24 @@ ask() { # ask VAR "prompt" [default] [secret]
   if [[ "${4:-}" == secret ]]; then read -rsp "$2: " reply && echo; else read -rp "$2${3:+ [$3]}: " reply; fi
   printf -v "$1" '%s' "${reply:-${3:-}}"
 }
+# Function secrets go to the CLI in a mode-600 file, never as arguments,
+# which any local user could read with ps while it runs.
+SECRETS_FILE=""
+trap '[[ -z "$SECRETS_FILE" ]] || rm -f "$SECRETS_FILE"' EXIT
+set_secrets() { # set_secrets NAME=value …
+  SECRETS_FILE=$(mktemp) && chmod 600 "$SECRETS_FILE"
+  local pair value
+  for pair in "$@"; do
+    value=${pair#*=}
+    [[ "$value" != *"'"* && "$value" != *$'\n'* ]] || die "${pair%%=*} can't contain ' or a line break"
+    printf "%s='%s'\n" "${pair%%=*}" "$value" >>"$SECRETS_FILE"
+  done
+  supabase secrets set --env-file "$SECRETS_FILE"
+  rm -f "$SECRETS_FILE"
+}
 
 command -v supabase >/dev/null || die "install the Supabase CLI first: brew install supabase/tap/supabase"
+command -v jq >/dev/null || die "install jq first: brew install jq (or your package manager's jq)"
 supabase projects list >/dev/null 2>&1 || die "log in first: supabase login"
 
 REF="${1:-}"
@@ -82,16 +99,11 @@ EOF
   ask AI_MODEL "Model" "deepseek-flash"
   ask AI_API_KEY "API key" "" secret
   if [[ -n "$AI_API_KEY" ]]; then
-    supabase secrets set "AI_BASE_URL=$AI_BASE_URL" "AI_MODEL=$AI_MODEL" "AI_API_KEY=$AI_API_KEY"
+    set_secrets "AI_BASE_URL=$AI_BASE_URL" "AI_MODEL=$AI_MODEL" "AI_API_KEY=$AI_API_KEY"
   fi
 fi
 
-KEYS=$(supabase projects api-keys --project-ref "$REF" -o json)
-KEY=""
-for i in $(seq 0 9); do
-  type=$(plutil -extract "$i.type" raw - <<<"$KEYS" 2>/dev/null) || break
-  if [[ "$type" == publishable ]]; then KEY=$(plutil -extract "$i.api_key" raw - <<<"$KEYS"); break; fi
-done
+KEY=$(supabase projects api-keys --project-ref "$REF" -o json | jq -r 'map(select(.type == "publishable"))[0].api_key // empty')
 [[ -n "$KEY" ]] || die "no publishable key on this project (Project Settings → API Keys → create one)"
 
 curl -fsS "$URL/auth/v1/settings" -H "apikey: $KEY" | grep -q '"github":true' \

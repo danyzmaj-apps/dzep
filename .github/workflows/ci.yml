@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Read the code, nothing else: no job here needs to write to the repo.
+permissions:
+  contents: read
+
+# Third-party actions are pinned to commits (the tag they were is beside each).
 jobs:
   dart:
     runs-on: macos-latest
@@ -13,10 +18,10 @@ jobs:
       matrix:
         member: [packages/dzep_core, apps/dzep-macos-app, apps/dzep-mobile]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: fvm
         run: echo "flutter=$(jq -r .flutter .fvmrc)" >> "$GITHUB_OUTPUT"
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ steps.fvm.outputs.flutter }}
           cache: true
@@ -30,12 +35,19 @@ jobs:
 
   functions:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dzep-macos-app
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: v2.x
-      - run: deno check apps/dzep-macos-app/supabase/functions/*/index.ts
+      - run: deno check supabase/functions/*/index.ts
+      # pair, push and relay in-process against a fake network (supabase/functions/_tests/harness.ts).
+      - run: deno test --allow-env supabase/functions/_tests/
+      # The omp extensions the Mac installs, against omp's and Bun's types.
+      - run: deno check --config integrations/omp-check.json integrations/omp/*.ts
 
   migrations:
     runs-on: ubuntu-latest
@@ -43,10 +55,12 @@ jobs:
       run:
         working-directory: apps/dzep-macos-app
     steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
-          version: latest
+          version: 2.116.0
       # A fresh database from every migration, the way a new self-hoster gets one.
       - run: supabase db start
       - run: supabase db lint --level error
+      # pgTAP (supabase/tests): pairing codes, the sign-up hook, account deletion, the demo account, row level security.
+      - run: supabase test db

@@ -226,14 +226,8 @@ Deno.serve(async (req) => {
     const text = typeof body.body === "string" ? body.body.trim().slice(0, 400) : "";
     const session = sessionKey(body.session);
     const sent = await send(user, { kind: "terminal", title, body: text, session });
-    // The Mac's session alerts (lib/controller.dart) also move the session's Live Activities. A Mac
-    // from before `state` says it in the title.
-    if (session) {
-      const state: ActivityState | null = body.state === "done" || body.state === "needs"
-        ? body.state
-        : title.startsWith("omp finished") ? "done" : title.startsWith("omp needs you") ? "needs" : null;
-      if (state) await activity(user, session, state);
-    }
+    // The Mac's session alerts (lib/controller.dart) also move the session's Live Activities.
+    if (session && (body.state === "done" || body.state === "needs")) await activity(user, session, body.state);
     return json(200, { sent });
   }
 

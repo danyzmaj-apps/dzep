@@ -64,7 +64,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Followed coding sessions (OmpActivities.kt). -->
+        <!-- Followed coding sessions (SessionActivities.kt). -->
         <receiver android:name=".ActivityDismissReceiver" android:exported="false" />
         <receiver android:name=".ActivityStaleReceiver" android:exported="false" />
 

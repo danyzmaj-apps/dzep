@@ -7,7 +7,7 @@ import WidgetKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let reminders = Reminders()
-  private let activities = OmpActivities()
+  private let activities = SessionActivities()
 
   /// Waiting for APNs to hand over this iPhone's device token (registerPush).
   private var pushWaiter: FlutterResult?
@@ -27,7 +27,8 @@ import WidgetKit
   ) {
     super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
     let token = deviceToken.map { String(format: "%02x", $0) }.joined()
-    pushWaiter?(["token": token, "key": DzepShared.makePushKey().base64EncodedString()])
+    // No key, no sealed pushes: reminders stay on the phone.
+    pushWaiter?(DzepShared.makePushKey().map { ["token": token, "key": $0.base64EncodedString()] })
     pushWaiter = nil
   }
 
@@ -77,9 +78,7 @@ import WidgetKit
         result(nil)
       case "takePending":
         // Actions the widget or a notification couldn't send; the app replays them.
-        let pending = DzepShared.defaults.stringArray(forKey: "pending") ?? []
-        DzepShared.defaults.removeObject(forKey: "pending")
-        result(pending)
+        result(DzepShared.takePending())
       case "getBackend":
         result(DzepShared.backend.map { ["url": $0.url, "key": $0.key] })
       case "setBackend":
@@ -121,12 +120,12 @@ import WidgetKit
   }
 }
 
-/// omp sessions on the Lock Screen and in the Dynamic Island
-/// (ios/Shared/OmpActivity.swift, drawn by the widget extension). Dart
+/// Coding sessions on the Lock Screen and in the Dynamic Island
+/// (ios/Shared/SessionActivity.swift, drawn by the widget extension). Dart
 /// starts, updates and ends them while the app runs (packages/dzep_core/lib/live_activity.dart);
 /// otherwise the server updates them by push, at each one's push token,
 /// which goes to Dart as `activityToken {key, token}`. One per session key.
-final class OmpActivities {
+final class SessionActivities {
   /// The app's channel, once its Flutter engine is up.
   var channel: FlutterMethodChannel?
 
@@ -143,29 +142,29 @@ final class OmpActivities {
 
   /// After a launch: the activities still running from before.
   func install() {
-    for a in Activity<OmpActivity>.activities { watch(a) }
+    for a in Activity<SessionActivity>.activities { watch(a) }
   }
 
   /// {key, token?} for each running activity.
   func running() -> [[String: Any]] {
-    Activity<OmpActivity>.activities.filter { $0.activityState == .active }.map { a in
+    Activity<SessionActivity>.activities.filter { $0.activityState == .active }.map { a in
       var m: [String: Any] = ["key": a.attributes.key]
       if let token = tokens[a.id] { m["token"] = token }
       return m
     }
   }
 
-  private func active(_ key: String) -> [Activity<OmpActivity>] {
-    Activity<OmpActivity>.activities.filter { $0.attributes.key == key && $0.activityState == .active }
+  private func active(_ key: String) -> [Activity<SessionActivity>] {
+    Activity<SessionActivity>.activities.filter { $0.attributes.key == key && $0.activityState == .active }
   }
 
   /// {state, kind?, since: ms since 1970}; nil for anything else.
-  private func content(_ args: [String: Any]) -> ActivityContent<OmpActivity.ContentState>? {
-    guard let raw = args["state"] as? String, let state = OmpActivity.ContentState.State(rawValue: raw) else {
+  private func content(_ args: [String: Any]) -> ActivityContent<SessionActivity.ContentState>? {
+    guard let raw = args["state"] as? String, let state = SessionActivity.ContentState.State(rawValue: raw) else {
       return nil
     }
     let since = (args["since"] as? NSNumber)?.doubleValue ?? Date().timeIntervalSince1970 * 1000
-    let kind = (args["kind"] as? String).flatMap(OmpActivity.ContentState.Kind.init(rawValue:))
+    let kind = (args["kind"] as? String).flatMap(SessionActivity.ContentState.Kind.init(rawValue:))
     return ActivityContent(
       state: .init(state: state, since: since / 1000, kind: kind),
       staleDate: Date().addingTimeInterval(Self.staleAfter))
@@ -178,7 +177,7 @@ final class OmpActivities {
     guard let key = args["key"] as? String, let content = content(args) else { return result(false) }
     if !active(key).isEmpty { return update(args, result: result) }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return result(false) }
-    let attributes = OmpActivity(
+    let attributes = SessionActivity(
       key: key, title: args["title"] as? String ?? "Session", project: args["project"] as? String ?? "")
     do {
       watch(try Activity.request(attributes: attributes, content: content, pushType: .token))
@@ -205,7 +204,7 @@ final class OmpActivities {
     guard let key = args["key"] as? String else { return result(nil) }
     let list = active(key)
     let content = ActivityContent(
-      state: OmpActivity.ContentState(state: .ended, since: Date().timeIntervalSince1970), staleDate: nil)
+      state: SessionActivity.ContentState(state: .ended, since: Date().timeIntervalSince1970), staleDate: nil)
     let policy: ActivityUIDismissalPolicy =
       args["immediate"] as? Bool == true ? .immediate : .after(Date().addingTimeInterval(600))
     Task { @MainActor in
@@ -214,7 +213,7 @@ final class OmpActivities {
     }
   }
 
-  private func watch(_ activity: Activity<OmpActivity>) {
+  private func watch(_ activity: Activity<SessionActivity>) {
     guard watched.insert(activity.id).inserted else { return }
     let key = activity.attributes.key
     let id = activity.id

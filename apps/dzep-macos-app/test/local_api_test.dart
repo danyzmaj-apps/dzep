@@ -28,7 +28,7 @@ void main() {
       final dir = Directory.systemTemp.createTempSync('dzep-cli');
       addTearDown(() => dir.deleteSync(recursive: true));
       final file = File('${dir.path}/cli.json');
-      final api = LocalApi(() => null, (_, _) async => false, LiveHub(), file: file);
+      final api = LocalApi(() => null, LiveHub(), file: file);
       await api.start();
       addTearDown(api.stop);
       final written = file.readAsStringSync();
@@ -39,6 +39,54 @@ void main() {
       await Future<void>.delayed(const Duration(seconds: 6));
       expect(file.readAsStringSync(), written);
     }, timeout: const Timeout(Duration(seconds: 20)));
+
+    test('Džep proves it is the one at its port without the token being sent', () async {
+      final dir = Directory.systemTemp.createTempSync('dzep-cli');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final api = LocalApi(() => null, LiveHub(), file: File('${dir.path}/cli.json'));
+      await api.start();
+      addTearDown(api.stop);
+      final token = (jsonDecode(api.file.readAsStringSync()) as Map)['token'] as String;
+      expect(await LocalApi.answers(api.port!, token), isTrue);
+      // Some other server's token, or nobody at the port.
+      expect(await LocalApi.answers(api.port!, 'not-its-token'), isFalse);
+      final port = api.port!;
+      await api.stop();
+      expect(await LocalApi.answers(port, token), isFalse);
+    });
+
+    test('a proof is good for one port only, so a stand-in at an old port cannot relay it', () {
+      const nonce = '0123456789abcdef';
+      expect(LocalApi.pingProof('t', 5000, nonce), isNot(LocalApi.pingProof('t', 5001, nonce)));
+      expect(LocalApi.pingProof('t', 5000, nonce), isNot(LocalApi.pingProof('u', 5000, nonce)));
+    });
+
+    test('stopping takes cli.json out, unless another Džep wrote it since', () async {
+      final dir = Directory.systemTemp.createTempSync('dzep-cli');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}/cli.json');
+      final api = LocalApi(() => null, LiveHub(), file: file);
+      await api.start();
+      await api.stop();
+      expect(file.existsSync(), isFalse);
+
+      final again = LocalApi(() => null, LiveHub(), file: file);
+      await again.start();
+      file.writeAsStringSync('{"port":6000,"token":"other","pid":2}');
+      await again.stop();
+      expect(file.readAsStringSync(), contains('"other"'));
+    });
+
+    test('a folder DZEP_CLI_JSON names keeps its mode; only the file is private', () async {
+      final dir = Directory.systemTemp.createTempSync('dzep-cli');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      await Process.run('/bin/chmod', ['755', dir.path]);
+      final api = LocalApi(() => null, LiveHub(), file: File('${dir.path}/dzep.json'));
+      await api.start();
+      addTearDown(api.stop);
+      expect(dir.statSync().modeString(), 'rwxr-xr-x');
+      expect(api.file.statSync().modeString(), 'rw-------');
+    });
   });
 
   group('live sessions over HTTP long polls', () {
@@ -50,7 +98,7 @@ void main() {
     setUp(() async {
       dir = Directory.systemTemp.createTempSync('dzep-poll');
       hub = LiveHub();
-      api = LocalApi(() => null, (_, _) async => false, hub, file: File('${dir.path}/cli.json'));
+      api = LocalApi(() => null, hub, file: File('${dir.path}/cli.json'));
       await api.start();
       token = (jsonDecode(api.file.readAsStringSync()) as Map)['token'] as String;
     });

@@ -1,0 +1,12 @@
+{
+  "//": "CI type-checks the omp extensions with this (deno check --config integrations/omp-check.json integrations/omp/*.ts). omp loads them with Bun, so Bun's globals and omp's own types. It lives outside omp/: everything in there is installed into omp.",
+  "lock": false,
+  "imports": {
+    "@oh-my-pi/pi-coding-agent": "npm:@oh-my-pi/pi-coding-agent@18.10.4"
+  },
+  "compilerOptions": {
+    "types": [
+      "npm:@types/bun@1.4.3"
+    ]
+  }
+}

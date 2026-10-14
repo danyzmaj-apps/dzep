@@ -98,7 +98,7 @@ keytool -genkeypair -v -keystore ~/keys/dzep-upload.jks -keyalg RSA -keysize 204
 
 Keep the keystore and its password outside the repo.
 
-**Push (optional).** Android push goes through Firebase Cloud Messaging. Put your Firebase project's `google-services.json` (Firebase console → Project settings → your Android app, package `com.danyzmaj.dzep` or your own) in `apps/dzep-mobile/android/app/` (git-ignored). Without it the app builds and works, push is off, and reminders are scheduled on the phone instead. Pushes only arrive if the relay your server uses holds the service account of that same Firebase project ([SELF_HOSTING.md](SELF_HOSTING.md#your-own-app-id-and-relay)).
+**Push (optional).** Android push goes through Firebase Cloud Messaging. Put your Firebase project's `google-services.json` (Firebase console → Project settings → your Android app, package `com.danyzmaj.dzep` or your own) in `apps/dzep-mobile/android/app/` (git-ignored). Without it a debug build builds and works, push is off, and reminders are scheduled on the phone instead; a release build stops, so a store build never ships without push by accident (`fvm flutter build appbundle --release -P allowNoPush=true` builds one anyway). Pushes only arrive if the relay your server uses holds the service account of that same Firebase project ([SELF_HOSTING.md](SELF_HOSTING.md#your-own-app-id-and-relay)).
 
 **Your own package name.** The application id is `com.danyzmaj.dzep` in `apps/dzep-mobile/android/app/build.gradle.kts`. Google Play needs it to be unique, so a fork that publishes changes it there (and registers that id in its Firebase project).
 
@@ -127,13 +127,15 @@ maestro test -e TS=$(date +%H%M%S) apps/dzep-mobile/maestro/
 
 ## Screenshots
 
-The README's screenshots (`docs/images/`) are the real screens rendered by a widget test, on made-up data: no window opens and no account is used. They need macOS's own fonts (SF Pro, Menlo) and are skipped by a plain `fvm flutter test`.
+The screenshots in the README and [USING.md](USING.md) (`docs/images/`) are the real screens rendered by a widget test, on made-up data: no window opens and no account, token or project is real. They need macOS's own fonts (SF Pro, Menlo) and are skipped by a plain `fvm flutter test`.
 
 ```sh
-# in apps/dzep-macos-app (mac-*.png), then in apps/dzep-mobile (phone-*.png)
+# in apps/dzep-macos-app: mac-*.png, wizard-*.png, and the hero's popup (build/screenshots/hero-popup.png)
+fvm flutter test --tags screenshots --run-skipped
+# then in apps/dzep-mobile: phone-*.png, and hero.png (that popup next to the phone, in a phone's frame)
 fvm flutter test --tags screenshots --run-skipped
 # at the repo root, to keep them small (brew install pngquant)
 pngquant --quality 80-98 --strip --skip-if-larger --force --ext .png docs/images/*.png
 ```
 
-The generators are `test/screenshots/` in each app.
+Run the Mac's first: the phone's `hero` test is skipped until the popup it composes exists. The generators are `test/screenshots/` in each app; the hero's popup shows the phone's todos (`phoneTodos` mirrors the phone generator's list), so change both together. Keep `docs/images/` under 1 MB in all.

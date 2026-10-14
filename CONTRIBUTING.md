@@ -17,16 +17,19 @@ The repo is a pub workspace: `apps/dzep-macos-app` (Mac app and the backend), `a
   fvm dart format --set-exit-if-changed lib test
   fvm flutter analyze
   fvm flutter test
-  # at the repo root
-  deno check apps/dzep-macos-app/supabase/functions/*/index.ts
-  # in apps/dzep-macos-app (Docker)
+  # in apps/dzep-macos-app
+  deno check supabase/functions/*/index.ts
+  deno test --allow-env supabase/functions/_tests/       # pair, push and relay in-process, fake network
+  deno check --config integrations/omp-check.json integrations/omp/*.ts
+  # in apps/dzep-macos-app (Docker; CI pins Supabase CLI 2.116.0)
   supabase db start && supabase db lint --level error
+  supabase test db                                       # pgTAP in supabase/tests: pairing, sign-up hook, account deletion and the demo account, RLS
   # the Claude Code plugin, in apps/dzep-macos-app/integrations/claude, locally
   # (CI can't: Claude Code mods need a logged-in claude)
   claude plugin validate . && claude plugin test plugins/dzep
   ```
 - Add a test when you change behavior that can quietly break: parsing, sync, reminders.
-- Changed how a screen looks? Render the README's screenshots again ([BUILDING.md](docs/BUILDING.md#screenshots)).
+- Changed how a screen looks? Render the docs' screenshots again ([BUILDING.md](docs/BUILDING.md#screenshots)).
 - Database changes go in a **new** migration in `apps/dzep-macos-app/supabase/migrations/`, timestamped after the latest. Never edit one that has shipped: self-hosters have already applied it.
 - Note user-visible changes under **Unreleased** in `CHANGELOG.md`, and say whether self-hosters must rerun `apps/dzep-macos-app/tool/setup-backend.sh`.
 - Never commit `config/Local.xcconfig`, `apps/dzep-macos-app/supabase/.env*`, `apps/dzep-mobile/android/key.properties`, `google-services.json`, keystores or any key.

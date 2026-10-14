@@ -16,7 +16,7 @@ class PushService : FirebaseMessagingService() {
         DzepShared.setFcmToken(this, token)
         // The server needs the new one: for the phone, and for each followed session.
         NativeEvents.emit("pushToken")
-        for (key in OmpActivities.keys(this)) {
+        for (key in SessionActivities.keys(this)) {
             NativeEvents.emit("activityToken", mapOf("key" to key, "token" to token))
         }
     }
@@ -25,7 +25,7 @@ class PushService : FirebaseMessagingService() {
         val kind = message.data["kind"] ?: return
         val m = message.data["enc"]?.let { DzepShared.open(this, it) }
         when (kind) {
-            "activity" -> if (m != null) OmpActivities.pushed(this, m)
+            "activity" -> if (m != null) SessionActivities.pushed(this, m)
             "reminder" ->
                 if (m == null) {
                     Notifications.todo(this, null, "Džep", "Reminder")

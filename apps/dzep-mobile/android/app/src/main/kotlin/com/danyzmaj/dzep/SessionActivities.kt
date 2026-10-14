@@ -12,12 +12,12 @@ import org.json.JSONObject
 /**
  * Coding sessions followed in the notification shade: one ongoing notification
  * per session, Android's take on the iPhone's Live Activities
- * (ios/Shared/OmpActivity.swift). Dart starts, updates and ends them while
+ * (ios/Shared/SessionActivity.swift). Dart starts, updates and ends them while
  * the app runs (packages/dzep_core/lib/live_activity.dart); otherwise the server updates them by
  * push (PushService), sent to this phone's FCM token once per followed
  * session. A tap opens the session; swiping one away stops following it.
  */
-object OmpActivities {
+object SessionActivities {
     private const val PREFS = "dzep_activities"
 
     /** What a followed session shows; [since] and [updated] in ms since 1970. */
@@ -237,13 +237,13 @@ object OmpActivities {
 /** A followed session's notification was swiped away: stop following it. */
 class ActivityDismissReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, intent: Intent) {
-        OmpActivities.dismissed(c, intent.getStringExtra("key") ?: return)
+        SessionActivities.dismissed(c, intent.getStringExtra("key") ?: return)
     }
 }
 
-/** A followed session may have gone quiet (OmpActivities.staleLater). */
+/** A followed session may have gone quiet (SessionActivities.staleLater). */
 class ActivityStaleReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, intent: Intent) {
-        OmpActivities.checkStale(c, intent.getStringExtra("key") ?: return)
+        SessionActivities.checkStale(c, intent.getStringExtra("key") ?: return)
     }
 }

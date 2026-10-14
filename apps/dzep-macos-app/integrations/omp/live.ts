@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHmac, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -10,8 +11,8 @@ import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 // (with images), interrupt, and page back through older history. The protocol is described in packages/dzep_core/lib/live.dart.
 //
 // Only the top-level interactive session talks, and only to Džep's local API on 127.0.0.1 (port and token
-// from ~/.config/dzep/cli.json, or the file DZEP_CLI_JSON names). While Džep isn't running it quietly tries
-// again every few seconds.
+// from ~/.config/dzep/cli.json, or the file DZEP_CLI_JSON names), once whatever answers at that port has
+// proved it holds the token. While Džep isn't running it quietly tries again every few seconds.
 //
 // Install: copy this file to ~/.omp/agent/extensions/live.ts and restart omp (or use Install in Džep's
 // Settings).
@@ -30,6 +31,22 @@ const NOTICE_CHARS = 1000;
 const SUMMARY_CHARS = 400;
 const COMMAND_CHARS = 80;
 const SILENT_ABORT = "__omp.silent_abort__";
+
+/** Whether the Džep that wrote cli.json answers at [port]: it proves it holds [token] (HMAC-SHA256 of the
+ * port and a fresh nonce, pingProof in lib/local_api.dart) before the token or the transcript goes there.
+ * After Džep quits, anything could be listening at its old port. */
+async function proven(port: number, token: string): Promise<boolean> {
+	const nonce = randomBytes(16).toString("hex");
+	try {
+		const res = await fetch(`http://127.0.0.1:${port}/v1/ping?nonce=${nonce}`, {
+			signal: AbortSignal.timeout(3000),
+		});
+		const { proof } = (await res.json()) as { proof?: unknown };
+		return proof === createHmac("sha256", token).update(`dzep-ping\n${port}\n${nonce}`).digest("hex");
+	} catch {
+		return false;
+	}
+}
 
 /** One transcript entry, keyed like LiveItem.toJson in packages/dzep_core/lib/live.dart (the Mac adds `o` and `s`). */
 export type Item = {
@@ -564,20 +581,40 @@ export default function liveExtension(pi: ExtensionAPI) {
 		if (ask) send({ t: "ask", ask });
 	}
 
+	// A ping in flight: Džep is proving it's the one at the port cli.json names.
+	let checking = false;
+
 	function connect(): void {
 		retry = undefined;
-		if (!active || ws) return;
+		if (!active || ws || checking) return;
 		let conn: { port?: number; token?: string };
 		try {
 			conn = JSON.parse(readFileSync(CLI_FILE, "utf8"));
 		} catch {
 			return later();
 		}
-		if (!conn?.port || !conn.token) return later();
+		const { port, token } = conn ?? {};
+		if (!port || !token) return later();
+		checking = true;
+		proven(port, token).then(
+			(ok) => {
+				checking = false;
+				if (ok) open(port, token);
+				else later();
+			},
+			() => {
+				checking = false;
+				later();
+			},
+		);
+	}
+
+	function open(port: number, token: string): void {
+		if (!active || ws) return;
 		let socket: WebSocket;
 		try {
-			socket = new WebSocket(`ws://127.0.0.1:${conn.port}/v1/live`, {
-				headers: { authorization: `Bearer ${conn.token}` },
+			socket = new WebSocket(`ws://127.0.0.1:${port}/v1/live`, {
+				headers: { authorization: `Bearer ${token}` },
 			});
 		} catch {
 			return later();

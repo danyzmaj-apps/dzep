@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -9,14 +10,30 @@ import 'package:dzep_core/terminal.dart';
 /// connection per command; see https://sw.kovidgoyal.net/kitty/rc_protocol/).
 /// kitty listens only with `allow_remote_control socket-only` and
 /// `listen_on unix:/tmp/kitty` in kitty.conf (read at startup), which makes it
-/// `/tmp/kitty-<pid>`; every unix socket named `kitty*` in /tmp counts, so
-/// several kittys work. Window keys: `<socket name>/<window id>`.
+/// `/tmp/kitty-<pid>`; every unix socket named `kitty*` in /tmp that this
+/// user owns counts, so several kittys work. Window keys:
+/// `<socket name>/<window id>`.
 class Kitty extends TerminalHost {
-  Kitty({String? home, this.socketDir = '/tmp', this.timeout = const Duration(seconds: 5), this.restoreFront = true})
-    : home = home ?? Platform.environment['HOME'] ?? '';
+  Kitty({
+    String? home,
+    this.socketDir = '/tmp',
+    this.timeout = const Duration(seconds: 5),
+    this.restoreFront = true,
+    int? uid,
+  }) : home = home ?? Platform.environment['HOME'] ?? '',
+       uid = uid ?? _getuid();
 
   final String home;
   final String socketDir;
+
+  /// Whose sockets count: the user Džep runs as. /tmp is everyone's, and a
+  /// socket another account put there would show its windows on the phone
+  /// and get what the phone types.
+  final int uid;
+
+  static final int Function() _getuid = DynamicLibrary.process().lookupFunction<Uint32 Function(), int Function()>(
+    'getuid',
+  );
 
   /// How long one command may take, connecting included.
   final Duration timeout;
@@ -123,11 +140,19 @@ class Kitty extends TerminalHost {
   List<String> _sockets() {
     final dir = Directory(socketDir);
     if (!dir.existsSync()) return const [];
-    return [
+    final named = [
       for (final e in dir.listSync(followLinks: false))
         if (e.uri.pathSegments.last.startsWith('kitty') &&
             FileSystemEntity.typeSync(e.path, followLinks: false) == FileSystemEntityType.unixDomainSock)
-          e.uri.pathSegments.last,
+          e.path,
+    ];
+    if (named.isEmpty) return const [];
+    // `<owner uid> <path>` a line; a socket gone meanwhile has none.
+    final owners = Process.runSync('/usr/bin/stat', ['-f', '%u %N', ...named]).stdout as String;
+    return [
+      for (final line in const LineSplitter().convert(owners))
+        if (line.indexOf(' ') case final at when at > 0 && int.tryParse(line.substring(0, at)) == uid)
+          line.substring(line.lastIndexOf('/') + 1),
     ]..sort();
   }
 

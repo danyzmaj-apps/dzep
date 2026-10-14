@@ -5,6 +5,7 @@ import 'package:dzep_core/account.dart';
 import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/chat_view.dart';
+import 'package:dzep_core/connect.dart' show ConfirmLink;
 import 'package:dzep_core/idea.dart';
 import 'package:dzep_core/logo.dart';
 import 'package:dzep_core/native.dart';
@@ -60,6 +61,16 @@ class MainWindow extends StatelessWidget {
             Library(app: app, store: store),
           const Positioned(top: 0, left: 80, right: 0, child: TitleDrag()),
           if (store != null && app.settingsOpen) SettingsSheet(app: app),
+          if (store == null && app.linkToConfirm != null)
+            ColoredBox(
+              color: Colors.black54,
+              child: Center(
+                child: SizedBox(
+                  width: 400,
+                  child: ConfirmLink(session: app, link: app.linkToConfirm!),
+                ),
+              ),
+            ),
         ],
       ),
     );

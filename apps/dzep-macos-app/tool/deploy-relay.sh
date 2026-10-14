@@ -28,13 +28,24 @@ topic=${4:-com.danyzmaj.dzep}
 key_id=$(basename "$p8" .p8)
 key_id=${key_id#AuthKey_}
 
-secrets=(APNS_KEY="$(cat "$p8")" APNS_KEY_ID="$key_id" APNS_TEAM_ID="$team" APNS_TOPIC="$topic")
+# The secrets go to the CLI in a mode-600 file, never as arguments (any local
+# user could read those with ps while it runs). One line each, single-quoted:
+# the relay drops the PEM's line breaks anyway, and the service account goes
+# in compact (its private key's \n stay escapes inside the JSON).
+env_file=$(mktemp) && chmod 600 "$env_file"
+trap 'rm -f "$env_file"' EXIT
+{
+  printf "APNS_KEY='%s'\n" "$(tr -d '\r\n' <"$p8")"
+  printf "APNS_KEY_ID='%s'\nAPNS_TEAM_ID='%s'\nAPNS_TOPIC='%s'\n" "$key_id" "$team" "$topic"
+} >"$env_file"
 if [[ -n $fcm ]]; then
   project=$(jq -er '.project_id' "$fcm")
-  secrets+=(FCM_SERVICE_ACCOUNT="$(cat "$fcm")")
+  account=$(jq -c . "$fcm")
+  [[ $account != *"'"* ]] || { echo "deploy-relay: $fcm has a ' in it; the env file can't carry that" >&2; exit 1; }
+  printf "FCM_SERVICE_ACCOUNT='%s'\n" "$account" >>"$env_file"
 fi
 
 cd "$(dirname "$0")/.."
-supabase secrets set --project-ref "$ref" "${secrets[@]}"
+supabase secrets set --project-ref "$ref" --env-file "$env_file"
 supabase functions deploy relay --project-ref "$ref" --no-verify-jwt
 echo "Relay: https://$ref.supabase.co/functions/v1/relay (key $key_id, team $team, topic $topic${fcm:+, FCM project $project})"

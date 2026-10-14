@@ -108,7 +108,7 @@ class MobileSession extends Session {
   }
 
   @override
-  Future<void> onSigningOut() async {
+  Future<void> onSigningOut({required bool accountDeleted}) async {
     final token = _prefs.getString(_tokenKey);
     final pushToken = _prefs.getString(_pushTokenKey);
     await _prefs.remove(_tokenKey);
@@ -117,9 +117,41 @@ class MobileSession extends Session {
     await _prefs.remove(_pushUserKey);
     remindersByPush = false;
     await Native.setSharedToken(null);
-    if (token != null) await client.from('device_tokens').delete().eq('token_hash', _hash(token));
+    // The followed sessions are this account's: they go from the Lock
+    // Screen now, and the server stops updating them (iOS gives each its
+    // own token, which 'unregister' below doesn't know).
+    for (final a in await Native.liveActivities()) {
+      await Native.endActivity(a.key, immediate: true);
+      if (a.token case final activityToken? when !accountDeleted) {
+        await _tryServer(
+          'activity end',
+          () => client.functions.invoke(
+            'push',
+            body: {'action': 'activity_end', 'token': activityToken, 'session': a.key},
+          ),
+        );
+      }
+    }
+    // A deleted account took its tokens with it.
+    if (accountDeleted) return;
+    if (token != null) {
+      await _tryServer('device token', () => client.from('device_tokens').delete().eq('token_hash', _hash(token)));
+    }
     if (pushToken != null) {
-      await client.functions.invoke('push', body: {'action': 'unregister', 'token': pushToken});
+      await _tryServer(
+        'push unregister',
+        () => client.functions.invoke('push', body: {'action': 'unregister', 'token': pushToken}),
+      );
+    }
+  }
+
+  /// One server call of the sign-out; a failed one (offline) doesn't stop
+  /// the rest.
+  Future<void> _tryServer(String what, Future<Object?> Function() call) async {
+    try {
+      await call();
+    } on Object catch (e) {
+      debugPrint('Džep: $what at sign-out failed: $e');
     }
   }
 }

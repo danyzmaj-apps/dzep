@@ -188,6 +188,10 @@ create table if not exists supabase_migrations.schema_migrations (version text p
       'external_github_secret': githubSecret.trim(),
       'hook_before_user_created_enabled': true,
       'hook_before_user_created_uri': hook,
+      // No email/password sign-up (tool/setup-backend.sh pushes the same from
+      // config.toml): only GitHub proves who someone is. The reviewer demo
+      // account is made by functions/pair, not signed up.
+      'external_email_enabled': false,
       // functions/pair swaps a phone's code for a magic-link token used at once.
       'mailer_otp_exp': 600,
     });

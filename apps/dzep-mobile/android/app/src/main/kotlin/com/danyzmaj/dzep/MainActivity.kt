@@ -157,13 +157,13 @@ class MainActivity : FlutterActivity() {
                 NativeEvents.tappedSession = null
             }
             "registerPush" -> registerPush(result)
-            "startActivity" -> askNotifications { result.success(OmpActivities.start(this, args)) }
-            "updateActivity" -> result.success(OmpActivities.update(this, args))
+            "startActivity" -> askNotifications { result.success(SessionActivities.start(this, args)) }
+            "updateActivity" -> result.success(SessionActivities.update(this, args))
             "endActivity" -> {
-                (args["key"] as? String)?.let { OmpActivities.end(this, it, immediate = args["immediate"] == true) }
+                (args["key"] as? String)?.let { SessionActivities.end(this, it, immediate = args["immediate"] == true) }
                 result.success(null)
             }
-            "liveActivities" -> result.success(OmpActivities.running(this))
+            "liveActivities" -> result.success(SessionActivities.running(this))
             else -> result.notImplemented()
         }
     }

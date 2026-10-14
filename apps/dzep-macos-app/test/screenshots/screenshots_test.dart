@@ -1,6 +1,8 @@
-// The README's Mac screenshots: the real widgets, made-up data, the Mac's own fonts.
+// The Mac screenshots in the docs: the real widgets, made-up data, the Mac's own fonts.
 // Run from apps/dzep-macos-app: fvm flutter test --tags screenshots --run-skipped
-// They're written to docs/images/mac-*.png; a plain `fvm flutter test` skips them (dart_test.yaml).
+// They're written to docs/images/mac-*.png and wizard-*.png, and the popup for the README's
+// hero (composed with the phone by apps/dzep-mobile's screenshots) to build/screenshots/;
+// a plain `fvm flutter test` skips them (dart_test.yaml).
 @Tags(['screenshots'])
 library;
 
@@ -24,6 +26,9 @@ import 'package:dzep_macos/controller.dart';
 import 'package:dzep_macos/integrations.dart';
 import 'package:dzep_macos/live_hub.dart';
 import 'package:dzep_macos/main_window.dart';
+import 'package:dzep_macos/onboarding/flow.dart';
+import 'package:dzep_macos/onboarding/provision.dart';
+import 'package:dzep_macos/onboarding/wizard.dart';
 import 'package:dzep_macos/popup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -88,9 +93,16 @@ Widget subject(Widget child) => window(
 );
 
 /// Writes [crop] (global logical pixels; all of [_shot] if null) of what
-/// [_shot] paints to docs/images/[name], rounded by [radius] and outlined in
-/// [border] if given.
-Future<void> save(WidgetTester tester, String name, {Rect? crop, double radius = 0, Color? border}) async {
+/// [_shot] paints to [dir] (docs/images if null)/[name], rounded by [radius]
+/// and outlined in [border] if given.
+Future<void> save(
+  WidgetTester tester,
+  String name, {
+  Rect? crop,
+  double radius = 0,
+  Color? border,
+  Directory? dir,
+}) async {
   final box = tester.getRect(find.byKey(_shot));
   final r = (crop ?? box).intersect(box).shift(-box.topLeft);
   await tester.runAsync(() async {
@@ -115,8 +127,8 @@ Future<void> save(WidgetTester tester, String name, {Rect? crop, double radius =
     }
     final image = await recorder.endRecording().toImage(w, h);
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
-    _out.createSync(recursive: true);
-    File('${_out.path}/$name').writeAsBytesSync(png!.buffer.asUint8List());
+    final to = (dir ?? _out)..createSync(recursive: true);
+    File('${to.path}/$name').writeAsBytesSync(png!.buffer.asUint8List());
   });
 }
 
@@ -182,6 +194,24 @@ Idea fill(FakeStore s) {
   return retry;
 }
 
+/// The phone screenshots' todos (apps/dzep-mobile/test/screenshots/), for
+/// the README's hero: the popup next to the phone, the same list on both.
+void phoneTodos(FakeStore s) {
+  void todo(DateTime when, String title, {DateTime? remindAt, bool done = false}) {
+    final t = add(s, when, title, kind: Kind.todo, remindAt: remindAt);
+    if (done) s.update(t, done: true);
+  }
+
+  todo(at(21, 0, daysAgo: 5), 'Back up the photos to the NAS', done: true);
+  todo(at(10, 0, daysAgo: 4), 'Pay the electricity bill', done: true);
+  todo(at(16, 2, daysAgo: 3), 'Write release notes for 0.4');
+  todo(at(9, 20, daysAgo: 2), 'Call Ana about the garden plan', remindAt: at(17, 0, daysAgo: 1));
+  todo(at(12, 30, daysAgo: 1), 'Book the dentist for next month');
+  todo(at(18, 5, daysAgo: 1), 'Buy basil and tomato seedlings', remindAt: at(15, 0, daysAgo: -4));
+  todo(at(8, 12), 'Review Marko’s pull request on garden-api');
+  todo(at(8, 41), 'Renew the domain for dzep-site', remindAt: at(9, 0, daysAgo: -1));
+}
+
 Conversation chat(String id, DateTime when, String question, String answer) => Conversation(
   id: id,
   createdAt: when,
@@ -193,10 +223,15 @@ Conversation chat(String id, DateTime when, String question, String answer) => C
 );
 
 /// The popup as main.dart hosts it (its fixed transparent 720×660 panel),
-/// with room around for the card's shadow; open in [mode].
-Future<FakeApp> pumpPopup(WidgetTester tester, PopupMode mode, {void Function(FakeApp app)? setUp}) async {
+/// with room around for the card's shadow; open in [mode] on [data].
+Future<FakeApp> pumpPopup(
+  WidgetTester tester,
+  PopupMode mode, {
+  void Function(FakeStore s) data = fill,
+  void Function(FakeApp app)? setUp,
+}) async {
   final app = await FakeApp.create(popupMode: mode.name);
-  fill(app.fakeStore);
+  data(app.fakeStore);
   setUp?.call(app);
   await tester.pumpWidget(
     subject(
@@ -222,6 +257,28 @@ Rect popupCard(WidgetTester tester) {
 
 Future<void> type(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(EditableText).first, text);
+  await tester.pumpAndSettle();
+}
+
+/// The setup wizard at [flow]'s step, as the main window shows it before
+/// there is a server.
+Future<void> pumpWizard(WidgetTester tester, SetupFlow flow) async {
+  addTearDown(flow.dispose);
+  await tester.pumpWidget(
+    subject(
+      ColoredBox(
+        color: C.win,
+        child: SetupWizard(flow: flow, onConnect: (_) async {}, onExisting: () {}),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+/// Types [text] into the [index]th text field, then leaves it.
+Future<void> fillField(WidgetTester tester, int index, String text) async {
+  await tester.enterText(find.byType(TextField).at(index), text);
+  FocusManager.instance.primaryFocus?.unfocus();
   await tester.pumpAndSettle();
 }
 
@@ -277,6 +334,12 @@ void main() {
     await pumpPopup(tester, PopupMode.todo);
     await type(tester, 'call the bank !tomorrow 15:00');
     await save(tester, 'mac-popup-todo.png', crop: popupCard(tester));
+  });
+
+  // The README's hero: the popup's open todos, the phone's list.
+  shot('popup: hero', popupView, (tester) async {
+    await pumpPopup(tester, PopupMode.todo, data: phoneTodos);
+    await save(tester, 'hero-popup.png', crop: popupCard(tester), dir: Directory('build/screenshots'));
   });
 
   shot('popup: note', popupView, (tester) async {
@@ -427,5 +490,37 @@ void main() {
       radius: 12,
       border: C.line2,
     );
+  });
+
+  // The setup wizard, made-up values only: no account, token or project is real.
+  const wizardView = Size(540, 620);
+  const wizardCard = (radius: 12.0, border: C.line2);
+
+  shot('wizard: token', wizardView, (tester) async {
+    await pumpWizard(tester, SetupFlow()..step = WizardStep.token);
+    await fillField(tester, 0, 'sbp_demo0000000000000000000000000000000000');
+    await save(tester, 'wizard-token.png', radius: wizardCard.radius, border: wizardCard.border);
+  });
+
+  shot('wizard: github', wizardView, (tester) async {
+    await pumpWizard(
+      tester,
+      SetupFlow()
+        ..step = WizardStep.github
+        ..ref = 'demoprojectrefabcdef',
+    );
+    await fillField(tester, 0, 'Ov23liDemo0000000000');
+    await fillField(tester, 1, 'demo0000000000000000000000000000000000000');
+    await save(tester, 'wizard-github.png', radius: wizardCard.radius, border: wizardCard.border);
+  });
+
+  shot('wizard: ready', wizardView, (tester) async {
+    final flow = SetupFlow()
+      ..step = WizardStep.setup
+      ..aiKey = 'demo'
+      ..ready = true;
+    flow.done.addAll(ProvisionStep.values);
+    await pumpWizard(tester, flow);
+    await save(tester, 'wizard-ready.png', radius: wizardCard.radius, border: wizardCard.border);
   });
 }

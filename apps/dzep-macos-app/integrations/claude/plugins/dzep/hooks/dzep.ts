@@ -7,6 +7,7 @@ import {
 	askOf,
 	commandsOf,
 	historyItems,
+	pingProof,
 	planTitle,
 	promptText,
 	results,
@@ -28,8 +29,8 @@ import {
 //   WebSocket, so it goes over HTTP long polls (POST /v1/live/http).
 //
 // Only an interactive session talks, and only to Džep's local API on 127.0.0.1 (port and token from
-// ~/.config/dzep/cli.json, or the file DZEP_CLI_JSON names). While Džep isn't running it quietly tries again
-// every few seconds.
+// ~/.config/dzep/cli.json, or the file DZEP_CLI_JSON names), once whatever answers at that port has proved it
+// holds the token. While Džep isn't running it quietly tries again every few seconds.
 
 const VERSION = 1;
 const HELLO_ITEMS = 300;
@@ -96,9 +97,23 @@ async function readCli($: EngineInterface): Promise<Cli | undefined> {
 	}
 }
 
+/** Whether the Džep that wrote cli.json answers at its port: it proves it holds the token ([pingProof] of
+ * the port and a fresh nonce) before the token, the transcript or a phone's prompt goes anywhere. After Džep
+ * quits, anything could be listening at its old port. */
+async function proven($: EngineInterface, c: Cli): Promise<boolean> {
+	const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+	try {
+		const res = await $.http.fetch(`http://127.0.0.1:${c.port}/v1/ping?nonce=${nonce}`, { method: "GET" });
+		const { proof } = JSON.parse(res.text) as { proof?: unknown };
+		return res.ok && proof === (await pingProof(c.token, c.port, nonce));
+	} catch {
+		return false;
+	}
+}
+
 async function call<T>($: EngineInterface, method: string, path: string, body?: unknown): Promise<T> {
 	const c = await readCli($);
-	if (!c) throw new DzepError(NOT_RUNNING);
+	if (!c || !(await proven($, c))) throw new DzepError(NOT_RUNNING);
 	let res: { status: number; ok: boolean; text: string };
 	try {
 		res = await $.http.fetch(`http://127.0.0.1:${c.port}${path}`, {
@@ -358,8 +373,9 @@ async function connect($: EngineInterface): Promise<void> {
 	if (!active || conn || connecting) return;
 	connecting = true;
 	try {
-		cli = await readCli($);
-		if (!cli) return later($);
+		const c = await readCli($);
+		if (!c || !(await proven($, c))) return later($);
+		cli = c;
 		const hello = await helloFrame($);
 		outbox = [];
 		const res = await post($, { frames: [hello, ...inFlight()] });
