@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/kitty.dart';
+import 'package:dzep_core/terminal.dart';
+import 'package:dzep_core/terminals.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A kitty listening on a unix socket: records each command and answers
@@ -30,7 +32,8 @@ class FakeKitty {
   static String ok([Object? data]) => frame({'ok': true, 'data': ?data});
   static String frame(Map<String, Object?> reply) => '\x1bP@kitty-cmd${jsonEncode(reply)}\x1b\\';
 
-  Kitty kitty({Duration timeout = const Duration(seconds: 5)}) => Kitty(socketDir: dir.path, timeout: timeout);
+  Kitty kitty({Duration timeout = const Duration(seconds: 5)}) =>
+      Kitty(socketDir: dir.path, timeout: timeout, restoreFront: false);
 
   void _serve(Socket s) {
     final buf = StringBuffer();
@@ -114,7 +117,10 @@ void main() {
       'match': 'id:2',
       'keys': ['down', 'down', 'enter'],
     });
-    await expectLater(kitty.press('kitty-test/2', 'ctrl+v'), throwsA(isA<KittyException>()));
+    await expectLater(
+      Terminals.standard(kittyDir: fake.dir.path).press('kitty-test/2', 'ctrl+v'),
+      throwsA(isA<TerminalException>()),
+    );
     expect(fake.requests, hasLength(1));
   });
 
@@ -161,6 +167,8 @@ void main() {
           'cwd': '/Users/me/dzep',
           'program': 'omp',
           'focused': true,
+          'app': 'kitty',
+          'caps': ['read', 'ansi', 'type', 'line', 'keys', 'close'],
         },
         {
           'key': 'kitty-test/5',
@@ -169,6 +177,8 @@ void main() {
           'cwd': '/Users/me',
           'program': 'zsh',
           'focused': false,
+          'app': 'kitty',
+          'caps': ['read', 'ansi', 'type', 'line', 'keys', 'close'],
         },
       ],
     );
@@ -180,21 +190,21 @@ void main() {
       FakeKitty.frame({'ok': false, 'error': 'No matching windows for expression: id:9'}),
     ];
     await expectLater(
-      fake.kitty().press('kitty-test/9', 'esc'),
-      throwsA(isA<KittyException>().having((e) => e.message, 'message', 'That window is gone.')),
+      fake.kitty().pressKeys('kitty-test/9', ['esc']),
+      throwsA(isA<TerminalException>().having((e) => e.message, 'message', 'That window is gone.')),
     );
     fake.answer = (_) => [
       FakeKitty.frame({'ok': false, 'error': 'Something else broke'}),
     ];
     await expectLater(
       fake.kitty().type('kitty-test/9', 'x'),
-      throwsA(isA<KittyException>().having((e) => e.message, 'message', 'Something else broke')),
+      throwsA(isA<TerminalException>().having((e) => e.message, 'message', 'Something else broke')),
     );
   });
 
   test('a key for a socket that is not there is refused without asking kitty', () async {
-    await expectLater(fake.kitty().close('kitty-gone/1'), throwsA(isA<KittyException>()));
-    await expectLater(fake.kitty().close('../kitty-test/1'), throwsA(isA<KittyException>()));
+    await expectLater(fake.kitty().close('kitty-gone/1'), throwsA(isA<TerminalException>()));
+    await expectLater(fake.kitty().close('../kitty-test/1'), throwsA(isA<TerminalException>()));
     expect(fake.requests, isEmpty);
   });
 
@@ -203,7 +213,7 @@ void main() {
     final watch = Stopwatch()..start();
     await expectLater(
       fake.kitty(timeout: const Duration(milliseconds: 200)).plainScreen('kitty-test/1'),
-      throwsA(isA<KittyException>()),
+      throwsA(isA<TerminalException>()),
     );
     expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
   });
@@ -217,7 +227,7 @@ void main() {
     expect(fake.requests.single['payload'], {'match': 'id:1', 'extent': 'all', 'ansi': true});
     expect(lines.last, 'prompt\x1b[31m\x1b[m');
     final bytes = lines.fold(0, (n, l) => n + utf8.encode(l).length + 1);
-    expect(bytes, lessThanOrEqualTo(Kitty.historyBytes));
+    expect(bytes, lessThanOrEqualTo(historyBytes));
     // 59 full lines plus the prompt fit; the 60th would not.
     expect(lines, hasLength(60));
     expect(lines.first, body[41]);

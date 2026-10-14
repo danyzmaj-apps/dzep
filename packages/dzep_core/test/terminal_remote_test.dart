@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dzep_core/live.dart';
+import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -77,6 +78,35 @@ void main() {
     // The first state from the Mac replaces the cached one.
     b.handle('state', state());
     expect(b.fromCache, isFalse);
+  });
+
+  test("where sessions open and the Mac's terminals survive the cache; an older Mac has neither", () {
+    final a = remote()
+      ..handle('state', {
+        ...state(),
+        'opensIn': 'Terminal (in tmux)',
+        'terminals': [
+          {'id': 'terminal', 'label': 'Terminal', 'state': 'limited', 'note': 'no keys'},
+          {'id': 'tmux', 'label': 'tmux', 'state': 'ready', 'note': ''},
+        ],
+      });
+    expect(a.opensIn, 'Terminal (in tmux)');
+    expect(a.terminals.map((t) => (t.id, t.state, t.note)), [
+      ('terminal', TermState.limited, 'no keys'),
+      ('tmux', TermState.ready, ''),
+    ]);
+    a.flush();
+
+    final b = remote();
+    expect(b.opensIn, 'Terminal (in tmux)');
+    expect(b.terminals.map((t) => (t.id, t.label, t.state)), [
+      ('terminal', 'Terminal', TermState.limited),
+      ('tmux', 'tmux', TermState.ready),
+    ]);
+
+    b.handle('state', state());
+    expect(b.opensIn, isNull);
+    expect(b.terminals, isEmpty);
   });
 
   test('watching asks for what the cached view misses', () {

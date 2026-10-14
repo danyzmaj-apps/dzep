@@ -3,9 +3,9 @@ import 'dart:math';
 
 import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/ansi.dart';
-import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/live.dart';
 import 'package:dzep_core/native.dart';
+import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_mobile/session_view.dart';
@@ -46,6 +46,49 @@ String ago(DateTime t) {
   if (d.inDays < 1) return '${d.inHours} h ago';
   return '${d.inDays} d ago';
 }
+
+/// How people name a window's terminal app ([TermWindow.app]).
+String termLabel(String app) => switch (app) {
+  'kitty' => 'kitty',
+  'tmux' => 'tmux',
+  'wezterm' => 'WezTerm',
+  'iterm' => 'iTerm2',
+  'terminal' => 'Terminal',
+  'ghostty' => 'Ghostty',
+  _ => app,
+};
+
+/// Which terminal [w] is in: "iTerm2", or "tmux · iTerm2" for a tmux pane
+/// shown in iTerm2.
+String termBadge(TermWindow w) => w.app == 'tmux' && w.via.isNotEmpty ? 'tmux · ${w.via}' : termLabel(w.app);
+
+/// [termBadge] as a small rounded label.
+class TermBadge extends StatelessWidget {
+  const TermBadge(this.window, {super.key});
+  final TermWindow window;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+    decoration: BoxDecoration(
+      color: const Color(0xFF262833),
+      borderRadius: BorderRadius.circular(5),
+      border: Border.all(color: C.line2),
+    ),
+    child: Text(termBadge(window), style: const TextStyle(fontSize: 11, color: C.dim, height: 1.3)),
+  );
+}
+
+/// A list row's line after [w]'s badge, when the window is known.
+Widget _badged(TermWindow? w, Widget line) => w == null
+    ? line
+    : Row(
+        children: [
+          TermBadge(w),
+          const SizedBox(width: 6),
+          Expanded(child: line),
+        ],
+      );
 
 /// Asks, then closes [w] on the Mac; true once it's closed.
 Future<bool> closeWindow(BuildContext context, TerminalRemote remote, TermWindow w) async {
@@ -125,7 +168,7 @@ void openSession(BuildContext context, TerminalRemote remote, String key, {bool 
       ),
     );
 
-/// Opens kitty window [window]'s screen.
+/// Opens terminal window [window]'s screen.
 void openWindow(BuildContext context, TerminalRemote remote, String window) => Navigator.of(context).push(
   MaterialPageRoute<void>(
     builder: (_) => TerminalPage(remote: remote, window: window),
@@ -143,7 +186,7 @@ Future<void> openNewSession(BuildContext context, TerminalRemote remote) async {
   );
   if (launched == null || !context.mounted) return;
   if (launched.agent) {
-    // An agent in kitty: its session's key is its window's.
+    // An agent the phone started: its session's key is its window's.
     openSession(context, remote, launched.window, starting: true);
   } else {
     openWindow(context, remote, launched.window);
@@ -170,7 +213,7 @@ String sessionState(LiveSummary s) => s.ask != null
 
 Color sessionColor(LiveSummary s) => s.ask != null ? C.warn : (s.busy ? C.accent : C.dim2);
 
-/// The Terminal tab's body: the Mac's coding sessions, and its other kitty
+/// The Terminal tab's body: the Mac's coding sessions, and its other terminal
 /// windows.
 class TerminalList extends StatelessWidget {
   const TerminalList({required this.remote, super.key});
@@ -185,7 +228,7 @@ class TerminalList extends StatelessWidget {
   );
 
   Widget _swipe(BuildContext context, String key, TermWindow? w, Widget child) {
-    if (w == null) return child;
+    if (w == null || !w.can(TermCap.close)) return child;
     return Dismissible(
       key: ValueKey('swipe-$key'),
       direction: remote.online ? DismissDirection.endToStart : DismissDirection.none,
@@ -215,19 +258,22 @@ class TerminalList extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(text: '${baseName(s.cwd)} · '),
-                  TextSpan(
-                    text: sessionState(s),
-                    style: TextStyle(color: s.ask != null || s.busy ? sessionColor(s) : null),
-                  ),
-                ],
+            _badged(
+              w,
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: '${baseName(s.cwd)} · '),
+                    TextSpan(
+                      text: sessionState(s),
+                      style: TextStyle(color: s.ask != null || s.busy ? sessionColor(s) : null),
+                    ),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13, color: C.dim),
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, color: C.dim),
             ),
             if (s.preview.isNotEmpty)
               Text(
@@ -260,14 +306,60 @@ class TerminalList extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 15),
       ),
-      subtitle: Text(
-        '${w.program} · ${shortPath(remote, w.cwd)}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 13, color: C.dim),
+      subtitle: _badged(
+        w,
+        Text(
+          '${w.program} · ${shortPath(remote, w.cwd)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, color: C.dim),
+        ),
       ),
     ),
   );
+
+  /// Nothing runs: where a new session opens, and what each terminal that
+  /// isn't ready needs (tmux: when it isn't installed).
+  Widget _empty() {
+    final online = remote.online;
+    final unready = [
+      for (final t in remote.terminals)
+        if (t.state != TermState.ready && (t.state != TermState.missing || t.id == 'tmux')) t,
+    ];
+    return Padding(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        children: [
+          Text(
+            online && remote.error == null
+                ? 'Nothing runs in ${remote.opensIn ?? 'your terminal'}. Tap + to start ${remote.agent.label}.'
+                : '',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: C.dim, height: 1.5),
+          ),
+          if (online)
+            for (final t in unready)
+              Padding(
+                key: ValueKey('terminal-${t.id}'),
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(
+                  '${t.label}: ${t.note.isNotEmpty ? t.note : _stateWord(t.state)}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 13, color: C.dim2, height: 1.4),
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+
+  static String _stateWord(TermState s) => switch (s) {
+    TermState.ready => 'ready',
+    TermState.limited => 'limited',
+    TermState.setup => 'needs setup on the Mac',
+    TermState.idle => 'not running',
+    TermState.missing => 'not installed',
+  };
 
   @override
   Widget build(BuildContext context) => _KeepAwake(child: _list());
@@ -293,17 +385,7 @@ class TerminalList extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 96),
                 children: [
-                  if (sessions.isEmpty && windows.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(40),
-                      child: Text(
-                        remote.online && remote.error == null
-                            ? 'Nothing runs in kitty. Tap + to start ${remote.agent.label}.'
-                            : '',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: C.dim, height: 1.5),
-                      ),
-                    ),
+                  if (sessions.isEmpty && windows.isEmpty) _empty(),
                   if (sessions.isNotEmpty) ...[
                     _header('SESSIONS'),
                     for (final (i, s) in sessions.indexed) ...[if (i > 0) divider, _session(context, s)],
@@ -366,8 +448,9 @@ class _KeepAwakeState extends State<_KeepAwake> {
   Widget build(BuildContext context) => widget.child;
 }
 
-/// One kitty window: its screen as text, live, plus a composer and the keys
-/// a terminal program needs (a coding agent's menus: arrows, Enter, Esc).
+/// One terminal window: its screen as text, live, plus a composer and the
+/// keys a terminal program needs (a coding agent's menus: arrows, Enter, Esc),
+/// each as far as the window's terminal allows.
 class TerminalPage extends StatefulWidget {
   const TerminalPage({required this.remote, required this.window, super.key});
   final TerminalRemote remote;
@@ -552,6 +635,104 @@ class _TerminalPageState extends State<TerminalPage> {
     );
   }
 
+  /// Why [w]'s screen doesn't show, and what would show it.
+  Widget _unreadable(TermWindow w) {
+    final tmux = remote.terminals.where((t) => t.id == 'tmux').firstOrNull;
+    final fix = tmux != null && tmux.state == TermState.missing
+        ? tmux.note
+        : 'Sessions you start from the phone open in tmux, which can.';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "${termLabel(w.app)} can't share its screen.",
+              key: const ValueKey('screen-unreadable'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: C.dim, height: 1.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              fix,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: C.dim2, height: 1.4),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The keys a terminal program needs, if the window's terminal can press
+  /// them, and the composer, if it can type.
+  Widget _bar({required bool enabled, required bool keys, required bool compose, required bool canSend}) => Container(
+    decoration: const BoxDecoration(
+      color: C.bar,
+      border: Border(top: BorderSide(color: C.line)),
+    ),
+    padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+    child: SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (keys && enabled)
+            Padding(
+              padding: EdgeInsets.only(bottom: compose ? 8 : 0, right: 4),
+              child: Row(
+                children: [
+                  _key('Esc', 'esc'),
+                  _key('Tab', 'tab'),
+                  _key('↑', 'up'),
+                  _key('↓', 'down'),
+                  _key('⏎', 'enter'),
+                  _key('^C', 'ctrl+c'),
+                ],
+              ),
+            ),
+          if (compose)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const SizedBox(width: 6),
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey('term-input'),
+                    onTapOutside: dismissKeyboard,
+                    controller: _field,
+                    minLines: 1,
+                    maxLines: 6,
+                    enabled: enabled,
+                    autocorrect: false,
+                    style: const TextStyle(fontSize: 16, height: 1.4),
+                    decoration: plainInput.copyWith(
+                      hintText: 'Type a line…',
+                      hintStyle: const TextStyle(color: C.dim2),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
+                ),
+                // Part of the field for tap-outside: sending keeps the
+                // keyboard up for the next line.
+                TextFieldTapRegion(
+                  child: IconButton(
+                    key: const ValueKey('term-send'),
+                    tooltip: 'Send (types it, then Enter)',
+                    onPressed: canSend ? () => unawaited(_send()) : null,
+                    icon: _sending
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: remote,
@@ -562,6 +743,11 @@ class _TerminalPageState extends State<TerminalPage> {
       final screen = remote.screen(widget.window);
       final palette = remote.colors[widget.window] ?? TermColors.fallback;
       final note = linkNote(remote);
+      // A window not in the list yet (just launched) can do everything.
+      bool can(TermCap c) => w?.can(c) ?? true;
+      final readable = can(TermCap.read);
+      final keys = can(TermCap.keys);
+      final compose = can(TermCap.line) || can(TermCap.type);
       final canSend = online && !gone && !_sending && _field.text.trim().isNotEmpty;
       return Scaffold(
         appBar: AppBar(
@@ -572,7 +758,7 @@ class _TerminalPageState extends State<TerminalPage> {
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
-            if (w != null && online)
+            if (w != null && online && w.can(TermCap.close))
               IconButton(
                 key: const ValueKey('close-window'),
                 tooltip: 'Close window',
@@ -583,11 +769,12 @@ class _TerminalPageState extends State<TerminalPage> {
                 ),
                 icon: const Icon(Icons.close, color: C.dim),
               ),
-            IconButton(
-              tooltip: _wrap ? "Don't wrap lines" : 'Wrap lines',
-              onPressed: () => setState(() => _wrap = !_wrap),
-              icon: Icon(Icons.wrap_text, color: _wrap ? C.accent : C.dim),
-            ),
+            if (readable)
+              IconButton(
+                tooltip: _wrap ? "Don't wrap lines" : 'Wrap lines',
+                onPressed: () => setState(() => _wrap = !_wrap),
+                icon: Icon(Icons.wrap_text, color: _wrap ? C.accent : C.dim),
+              ),
           ],
         ),
         body: Column(
@@ -599,6 +786,8 @@ class _TerminalPageState extends State<TerminalPage> {
                   ? const Center(
                       child: Text('This window has closed.', style: TextStyle(color: C.dim)),
                     )
+                  : !readable
+                  ? _unreadable(w!)
                   : screen == null
                   ? Center(
                       child: online
@@ -607,74 +796,7 @@ class _TerminalPageState extends State<TerminalPage> {
                     )
                   : _screen(screen, palette),
             ),
-            Container(
-              decoration: const BoxDecoration(
-                color: C.bar,
-                border: Border(top: BorderSide(color: C.line)),
-              ),
-              padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (online && !gone)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8, right: 4),
-                        child: Row(
-                          children: [
-                            _key('Esc', 'esc'),
-                            _key('Tab', 'tab'),
-                            _key('↑', 'up'),
-                            _key('↓', 'down'),
-                            _key('⏎', 'enter'),
-                            _key('^C', 'ctrl+c'),
-                          ],
-                        ),
-                      ),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: TextField(
-                            key: const ValueKey('term-input'),
-                            onTapOutside: dismissKeyboard,
-                            controller: _field,
-                            minLines: 1,
-                            maxLines: 6,
-                            enabled: online && !gone,
-                            autocorrect: false,
-                            style: const TextStyle(fontSize: 16, height: 1.4),
-                            decoration: plainInput.copyWith(
-                              hintText: 'Type a line…',
-                              hintStyle: const TextStyle(color: C.dim2),
-                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                            ),
-                          ),
-                        ),
-                        // Part of the field for tap-outside: sending keeps the
-                        // keyboard up for the next line.
-                        TextFieldTapRegion(
-                          child: IconButton(
-                            key: const ValueKey('term-send'),
-                            tooltip: 'Send (types it, then Enter)',
-                            onPressed: canSend ? () => unawaited(_send()) : null,
-                            icon: _sending
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            if (keys || compose) _bar(enabled: online && !gone, keys: keys, compose: compose, canSend: canSend),
           ],
         ),
       );
@@ -682,7 +804,7 @@ class _TerminalPageState extends State<TerminalPage> {
   );
 }
 
-/// A new kitty window in one of the Mac's projects (or any folder typed in),
+/// A new terminal window in one of the Mac's projects (or any folder typed in),
 /// starting the Mac's coding agent unless turned off. Pops the new window's
 /// key and whether the agent runs in it.
 class NewSessionSheet extends StatefulWidget {
@@ -761,10 +883,16 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(20, 18, 20, 4),
-                  child: Text('New session', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(20, 18, 20, remote.opensIn == null ? 4 : 0),
+                  child: const Text('New session', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                 ),
+                if (remote.opensIn case final opensIn?)
+                  Padding(
+                    key: const ValueKey('opens-in'),
+                    padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
+                    child: Text('Opens in $opensIn', style: const TextStyle(fontSize: 13, color: C.dim)),
+                  ),
                 SwitchListTile(
                   key: const ValueKey('start-agent'),
                   value: _agent,

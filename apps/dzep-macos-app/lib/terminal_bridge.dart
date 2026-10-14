@@ -3,28 +3,34 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dzep_core/agent.dart';
-import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/live.dart';
 import 'package:dzep_core/live_activity.dart';
+import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/terminal_channel.dart';
+import 'package:dzep_core/terminals.dart';
 import 'package:dzep_macos/live_hub.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The Mac side of Terminal from the phone (protocol: packages/dzep_core/lib/live.dart): the
-/// coding sessions [LiveHub] knows and kitty's windows go out on the user's
-/// private topic; what the phone asks for is done here. kitty is polled only
-/// while a phone has said hello lately.
+/// coding sessions [LiveHub] knows and the terminals' windows
+/// (packages/dzep_core/lib/terminals.dart) go out on the user's private
+/// topic; what the phone asks for is done here, where the window's
+/// terminal can do it. The terminals are polled only while a phone has said
+/// hello lately.
 class TerminalBridge {
-  TerminalBridge(this._client, this._userId, this._kitty, this._hub, this._agent);
+  TerminalBridge(this._client, this._userId, this._terms, this._hub, this._agent, this._app);
 
   final SupabaseClient _client;
   final String _userId;
-  final Kitty _kitty;
+  final Terminals _terms;
   final LiveHub _hub;
 
   /// The agent a new session from the phone starts (the Mac's setting).
   final Agent Function() _agent;
+
+  /// The terminal app it opens in: an app's id or `auto` (the Mac's setting).
+  final String Function() _app;
 
   /// A phone that hasn't said hello for this long has left.
   static const _gone = Duration(seconds: 12);
@@ -54,9 +60,15 @@ class TerminalBridge {
   final _phones = <String, ({String? session, String? window, DateTime seen})>{};
 
   List<TermWindow> _windows = const [];
-  String? _kittyError;
+  String? _termError;
   List<String>? _projects;
   DateTime? _projectsAt;
+
+  /// The installed terminals and how they stand, and where a new session
+  /// opens (its label), as of [_statusesAt].
+  List<TermStatus> _statuses = const [];
+  String? _opensIn;
+  DateTime? _statusesAt;
 
   /// The last state sent: without the sessions' seq and time, which change
   /// with every live op, and with them.
@@ -296,9 +308,11 @@ class TerminalBridge {
       'windows': [for (final w in _windows) w.toJson()],
       'sessions': sessions,
       'projects': _projects,
-      'home': _kitty.home,
+      'home': _terms.home,
       'agent': _agent().name,
-      'error': ?_kittyError,
+      'opensIn': ?_opensIn,
+      'terminals': [for (final s in phoneTerminals(_statuses)) s.toJson()],
+      'error': ?_termError,
     };
     final key = jsonEncode({
       ...state,
@@ -315,7 +329,10 @@ class TerminalBridge {
     _send('state', state);
   }
 
-  // ------------------------------------------------------------ kitty
+  // ------------------------------------------------------------ terminals
+
+  /// How often Settings-like statuses are read again while phones listen.
+  static const _statusEvery = Duration(seconds: 30);
 
   Future<void> _poll({bool windows = false}) async {
     if (_polling) return;
@@ -330,18 +347,17 @@ class TerminalBridge {
         return;
       }
       if (windows || _ticks++ % 3 == 0) {
-        try {
-          _windows = await _kitty.windows();
-          _kittyError = null;
-        } on KittyException catch (e) {
-          _windows = const [];
-          // No kitty is fine while coding sessions come in some other way.
-          _kittyError = _hub.sessions.isEmpty ? e.message : null;
+        _windows = await _terms.windows();
+        if (windows || _statusesAt == null || now.difference(_statusesAt!) > _statusEvery) {
+          _statusesAt = now;
+          _statuses = await _terms.statuses();
+          _opensIn = _terms.describe(await _terms.opensIn(_app()));
         }
+        _termError = terminalsError(_statuses, nothingShown: _windows.isEmpty && _hub.sessions.isEmpty);
         if (_projectsAt == null || now.difference(_projectsAt!) > const Duration(minutes: 5)) {
           _projectsAt = now;
           unawaited(
-            _kitty.projects().then((p) {
+            _terms.projects().then((p) {
               _projects = p;
               _stateChanged();
             }),
@@ -352,10 +368,11 @@ class TerminalBridge {
       final watched = {for (final v in _phones.values) ?v.window};
       _screens.removeWhere((k, _) => !watched.contains(k));
       for (final w in watched) {
-        if (!_windows.any((x) => x.key == w)) continue;
+        final shown = _windows.where((x) => x.key == w).firstOrNull;
+        if (shown == null || !shown.can(TermCap.read)) continue;
         try {
           await _sendScreen(w);
-        } on KittyException catch (e) {
+        } on TerminalException catch (e) {
           debugPrint('Džep: terminal screen $w: $e');
         }
       }
@@ -365,7 +382,7 @@ class TerminalBridge {
   }
 
   Future<void> _sendScreen(String window) async {
-    final lines = await _kitty.lines(window, history: true);
+    final lines = await _terms.lines(window, history: true);
     final before = _screens[window];
     final full = before == null || _fullScreen.remove(window);
     if (!full && listEquals(before.lines, lines)) return;
@@ -388,7 +405,7 @@ class TerminalBridge {
       'window': window,
       'v': v,
       'lines': sent,
-      if (before == null) 'colors': await _kitty.colors(window),
+      if (before == null) 'colors': ?await _terms.colors(window),
     });
   }
 
@@ -402,20 +419,21 @@ class TerminalBridge {
     try {
       switch (p['op']) {
         case 'send':
-          await _kitty.send(p['window'] as String, p['text'] as String? ?? '', enter: p['enter'] != false);
+          await _terms.send(p['window'] as String, p['text'] as String? ?? '', enter: p['enter'] != false);
         case 'key':
           final pressed = p['window'] as String;
-          await _kitty.press(pressed, p['key'] as String);
+          await _terms.press(pressed, p['key'] as String);
           // Esc on a picker, say: see it go soon.
           for (final s in _hub.sessions) {
             if (s.window == pressed) _menus[s.key]?.arm();
           }
         case 'close':
-          await _kitty.close(p['window'] as String);
+          await _terms.close(p['window'] as String);
         case 'launch':
           // An older phone says `omp` for "start the coding agent".
           final start = p['agent'] == true || p['omp'] == true;
-          window = await _kitty.launch(p['cwd'] as String, agent: start ? _agent() : null);
+          final host = await _terms.opensIn(_app());
+          window = await _terms.launch(p['cwd'] as String, host: host, agent: start ? _agent() : null);
         case 'prompt':
           await _prompt(p);
         case 'abort':
@@ -427,7 +445,7 @@ class TerminalBridge {
         default:
           error = 'Unknown request.';
       }
-    } on KittyException catch (e) {
+    } on TerminalException catch (e) {
       error = e.message;
     } on LiveException catch (e) {
       error = e.message;
@@ -446,8 +464,11 @@ class TerminalBridge {
     final text = (p['text'] as String? ?? '').trim();
     final key = p['session'] as String;
     final window = _hub[key]?.window;
-    if (text.startsWith('/') && window != null && (p['images'] as List? ?? const []).isEmpty) {
-      await _kitty.send(window, text, enter: true);
+    if (text.startsWith('/') &&
+        window != null &&
+        _terms.can(window, TermCap.line) &&
+        (p['images'] as List? ?? const []).isEmpty) {
+      await _terms.send(window, text, enter: true);
       unawaited(_followMenus(key));
       return;
     }
@@ -505,11 +526,11 @@ class TerminalBridge {
         final s = _hub[key];
         final ask = s?.ask;
         final window = s?.window;
-        if (s == null || ask == null || ask.id != id || window == null) return;
+        if (s == null || ask == null || ask.id != id || window == null || !_terms.can(window, TermCap.read)) return;
         final String screen;
         try {
-          screen = await _kitty.plainScreen(window);
-        } on KittyException catch (e) {
+          screen = await _terms.plainScreen(window);
+        } on TerminalException catch (e) {
           debugPrint('Džep: ask on screen $window: $e');
           if (opening) continue;
           return;
@@ -547,7 +568,7 @@ class TerminalBridge {
     final pick = answers.length == 1 && answers.single.picks.length == 1 ? answers.single.picks.single : -1;
     if (pick < 0) throw const LiveException('Pick one option.');
     for (var tries = 0; tries < 4; tries++) {
-      final review = parsePlanReview(await _kitty.plainScreen(window), agent: agent);
+      final review = parsePlanReview(await _terms.plainScreen(window), agent: agent);
       if (review == null) {
         throw const LiveException(
           "The plan review isn't ready on the Mac's screen. Open the screen to answer it there.",
@@ -557,14 +578,14 @@ class TerminalBridge {
         throw const LiveException('The plan review on the Mac has changed. Open the screen to answer it there.');
       }
       if (agent == Agent.claude) {
-        await _kitty.pressKeys(window, [claudeRowKey(pick)]);
+        await _terms.pressKeys(window, [claudeRowKey(pick)]);
         return;
       }
       if (review.current == pick) {
-        await _kitty.pressKeys(window, const ['enter']);
+        await _terms.pressKeys(window, const ['enter']);
         return;
       }
-      await _kitty.pressKeys(window, menuKeys(review.current, pick, enter: false));
+      await _terms.pressKeys(window, menuKeys(review.current, pick, enter: false));
       await Future<void>.delayed(const Duration(milliseconds: 200));
     }
     throw const LiveException("omp won't move to that option. Open the screen to answer it there.");
@@ -596,15 +617,15 @@ class TerminalBridge {
         await w.sleep(opening ? _menuSoon : _menuEvery);
         final s = _hub[key];
         final window = s?.window;
-        if (s == null || window == null || _stopped) break;
+        if (s == null || window == null || _stopped || !_terms.can(window, TermCap.read)) break;
         final current = s.ask;
         // The agent asks something itself, or the picker's ask went (a new session's hello).
         if (current != null && current.id != published) break;
         if (current == null && published != null) published = null;
         final String screen;
         try {
-          screen = await _kitty.plainScreen(window);
-        } on KittyException catch (e) {
+          screen = await _terms.plainScreen(window);
+        } on TerminalException catch (e) {
           debugPrint('Džep: picker $window: $e');
           break;
         }
@@ -649,7 +670,7 @@ class TerminalBridge {
     final answers = [for (final a in p['answers'] as List? ?? const []) LiveAnswer.fromJson((a as Map).cast())];
     final answer = answers.length == 1 ? answers.single : null;
     final w = _menus[key];
-    final menu = parseMenu(await _kitty.plainScreen(window));
+    final menu = parseMenu(await _terms.plainScreen(window));
     if (w == null || menu == null || menu.title != ask.title) {
       throw const LiveException("The menu isn't on the Mac's screen anymore. Open the screen to see what is.");
     }
@@ -660,8 +681,8 @@ class TerminalBridge {
       while (same < query.length && same < w.query.length && query[same] == w.query[same]) {
         same++;
       }
-      await _kitty.pressKeys(window, [for (var k = same; k < w.query.length; k++) 'backspace']);
-      if (same < query.length) await _kitty.type(window, query.substring(same));
+      await _terms.pressKeys(window, [for (var k = same; k < w.query.length; k++) 'backspace']);
+      if (same < query.length) await _terms.type(window, query.substring(same));
       w
         ..query = query
         ..arm();
@@ -675,15 +696,15 @@ class TerminalBridge {
         throw const LiveException('The menu on the Mac has changed. Pick again.');
       }
       if (shown.current == pick) {
-        await _kitty.pressKeys(window, const ['enter']);
+        await _terms.pressKeys(window, const ['enter']);
         w
           ..query = ''
           ..arm();
         return;
       }
-      await _kitty.pressKeys(window, menuKeys(shown.current, pick, enter: false));
+      await _terms.pressKeys(window, menuKeys(shown.current, pick, enter: false));
       await Future<void>.delayed(const Duration(milliseconds: 150));
-      final again = parseMenu(await _kitty.plainScreen(window));
+      final again = parseMenu(await _terms.plainScreen(window));
       if (again == null || again.title != ask.title) {
         throw const LiveException("The menu isn't on the Mac's screen anymore. Open the screen to see what is.");
       }
@@ -693,13 +714,17 @@ class TerminalBridge {
   }
 
   /// Answers the agent's question, approval, plan review or a picker with
-  /// keystrokes in its kitty window, once its screen shows that it is up.
+  /// keystrokes in its terminal window, once its screen shows that it is
+  /// up: only where the terminal can both show its screen and press keys.
   Future<void> _answer(Map<String, dynamic> p) async {
     final s = _hub[p['session'] as String];
     final ask = s?.ask;
     if (s == null || ask == null || ask.id != p['ask']) throw const LiveException('That is no longer being asked.');
     final window = s.window;
-    if (window == null) throw const LiveException('This session runs outside kitty: answer it on the Mac.');
+    if (window == null) {
+      throw const LiveException("Džep can't tell which terminal window this session runs in: answer it on the Mac.");
+    }
+    if (cantAnswer(_terms, window) case final why?) throw LiveException(why);
     if (ask.isPlan) return await _answerPlan(window, ask, s.agent, p);
     if (ask.isMenu) return await _answerMenu(s.key, window, ask, p);
     final steps = answerKeys(
@@ -708,15 +733,15 @@ class TerminalBridge {
       approve: p['approve'] == true,
       agent: s.agent,
     );
-    if (!askOnScreen(ask, await _kitty.plainScreen(window), agent: s.agent)) {
+    if (!askOnScreen(ask, await _terms.plainScreen(window), agent: s.agent)) {
       throw const LiveException("The question isn't on the Mac's screen. Open the screen to answer it there.");
     }
     for (final step in steps) {
       switch (step) {
         case Keys(:final keys):
-          await _kitty.pressKeys(window, keys);
+          await _terms.pressKeys(window, keys);
         case Typed(:final text):
-          await _kitty.type(window, text);
+          await _terms.type(window, text);
         case Settle():
           await Future<void>.delayed(const Duration(milliseconds: 450));
       }
@@ -736,7 +761,7 @@ class TerminalBridge {
     for (var i = 0; i < 16 && pending(); i++) {
       await Future<void>.delayed(const Duration(milliseconds: 250));
       if (i < 2 || !pending()) continue;
-      final screen = await _kitty.plainScreen(window);
+      final screen = await _terms.plainScreen(window);
       if (!askOnScreen(ask, screen, agent: s.agent)) {
         if (++gone < 2) continue;
         _hub.updateAsk(s.key, ask.id, null);
@@ -745,7 +770,7 @@ class TerminalBridge {
       gone = 0;
       if (i >= 7 && !nudged && s.agent == Agent.omp && _submitTab.hasMatch(screen)) {
         nudged = true;
-        await _kitty.pressKeys(window, const ['enter']);
+        await _terms.pressKeys(window, const ['enter']);
       }
     }
     if (pending()) {
@@ -757,6 +782,30 @@ class TerminalBridge {
 
   /// omp's ask dialog on its last tab, the answers listed above Submit.
   static final _submitTab = RegExp(r'Review answers[\s\S]*❯\s*Submit');
+}
+
+/// The terminals the phone hears about: the installed ones, and tmux
+/// either way (its note says how to get it).
+List<TermStatus> phoneTerminals(List<TermStatus> statuses) => [
+  for (final s in statuses)
+    if (s.state != TermState.missing || s.id == 'tmux') s,
+];
+
+/// The phone's error line: only when [nothingShown] (no window, no session)
+/// and no terminal is usable, what the first one needing setup says.
+String? terminalsError(List<TermStatus> statuses, {required bool nothingShown}) =>
+    nothingShown && !statuses.any((s) => s.usable)
+    ? statuses.where((s) => s.state == TermState.setup).map((s) => s.note).firstOrNull
+    : null;
+
+/// Why an agent's ask in [window] can't be answered from the phone (null:
+/// it can): answering reads the screen and presses keys.
+String? cantAnswer(Terminals terms, String window) {
+  final read = terms.can(window, TermCap.read);
+  if (read && terms.can(window, TermCap.keys)) return null;
+  final label = terms.hostOf(window)?.label ?? 'This terminal';
+  return "$label can't ${read ? 'press keys' : 'show its screen'}, so answer this on the Mac. "
+      '${terms.tmux.installed ? 'Sessions you start from the phone run in tmux there, which can.' : 'With tmux (brew install tmux), sessions you start from the phone can.'}';
 }
 
 /// One session's screen followed for pickers: when it was last told to look

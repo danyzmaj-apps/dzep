@@ -4,6 +4,7 @@ import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/chat_images.dart';
 import 'package:dzep_core/live.dart';
 import 'package:dzep_core/live_activity.dart';
+import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_mobile/terminal_view.dart';
@@ -85,9 +86,13 @@ class _SessionPageState extends State<SessionPage> {
     super.dispose();
   }
 
-  /// The kitty window the agent runs in, if it runs in one (a launched one
+  /// The terminal window the agent runs in, if it runs in one (a launched one
   /// before it reports: the session's key is its window's).
   String? _windowKey(LiveSummary? s) => s?.window ?? (remote.window(key) != null ? key : null);
+
+  /// Whether there's a [window] and its terminal can do [cap]; one not in the
+  /// list yet (just launched) can do everything.
+  bool _can(String? window, TermCap cap) => window != null && (remote.window(window)?.can(cap) ?? true);
 
   /// The session's agent: as it reports, else its window's program, else the
   /// one the Mac starts (a just-launched session).
@@ -138,7 +143,9 @@ class _SessionPageState extends State<SessionPage> {
       if (!mounted || (remote.session(key)?.ask?.isMenu ?? false)) return;
     }
     if (!mounted) return;
-    if (ModalRoute.of(context)?.isCurrent ?? false) openWindow(context, remote, window);
+    if ((ModalRoute.of(context)?.isCurrent ?? false) && _can(window, TermCap.read)) {
+      openWindow(context, remote, window);
+    }
   }
 
   String _title(LiveSummary s) => s.title.isNotEmpty ? s.title : baseName(s.cwd);
@@ -152,15 +159,15 @@ class _SessionPageState extends State<SessionPage> {
     );
   }
 
-  /// Slash commands go to the agent's kitty window: the [matches] while the
-  /// name is typed, or a word that they can't run without one.
+  /// Slash commands go to the agent's terminal window: the [matches] while the
+  /// name is typed, or a word that they can't run without one that takes a line.
   Widget? _commands(List<LiveCommand> matches, {required bool noWindow, required Agent agent}) {
     if (noWindow) {
       return Padding(
         key: const ValueKey('commands-need-window'),
         padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
         child: Text(
-          'Slash commands run in ${agent.label}’s kitty window, and this session has none.',
+          'Slash commands run in ${agent.label}’s terminal window, and this session has none.',
           style: const TextStyle(color: C.dim, fontSize: 12),
         ),
       );
@@ -304,7 +311,7 @@ class _SessionPageState extends State<SessionPage> {
           : remote.online
           ? 'Loading…'
           : 'Not on this phone yet.';
-      final window = starting ? _windowKey(s) : null;
+      final window = starting && _can(_windowKey(s), TermCap.read) ? _windowKey(s) : null;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -448,7 +455,7 @@ class _SessionPageState extends State<SessionPage> {
     final canSend = online && !_sending && (_field.text.trim().isNotEmpty || !_attachments.isEmpty);
     final slash = _field.text.startsWith('/');
     final commanding = online && s != null && slash;
-    final noWindow = commanding && _windowKey(s) == null;
+    final noWindow = commanding && !_can(_windowKey(s), TermCap.line);
     final matches = commanding && !noWindow ? matchCommands(s.commands, _field.text) : const <LiveCommand>[];
     final commands = _commands(matches, noWindow: noWindow, agent: agent);
     return Container(
@@ -579,6 +586,7 @@ class _SessionPageState extends State<SessionPage> {
       final title = s == null ? (window?.title.isNotEmpty ?? false ? window!.title : _agent(s).label) : _title(s);
       final note = linkNote(remote);
       final ask = s?.ask;
+      final readable = _can(windowKey, TermCap.read);
       void screen() => openWindow(context, remote, windowKey!);
       return Scaffold(
         appBar: AppBar(
@@ -606,14 +614,14 @@ class _SessionPageState extends State<SessionPage> {
                     ? const Icon(Icons.lock_clock, color: C.accent)
                     : const Icon(Icons.lock_clock_outlined, color: C.dim),
               ),
-            if (windowKey != null)
+            if (readable)
               IconButton(
                 key: const ValueKey('open-screen'),
                 tooltip: 'Screen',
                 onPressed: screen,
                 icon: const Icon(Icons.terminal, color: C.dim),
               ),
-            if (window != null && online)
+            if (window != null && online && window.can(TermCap.close))
               IconButton(
                 key: const ValueKey('close-window'),
                 tooltip: 'Close window',
@@ -634,7 +642,7 @@ class _SessionPageState extends State<SessionPage> {
             if (ended)
               _banner(
                 'This session has ended.',
-                actions: [if (windowKey != null) TextButton(onPressed: screen, child: const Text('Screen'))],
+                actions: [if (readable) TextButton(onPressed: screen, child: const Text('Screen'))],
               )
             else ...[
               if (ask != null && ask.isMenu)
@@ -642,9 +650,9 @@ class _SessionPageState extends State<SessionPage> {
                   key: ValueKey('ask-${ask.id}'),
                   remote: remote,
                   session: key,
-                  window: windowKey,
+                  window: _can(windowKey, TermCap.keys) ? windowKey : null,
                   ask: ask,
-                  onScreen: windowKey == null ? null : screen,
+                  onScreen: readable ? screen : null,
                 )
               else if (ask != null)
                 _AskCard(
@@ -652,7 +660,7 @@ class _SessionPageState extends State<SessionPage> {
                   remote: remote,
                   session: key,
                   ask: ask,
-                  onScreen: windowKey == null ? null : screen,
+                  onScreen: readable ? screen : null,
                 ),
               _composer(s, online: online && (s != null || !widget.starting)),
             ],
@@ -1108,7 +1116,8 @@ class _MenuCard extends StatefulWidget {
   final TerminalRemote remote;
   final String session;
 
-  /// The kitty window the agent runs in, for Esc.
+  /// The terminal window the agent runs in, for Esc; null when it can't
+  /// press keys.
   final String? window;
   final LiveAsk ask;
   final VoidCallback? onScreen;

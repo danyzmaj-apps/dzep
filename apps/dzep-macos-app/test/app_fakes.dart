@@ -2,13 +2,20 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show FlutterView, Scene, SemanticsUpdate;
 
+import 'package:dzep_core/apple_terminal.dart';
 import 'package:dzep_core/backend.dart';
 import 'package:dzep_core/chat.dart';
+import 'package:dzep_core/ghostty.dart';
 import 'package:dzep_core/idea.dart';
+import 'package:dzep_core/iterm.dart';
 import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/session.dart';
 import 'package:dzep_core/store.dart';
+import 'package:dzep_core/terminal.dart';
+import 'package:dzep_core/terminals.dart';
+import 'package:dzep_core/tmux.dart';
 import 'package:dzep_core/ui.dart';
+import 'package:dzep_core/wezterm.dart';
 import 'package:dzep_macos/controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -214,9 +221,19 @@ class FakeApp extends AppController {
   @override
   ChatStore get chats => fakeChats;
 
-  /// No kitty sockets here.
+  /// No terminal here: no kitty sockets, no tmux, no apps to script.
   @override
-  Kitty get kitty => Kitty(socketDir: '/nonexistent-dzep-test');
+  Terminals get terminals => _terminals;
+  late final _terminals = Terminals(
+    kitty: Kitty(socketDir: '/nonexistent-dzep-test', home: '/nonexistent-dzep-test'),
+    tmux: Tmux(executable: '/nonexistent-dzep-test/tmux', socketDirs: const []),
+    wezterm: WezTerm(executable: '/nonexistent-dzep-test/wezterm', socketDir: '/nonexistent-dzep-test'),
+    iterm: ITerm(appPath: '/nonexistent-dzep-test/iTerm.app'),
+    terminal: AppleTerminal(appPath: '/nonexistent-dzep-test/Terminal.app'),
+    ghostty: Ghostty(appPath: '/nonexistent-dzep-test/Ghostty.app'),
+    recency: () async => const [],
+    snapshot: () async => Procs(const []),
+  );
 
   /// The server's active reviewer codes, newest first, without links (the
   /// server keeps hashes); what was asked of it in [madeCodes] and [revoked].
