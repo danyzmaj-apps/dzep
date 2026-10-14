@@ -39,7 +39,7 @@ class AppleTerminal extends TerminalHost {
   bool get installed => Directory(appPath).existsSync();
   bool _running(Procs procs) => procs.running('$appPath/Contents/MacOS/');
 
-  Future<String> _osa(String script, [List<String> args = const []]) => runAppleScript(label, script, args);
+  Future<String> _osa(String script, [List<String> args = const []]) => runAppleScript(label, bundleId!, script, args);
 
   String _tty(String key) {
     final tty = RegExp(r'^terminal:(ttys\d+)$').firstMatch(key)?[1];
@@ -113,6 +113,8 @@ return out''';
       return TermStatus(id, label, TermState.limited, note: '$n window${n == 1 ? '' : 's'} · $limits');
     } on AutomationDenied catch (e) {
       return TermStatus(id, label, TermState.setup, note: e.message, fix: TermFix.automation);
+    } on AutomationPending catch (e) {
+      return TermStatus(id, label, TermState.setup, note: e.message);
     }
   }
 
@@ -201,6 +203,11 @@ return out''';
     ]);
   }
 
+  /// Terminal's first window when Džep started Terminal and no launch has
+  /// used it yet (one failed while macOS asked whether Džep may control
+  /// Terminal, say): the next launch takes it rather than leave it empty.
+  bool _spare = false;
+
   /// A new Terminal window (it stays behind the app in front) in [cwd],
   /// running the shell, or [command] in place of it. A Terminal a script
   /// starts stays hidden, so one that isn't running is opened in the
@@ -213,9 +220,9 @@ return out''';
       ' cd -- ${shellQuote(cwd)}',
       if (command != null) 'exec ${command.map(shellQuote).join(' ')}' else 'clear',
     ].join(' && ');
-    final fresh = !_running(await Procs.snapshot());
-    if (fresh) {
+    if (!_running(await Procs.snapshot())) {
       await Process.run('/usr/bin/open', ['-g', '-a', appPath]);
+      _spare = true;
       for (var i = 0; i < 50; i++) {
         if (_running(await Procs.snapshot()) && await _osa('tell application "Terminal" to count of windows') != '0') {
           break;
@@ -238,8 +245,9 @@ on run argv
     return tty of t
   end tell
 end run''',
-      [line, if (fresh) 'fresh' else 'running'],
+      [line, if (_spare) 'fresh' else 'running'],
     );
+    _spare = false;
     return 'terminal:${tty.replaceFirst('/dev/', '')}';
   }
 }

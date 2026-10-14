@@ -227,4 +227,25 @@ void main() {
     expect(remote().view('kitty-1/1'), isNull);
     expect(file.existsSync(), isFalse);
   });
+
+  test("a window launched under an ended session's key starts with no transcript", () async {
+    // The ended session's transcript, kept on disk too.
+    remote()
+      ..handle('items', items())
+      ..flush();
+    final r = remote()..handle('state', {...state(), 'sessions': <Object>[]});
+    expect(r.view('kitty-1/1'), isNotNull);
+
+    final launched = r.launch('/Users/me/x', startAgent: true);
+    await Future<void>.delayed(Duration.zero);
+    final run = sent.lastWhere((s) => s.$1 == 'run').$2;
+    expect(run['op'], 'launch');
+    // tmux numbers its panes from %0 again: the Mac answers with the same key.
+    r.handle('ran', {'id': run['id'], 'window': 'kitty-1/1'});
+    expect(await launched, 'kitty-1/1');
+
+    expect(r.view('kitty-1/1'), isNull);
+    r.flush();
+    expect(remote().view('kitty-1/1'), isNull);
+  });
 }

@@ -40,7 +40,7 @@ class Ghostty extends TerminalHost {
   bool get installed => Directory(appPath).existsSync();
   bool _running(Procs procs) => procs.running('$appPath/Contents/MacOS/');
 
-  Future<String> _osa(String script, [List<String> args = const []]) => runAppleScript(label, script, args);
+  Future<String> _osa(String script, [List<String> args = const []]) => runAppleScript(label, bundleId!, script, args);
 
   String _terminal(String key) {
     final id = RegExp(r'^ghostty:([0-9A-Fa-f-]{36})$').firstMatch(key)?[1];
@@ -99,6 +99,8 @@ return out''';
       return TermStatus(id, label, TermState.limited, note: '$n window${n == 1 ? '' : 's'} · $limits');
     } on AutomationDenied catch (e) {
       return TermStatus(id, label, TermState.setup, note: e.message, fix: TermFix.automation);
+    } on AutomationPending catch (e) {
+      return TermStatus(id, label, TermState.setup, note: e.message);
     } on TerminalException catch (e) {
       // Before 1.3 Ghostty had no scripting.
       return TermStatus(id, label, TermState.limited, note: 'Needs Ghostty 1.3 or later (${e.message})');
@@ -198,28 +200,42 @@ return out''';
     }
   }, app: bundleId);
 
-  /// A new Ghostty window (it stays behind the app in front) in [cwd],
-  /// running the shell, or [command] in place of it.
+  /// The id of the Ghostty window Džep opened last.
+  String? _window;
+
+  /// A new tab in [cwd] in the Ghostty window Džep opened last, or a new
+  /// window (it stays behind the app in front) if that one is gone, running
+  /// the shell, or [command] in place of it. Ghostty comes to the front for
+  /// a new window (the app that was in front gets it back), not for a tab.
   @override
   Future<String> launch(String cwd, {List<String>? command}) async {
     if (!Directory(cwd).existsSync()) throw TerminalException('No such folder: $cwd');
     final before = _surfaceTtys(await Procs.snapshot());
-    final id = await keepFront(
+    final out = await keepFront(
       () => _osa(
         '''
 on run argv
+  set sep to ASCII character 9
   tell application "Ghostty"
     set cfg to new surface configuration
     set initial working directory of cfg to (item 1 of argv)
     if (item 2 of argv) is not "" then set command of cfg to (item 2 of argv)
+    repeat with w in windows
+      if (id of w) is (item 3 of argv) then
+        set b to new tab in w with configuration cfg
+        return (item 3 of argv) & sep & (id of focused terminal of b)
+      end if
+    end repeat
     set w to new window with configuration cfg
-    return id of focused terminal of selected tab of w
+    return (id of w) & sep & (id of focused terminal of selected tab of w)
   end tell
 end run''',
-        [cwd, if (command != null) command.map(shellQuote).join(' ') else ''],
+        [cwd, if (command != null) command.map(shellQuote).join(' ') else '', _window ?? ''],
       ),
       app: bundleId,
     );
+    final [window, id] = out.split('\t');
+    _window = window;
     final key = 'ghostty:$id';
     // Its tty: the one new among Ghostty's terminals.
     for (var i = 0; i < 20; i++) {

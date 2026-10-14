@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/terminal.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,6 +78,14 @@ void main() {
       expect(keyRuns(['up', 'esc', 'x']), ['\x1b[A', '\x1b', 'x']);
       expect(keyRuns(['esc']), ['\x1b']);
       expect(keyRuns([]), isEmpty);
+    });
+  });
+
+  group('screens', () {
+    test("screenLines drops WezTerm's charset choices, so a reset-only line is blank", () {
+      // `wezterm cli get-text --escapes` of a prompt in an otherwise empty pane.
+      const text = '\x1b(B\x1b[0;1m\x1b[32m➜  \x1b[36mwezterm\r\n\x1b(B\x1b[0m\r\n';
+      expect(screenLines(text), ['\x1b[0;1m\x1b[32m➜  \x1b[36mwezterm']);
     });
   });
 
@@ -173,6 +183,91 @@ void main() {
       });
       expect((back.app, back.via), ('tmux', 'Ghostty'));
       expect(back.caps, {TermCap.type, TermCap.keys});
+    });
+  });
+
+  group('AppleScript', () {
+    // osascript stood in for by sh: the consent look answers the next of
+    // [looks], the question to the person runs [ask], a script runs [script].
+    late List<List<String>> started;
+    late List<Process> procs;
+
+    AppleScript osa(List<String> looks, {String ask = 'sleep 30', String script = 'echo out'}) => AppleScript(
+      timeout: const Duration(milliseconds: 600),
+      stuckAfter: const Duration(milliseconds: 200),
+      start: (exe, args) async {
+        started.add(args);
+        final cmd = !args.contains('JavaScript')
+            ? script
+            : args.last == 'ask'
+            ? ask
+            : 'echo ${looks.removeAt(0)}';
+        final p = await Process.start('/bin/sh', ['-c', cmd]);
+        procs.add(p);
+        return p;
+      },
+    );
+
+    List<String> kinds() => [
+      for (final a in started)
+        if (a.contains('JavaScript')) a.last else 'script',
+    ];
+    final pending = isA<AutomationPending>().having((e) => e.app, 'app', 'Terminal');
+
+    setUp(() {
+      started = [];
+      procs = [];
+    });
+    tearDown(() {
+      for (final p in procs) {
+        p.kill(ProcessSignal.sigkill);
+      }
+    });
+
+    test('while macOS asks, scripts fail at once naming the app, and nothing piles up', () async {
+      final o = osa(['-1744']);
+      for (var i = 0; i < 3; i++) {
+        await expectLater(o.run('Terminal', 'com.apple.Terminal', 'x'), throwsA(pending));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(kinds(), ['look', 'ask']);
+    });
+
+    test('once the person says yes, scripts go to the app without asking again', () async {
+      final o = osa(['-1744'], ask: 'echo 0');
+      await expectLater(o.run('Terminal', 'com.apple.Terminal', 'x'), throwsA(pending));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await Future.wait([for (final p in procs) p.exitCode]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(await o.run('Terminal', 'com.apple.Terminal', 'x'), 'out');
+      expect(await o.run('Terminal', 'com.apple.Terminal', 'x'), 'out');
+      expect(kinds(), ['look', 'ask', 'script', 'script']);
+    });
+
+    test('a "no" fails without sending the app anything', () async {
+      await expectLater(
+        osa(['-1743']).run('Terminal', 'com.apple.Terminal', 'x'),
+        throwsA(isA<AutomationDenied>().having((e) => e.app, 'app', 'Terminal')),
+      );
+      expect(kinds(), ['look']);
+    });
+
+    test('a script that never finishes is killed', () async {
+      final o = osa(['0'], script: 'sleep 30');
+      await expectLater(
+        o.run('Terminal', 'com.apple.Terminal', 'x'),
+        throwsA(isA<TerminalException>().having((e) => e.message, 'message', contains('did not answer'))),
+      );
+      expect(await procs.last.exitCode, -9);
+    });
+
+    test('a script that started the app and then waits on macOS asking is killed and fails as asking', () async {
+      // Not running when looked at (-600); the script starts it, and macOS asks.
+      final o = osa(['-600', '-1744'], script: 'sleep 30');
+      await expectLater(o.run('Terminal', 'com.apple.Terminal', 'x'), throwsA(pending));
+      expect(await procs[1].exitCode, -9);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(kinds(), ['look', 'script', 'look', 'ask']);
     });
   });
 }

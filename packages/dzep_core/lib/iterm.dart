@@ -37,7 +37,7 @@ class ITerm extends TerminalHost {
   bool get installed => Directory(appPath).existsSync();
   bool _running(Procs procs) => procs.running('$appPath/Contents/MacOS/');
 
-  Future<String> _osa(String script, [List<String> args = const []]) => runAppleScript(label, script, args);
+  Future<String> _osa(String script, [List<String> args = const []]) => runAppleScript(label, bundleId!, script, args);
 
   /// Finds the session whose id is argv's first item as `s`, then runs [body].
   static String _withSession(String body) =>
@@ -112,6 +112,8 @@ return out''';
       return TermStatus(id, label, TermState.limited, note: '$n window${n == 1 ? '' : 's'} · $limits');
     } on AutomationDenied catch (e) {
       return TermStatus(id, label, TermState.setup, note: e.message, fix: TermFix.automation);
+    } on AutomationPending catch (e) {
+      return TermStatus(id, label, TermState.setup, note: e.message);
     }
   }
 
@@ -216,15 +218,20 @@ return out''';
     return key;
   }
 
+  /// iTerm2's first window when Džep started iTerm2 and no launch has used
+  /// it yet (one failed while macOS asked whether Džep may control iTerm2,
+  /// say): the next launch takes it rather than leave it empty.
+  bool _spare = false;
+
   /// The new session's id.
   Future<String> _open(List<String>? command) async {
     Future<int> windows() async => int.tryParse(await _osa(_shownWindows)) ?? 0;
     // Not running, or no window: Launch Services opens it (or reopens it) in
     // the background with a first window of its own, which then is the new
     // one. `create window` with no window there makes one that never shows.
-    final fresh = !_running(await Procs.snapshot()) || await windows() == 0;
-    if (fresh) {
+    if (!_running(await Procs.snapshot()) || await windows() == 0) {
       await Process.run('/usr/bin/open', ['-g', '-a', appPath]);
+      _spare = true;
       for (var i = 0; i < 50; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 100));
         if (_running(await Procs.snapshot()) && await windows() > 0) break;
@@ -249,7 +256,7 @@ on run argv
     if tw is not missing value then
       -- The window Launch Services just opened is ours, unless iTerm2 restored
       -- an old session into it: one with more than a prompt is never reused.
-      if (item 1 of argv) is "fresh" and "$run" is "" then
+      if (item 1 of argv) is "fresh" and "$run" is "" and (count of windows) is 1 then
         if (length of (contents of current session of tw)) < 400 then return id of current session of tw
       end if
       tell tw to set t to (create tab with default profile$run)
@@ -267,7 +274,12 @@ on run argv
     return id of current session of w
   end tell
 end run''';
-    return await _osa(script, [if (fresh) 'fresh' else '', if (command != null) command.map(shellQuote).join(' ')]);
+    final id = await _osa(script, [
+      if (_spare) 'fresh' else '',
+      if (command != null) command.map(shellQuote).join(' '),
+    ]);
+    _spare = false;
+    return id;
   }
 
   /// How many windows have a session (one that never showed has none).

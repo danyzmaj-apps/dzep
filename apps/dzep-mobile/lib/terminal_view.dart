@@ -392,7 +392,7 @@ class TerminalList extends StatelessWidget {
                   ],
                   if (windows.isNotEmpty) ...[
                     _header('WINDOWS'),
-                    // An agent running without Džep's integration: started before it was installed.
+                    // An agent whose Džep integration doesn't report: out of date, or installed after it started.
                     for (final agent in Agent.values)
                       if (windows.any((w) => w.agent == agent))
                         Padding(
@@ -400,13 +400,15 @@ class TerminalList extends StatelessWidget {
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                           child: Text(switch (agent) {
                             Agent.omp =>
-                              'These omp windows show only as screens: omp in them started before its Džep '
-                                  'extension (live.ts) was installed. Quit omp there and start it again (omp -c '
+                              'These omp windows show only as screens: Džep’s omp extension isn’t reporting from '
+                                  'them. It may be out of date (update it in Džep’s Settings on the Mac), or omp there '
+                                  'started before it was installed. Then quit omp there and start it again (omp -c '
                                   'picks the conversation back up) to see it above, as a conversation.',
                             Agent.claude =>
-                              'These Claude windows show only as screens: Claude in them started before '
-                                  'Džep’s Claude Code plugin was installed. Quit Claude there and start it again '
-                                  '(claude -c picks the conversation back up) to see it above, as a conversation.',
+                              'These Claude windows show only as screens: Džep’s Claude Code plugin isn’t reporting '
+                                  'from them. It may be out of date (update it in Džep’s Settings on the Mac), or '
+                                  'Claude there started before it was installed. Then quit Claude there and start it '
+                                  'again (claude -c picks the conversation back up) to see it above, as a conversation.',
                           }, style: const TextStyle(fontSize: 12, color: C.dim2, height: 1.4)),
                         ),
                     for (final (i, w) in windows.indexed) ...[if (i > 0) divider, _window(context, w)],

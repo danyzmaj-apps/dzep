@@ -324,13 +324,15 @@ const phoneKeys = {'esc', 'tab', 'up', 'down', 'enter', 'ctrl+c'};
 /// bytes.
 const historyBytes = 60000;
 
-/// A terminal's [text] as the phone's lines: plain spaces among a line's
-/// closing escapes dropped (padding), trailing blank lines dropped, and
-/// only the newest lines within [historyBytes].
+/// A terminal's [text] as the phone's lines: charset choices (ESC ( B,
+/// which WezTerm puts before its SGR resets) dropped, plain spaces among a
+/// line's closing escapes dropped (padding), trailing blank lines dropped,
+/// and only the newest lines within [historyBytes].
 List<String> screenLines(String text) {
+  final charset = RegExp(r'\x1b[ -/]+[0-~]');
   final pad = RegExp(r'(?: |\x1b\[[0-9;:]*m)+$');
   final sgr = RegExp(r'\x1b\[[0-9;:]*m');
-  final raw = text.replaceAll('\r\n', '\n').split('\n');
+  final raw = text.replaceAll('\r\n', '\n').replaceAll(charset, '').split('\n');
   final kept = <String>[];
   var bytes = 0;
   for (var i = raw.length - 1; i >= 0; i--) {
@@ -547,26 +549,161 @@ String? findExecutable(String name, {List<String> extra = const [], Map<String, 
 
 // ------------------------------------------------------------ AppleScript
 
-/// Runs [script] with osascript, [args] as its `on run argv`; its output
-/// without the final newline. macOS asks the person once whether Džep may
-/// control [app]; a "no" (or no answer yet) is [automationDenied].
-Future<String> runAppleScript(String app, String script, [List<String> args = const []]) async {
-  final ProcessResult r;
-  try {
-    r = await Process.run('/usr/bin/osascript', ['-e', script, ...args]).timeout(const Duration(seconds: 20));
-  } on TimeoutException {
-    throw TerminalException('$app did not answer.');
-  } on ProcessException catch (e) {
-    throw TerminalException('osascript: ${e.message}');
+/// Runs [script] with osascript on [app] (bundle id [bundle]), [args] as its
+/// `on run argv`; its output without the final newline ([AppleScript.run]).
+Future<String> runAppleScript(String app, String bundle, String script, [List<String> args = const []]) =>
+    appleScript.run(app, bundle, script, args);
+
+/// The terminals' [AppleScript]: what macOS answered holds for all of them.
+final appleScript = AppleScript();
+
+/// osascript, for apps macOS asks the person about before Džep may control
+/// them (Privacy & Security → Automation). Until they answer, an Apple Event
+/// waits in the app, which carries it out once they say yes, long after the
+/// phone gave up. So an app is sent nothing before it's known to be allowed:
+/// its answer is looked up first (without asking), and while there is none
+/// macOS is asked once, by a helper that waits for the answer, and every
+/// script throws [AutomationPending] at once instead of piling up. A script
+/// that doesn't finish within [timeout] is killed.
+class AppleScript {
+  AppleScript({
+    this.start = Process.start,
+    this.timeout = const Duration(seconds: 20),
+    this.stuckAfter = const Duration(seconds: 2),
+    this.askFor = const Duration(minutes: 3),
+  });
+
+  /// Starts osascript; tests hand in their own.
+  final Future<Process> Function(String executable, List<String> arguments) start;
+
+  /// How long a script may run.
+  final Duration timeout;
+
+  /// A script to an app not known to be allowed (it wasn't running, so the
+  /// script started it) that runs this long is checked for macOS asking.
+  final Duration stuckAfter;
+
+  /// How long the helper waits for the person's answer (macOS gives up on
+  /// its question after two minutes).
+  final Duration askFor;
+
+  /// Apps macOS let Džep control, and those it's asking about, by bundle id.
+  final _allowed = <String>{};
+  final _asking = <String>{};
+
+  // AEDeterminePermissionToAutomateTarget's answers.
+  static const _wouldAsk = -1744;
+  static const _refused = -1743;
+
+  /// Whether Džep may send Apple Events to [bundle]: 0 yes, -1743 no,
+  /// -1744 not answered yet, -600 not running; null if it can't be told.
+  /// With [ask], macOS asks the person (if it hasn't) and this waits for
+  /// their answer. osascript's answer counts as Džep's: macOS asks about
+  /// the app that started it.
+  Future<int?> consent(String bundle, {bool ask = false}) async {
+    final r = await _osascript([
+      '-l',
+      'JavaScript',
+      '-e',
+      _consentScript,
+      bundle,
+      if (ask) 'ask' else 'look',
+    ], ask ? askFor : const Duration(seconds: 5));
+    return r == null || r.code != 0 ? null : int.tryParse(r.out.trim());
   }
-  if (r.exitCode == 0) {
-    final out = r.stdout as String;
-    return out.endsWith('\n') ? out.substring(0, out.length - 1) : out;
+
+  static const _consentScript = r'''
+ObjC.import('CoreServices');
+ObjC.bindFunction('AEDeterminePermissionToAutomateTarget', ['int', ['void *', 'unsigned int', 'unsigned int', 'bool']]);
+function run(argv) {
+  const app = $.NSAppleEventDescriptor.descriptorWithBundleIdentifier(argv[0]);
+  return $.AEDeterminePermissionToAutomateTarget(app.aeDesc, 0x2a2a2a2a, 0x2a2a2a2a, argv[1] === 'ask');
+}''';
+
+  /// macOS asks about [bundle] (once at a time); a yes is remembered.
+  void _ask(String bundle) {
+    if (!_asking.add(bundle)) return;
+    unawaited(
+      consent(bundle, ask: true).then((answer) {
+        _asking.remove(bundle);
+        if (answer == 0) _allowed.add(bundle);
+      }),
+    );
   }
-  final err = '${r.stderr}';
-  if (err.contains('-1743') || err.contains('-1744')) throw AutomationDenied(app);
-  if (err.contains('-600') || err.contains('-609')) throw TerminalException("$app isn't running.");
-  throw TerminalException('$app: ${err.replaceFirst(RegExp('^.*execution error: '), '').trim()}');
+
+  Future<String> run(String app, String bundle, String script, [List<String> args = const []]) async {
+    if (_asking.contains(bundle)) throw AutomationPending(app);
+    var known = _allowed.contains(bundle);
+    if (!known) {
+      switch (await consent(bundle)) {
+        case 0:
+          _allowed.add(bundle);
+          known = true;
+        case _wouldAsk:
+          _ask(bundle);
+          throw AutomationPending(app);
+        case _refused:
+          throw AutomationDenied(app);
+      }
+    }
+    final r = await _osascript(
+      ['-e', script, ...args],
+      timeout,
+      stuck: known ? null : () async => await consent(bundle) == _wouldAsk,
+    );
+    if (r == null) throw TerminalException('$app did not answer.');
+    if (r.code == _asked) {
+      _ask(bundle);
+      throw AutomationPending(app);
+    }
+    if (r.code == 0) return r.out.endsWith('\n') ? r.out.substring(0, r.out.length - 1) : r.out;
+    if (r.err.contains('$_refused')) {
+      _allowed.remove(bundle);
+      throw AutomationDenied(app);
+    }
+    if (r.err.contains('$_wouldAsk')) {
+      _allowed.remove(bundle);
+      _ask(bundle);
+      throw AutomationPending(app);
+    }
+    if (r.err.contains('-600') || r.err.contains('-609')) throw TerminalException("$app isn't running.");
+    throw TerminalException('$app: ${r.err.replaceFirst(RegExp('^.*execution error: '), '').trim()}');
+  }
+
+  /// [_osascript]'s code for a script killed because macOS was asking.
+  static const _asked = -1;
+
+  /// osascript with [args]; null if it didn't finish within [limit]. Killed
+  /// then, or once it has run [stuckAfter] and [stuck] says it waits on
+  /// macOS asking (code [_asked]).
+  Future<({int code, String out, String err})?> _osascript(
+    List<String> args,
+    Duration limit, {
+    Future<bool> Function()? stuck,
+  }) async {
+    final Process p;
+    try {
+      p = await start('/usr/bin/osascript', args);
+    } on ProcessException catch (e) {
+      throw TerminalException('osascript: ${e.message}');
+    }
+    unawaited(p.stdin.close().then((_) {}, onError: (Object _) {}));
+    final out = p.stdout.transform(const Utf8Decoder(allowMalformed: true)).join();
+    final err = p.stderr.transform(const Utf8Decoder(allowMalformed: true)).join();
+    final exited = p.exitCode.then<int?>((c) => c);
+    final sw = Stopwatch()..start();
+    var code = stuck == null ? null : await exited.timeout(stuckAfter, onTimeout: () => null);
+    if (code == null && stuck != null && await stuck()) {
+      p.kill(ProcessSignal.sigkill);
+      return (code: _asked, out: '', err: '');
+    }
+    code ??= await exited.timeout(limit - sw.elapsed, onTimeout: () => null);
+    if (code == null) {
+      p.kill(ProcessSignal.sigkill);
+      return null;
+    }
+    return (code: code, out: await out, err: await err);
+  }
 }
 
 /// macOS refused Džep's Apple Events to [app] (Privacy & Security →
@@ -578,6 +715,13 @@ class AutomationDenied extends TerminalException {
 
 String automationDenied(String app) =>
     'Džep may not control $app. Allow it in System Settings → Privacy & Security → Automation → Džep.';
+
+/// macOS is asking the person whether Džep may control [app]: nothing goes
+/// to it until they answer.
+class AutomationPending extends TerminalException {
+  AutomationPending(this.app) : super('macOS is asking whether Džep may control $app: answer it on the Mac.');
+  final String app;
+}
 
 /// AppleScript's string literal for [s].
 String appleScriptString(String s) => '"${s.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
@@ -637,41 +781,57 @@ Future<({int pid, String bundle})?> frontApp() async {
 }
 
 /// Runs [action] (a new window, a closed one: things that can bring a
-/// terminal app to the front), then, whether it worked or not, gives the
-/// focus back to the app that had it if [app] (a bundle id; null: any app)
-/// took it within a second and a half: by its bundle id, or, when another
-/// instance of the same app took it (a second kitty), by pid. An app the
-/// person switched to themselves is left alone.
+/// terminal app to the front), and gives the focus back to the app that had
+/// it whenever [app] (a bundle id; null: any app) takes it, from just
+/// before [action] until a second and a half after it, worked or not; by
+/// pid, so a second instance of the same app (a second kitty) counts too.
+/// The watching runs in an osascript of its own, which starts while
+/// [action] does and answers within a few hundredths of a second, so the
+/// focus is gone for about a tenth of a second.
 Future<T> keepFront<T>(Future<T> Function() action, {String? app}) async {
   final before = await frontApp();
+  Process? watch;
+  if (before != null) {
+    try {
+      watch = await Process.start('/usr/bin/osascript', [
+        '-l',
+        'JavaScript',
+        '-e',
+        _keepFrontScript,
+        '${before.pid}',
+        app ?? '',
+      ]);
+      unawaited(watch.stdin.close().then((_) {}, onError: (Object _) {}));
+    } on ProcessException {
+      // The window still opens; only the focus may move.
+    }
+  }
   try {
     return await action();
   } finally {
-    if (before != null) await _giveFrontBack(before, app);
+    if (watch != null) Timer(const Duration(milliseconds: 1500), watch.kill);
   }
 }
 
-Future<void> _giveFrontBack(({int pid, String bundle}) before, String? app) async {
-  for (final wait in const [300, 500, 700]) {
-    await Future<void>.delayed(Duration(milliseconds: wait));
-    final now = await frontApp();
-    if (now == null || now.pid == before.pid || (app != null && now.bundle != app)) continue;
-    try {
-      if (now.bundle != before.bundle) {
-        await Process.run('/usr/bin/open', ['-b', before.bundle]);
-      } else {
-        await Process.run('/usr/bin/osascript', [
-          '-l',
-          'JavaScript',
-          '-e',
-          "ObjC.import('AppKit'); \$.NSRunningApplication.runningApplicationWithProcessIdentifier(${before.pid}).activateWithOptions(0)",
-        ]);
-      }
-    } on ProcessException {
-      // The window is there; only the focus moved.
+/// Activates argv[0]'s app whenever another (argv[1]'s bundle id, if any)
+/// is in front; [keepFront] ends it. The run loop is turned so that
+/// NSWorkspace hears about the front app changing.
+const _keepFrontScript = r'''
+ObjC.import('AppKit');
+function run(argv) {
+  const before = parseInt(argv[0]);
+  const app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(before);
+  const ws = $.NSWorkspace.sharedWorkspace;
+  const end = Date.now() + 60000;
+  while (Date.now() < end) {
+    $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.02));
+    const front = ws.frontmostApplication;
+    if (front.isNil()) continue;
+    if (front.processIdentifier !== before && (argv[1] === '' || front.bundleIdentifier.js === argv[1])) {
+      app.activateWithOptions(0);
     }
   }
-}
+}''';
 
 /// Terminal apps by recent use, most recent first: names as
 /// `lsappinfo visibleProcessList` gives them ("kitty", "iTerm2").

@@ -27,4 +27,10 @@ void main() {
     final spans = ansiSpans('\x1b]133;A\x1b\\\x1b]8;id=1;file:///x\x1b\\link\x1b]8;;\x1b\\ \x1b[2Kend', c);
     expect(spans.map((s) => s.text).join(), 'link end');
   });
+
+  test('escapes with intermediates (a charset choice, ESC ( B) leave nothing', () {
+    final spans = ansiSpans('\x1b(B\x1b[32ma\x1b(0\x1b#8b\x1b7c', c);
+    expect(spans.map((s) => s.text).join(), 'abc');
+    expect(spans.first.style!.color, c.palette[2]);
+  });
 }

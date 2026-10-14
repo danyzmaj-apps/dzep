@@ -266,34 +266,53 @@ class Kitty extends TerminalHost {
   }
 
   /// kitty doesn't ask; the phone does, before it sends this. A kitty in
-  /// the background comes to the front when one of its windows closes: the
-  /// app that was in front gets it back.
+  /// the background comes to the front when one of its OS windows closes
+  /// (not when a tab does): the app that was in front gets it back.
   @override
   Future<void> close(String key) async {
     final (socket, match) = _parse(key);
     Future<void> close() => _rc(socket, 'close-window', {'match': match});
-    return restoreFront ? await keepFront(close, app: bundleId) : await close();
+    if (!restoreFront || !lastInOsWindow(await _rc(socket, 'ls') as String? ?? '[]', int.parse(match.substring(3)))) {
+      return await close();
+    }
+    await keepFront(close, app: bundleId);
   }
 
-  /// A new kitty OS window (a session of its own, like one opened by hand).
-  /// kitty keeps its own focus, but a kitty in the background comes to the
-  /// front for a new OS window: the app that was in front gets it back.
+  /// A new tab in the OS window of the newest window Džep opened (marked
+  /// with the user variable `dzep`), or a new OS window if there's none. A
+  /// kitty in the background comes to the front for a new OS window (the
+  /// app that was in front gets it back), not for a tab; the tab takes no
+  /// focus from a window being typed in.
   @override
   Future<String> launch(String cwd, {List<String>? command}) async {
     if (!Directory(cwd).existsSync()) throw TerminalException('No such folder: $cwd');
     final sockets = _sockets();
     if (sockets.isEmpty) throw const TerminalException(notListening);
-    Future<String> open() async {
-      TerminalException? last;
+    Future<String> open(String socket, ({int window, bool focused})? spot) async {
+      final data = await _rc(socket, 'launch', {
+        'args': command ?? <String>[],
+        'cwd': cwd,
+        'type': spot == null ? 'os-window' : 'tab',
+        if (spot != null) 'match': 'window_id:${spot.window}',
+        'keep_focus': spot?.focused ?? true,
+        'var': ['dzep=1'],
+      });
+      return '$socket/${'$data'.trim()}';
+    }
+
+    TerminalException? last;
+    for (final socket in sockets) {
+      try {
+        final spot = dzepTabSpot(await _rc(socket, 'ls') as String? ?? '[]');
+        if (spot != null) return await open(socket, spot);
+      } on TerminalException catch (e) {
+        last = e;
+      }
+    }
+    Future<String> window() async {
       for (final socket in sockets) {
         try {
-          final data = await _rc(socket, 'launch', {
-            'args': command ?? <String>[],
-            'cwd': cwd,
-            'type': 'os-window',
-            'keep_focus': true,
-          });
-          return '$socket/${'$data'.trim()}';
+          return await open(socket, null);
         } on TerminalException catch (e) {
           last = e;
         }
@@ -301,8 +320,39 @@ class Kitty extends TerminalHost {
       throw last ?? const TerminalException(notListening);
     }
 
-    return restoreFront ? await keepFront(open, app: bundleId) : await open();
+    return restoreFront ? await keepFront(window, app: bundleId) : await window();
   }
+}
+
+/// Where in kitty's `ls` [json] a window Džep opens goes as a tab: next to
+/// the newest window Džep opened before (user variable `dzep`), with
+/// whether its OS window has the focus; null if there's none.
+({int window, bool focused})? dzepTabSpot(String json) {
+  ({int window, bool focused})? spot;
+  for (final os in jsonDecode(json) as List) {
+    for (final tab in (os as Map)['tabs'] as List) {
+      for (final w in (tab as Map)['windows'] as List) {
+        final id = (w as Map)['id'] as int;
+        if ((w['user_vars'] as Map?)?.containsKey('dzep') == true && (spot == null || id > spot.window)) {
+          spot = (window: id, focused: os['is_focused'] == true);
+        }
+      }
+    }
+  }
+  return spot;
+}
+
+/// Whether window [id] is the last one of its OS window in kitty's `ls`
+/// [json]: closing it closes the OS window.
+bool lastInOsWindow(String json, int id) {
+  for (final os in jsonDecode(json) as List) {
+    final ids = [
+      for (final tab in (os as Map)['tabs'] as List)
+        for (final w in (tab as Map)['windows'] as List) (w as Map)['id'],
+    ];
+    if (ids.contains(id)) return ids.length == 1;
+  }
+  return true;
 }
 
 /// kitty's `ls` JSON (from the kitty behind [socket]) as windows; [procs]
