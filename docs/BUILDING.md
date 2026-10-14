@@ -124,3 +124,16 @@ The checks to run before a pull request, and which of them CI runs (`.github/wor
 maestro test -e TS=$(date +%H%M%S) -e SETUP_LINK='dzep://setup?url=…&key=…&code=…' apps/dzep-mobile/maestro/sign_in.yaml
 maestro test -e TS=$(date +%H%M%S) apps/dzep-mobile/maestro/
 ```
+
+## Screenshots
+
+The README's screenshots (`docs/images/`) are the real screens rendered by a widget test, on made-up data: no window opens and no account is used. They need macOS's own fonts (SF Pro, Menlo) and are skipped by a plain `fvm flutter test`.
+
+```sh
+# in apps/dzep-macos-app (mac-*.png), then in apps/dzep-mobile (phone-*.png)
+fvm flutter test --tags screenshots --run-skipped
+# at the repo root, to keep them small (brew install pngquant)
+pngquant --quality 80-98 --strip --skip-if-larger --force --ext .png docs/images/*.png
+```
+
+The generators are `test/screenshots/` in each app.

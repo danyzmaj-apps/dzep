@@ -41,7 +41,7 @@ Each release is a notarized DMG on GitHub Releases, plus an `appcast.xml` that i
 ### Each release
 
 1. Bump `version:` in `apps/dzep-macos-app/pubspec.yaml` (for example `0.3.0+3`).
-2. Turn **Unreleased** in `CHANGELOG.md` into a `## 0.3.0` section. Say whether servers need `tool/setup-backend.sh` again (new migrations or function changes) and whether the relay must be redeployed.
+2. Turn **Unreleased** in `CHANGELOG.md` into a `## 0.3.0` section. Say whether servers need `apps/dzep-macos-app/tool/setup-backend.sh` again (new migrations or function changes) and whether the relay must be redeployed.
 3. Commit, then (in `apps/dzep-macos-app`):
    ```sh
    tool/release.sh

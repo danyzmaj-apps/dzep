@@ -153,7 +153,8 @@ class TerminalRemote extends ChangeNotifier {
   final _writes = <String, Timer>{};
 
   TerminalLink get link {
-    if (!_ch.joined) return TerminalLink.connecting;
+    // A transport handed in (tests) is always there.
+    if (_transmit == null && !_ch.joined) return TerminalLink.connecting;
     final now = DateTime.now();
     final heard = _heard;
     if (heard != null && now.difference(heard) < _silent) return TerminalLink.online;
@@ -416,23 +417,45 @@ class TerminalRemote extends ChangeNotifier {
 
   // ------------------------------------------------------------------ ops
 
-  Future<Map<String, dynamic>> _run(Map<String, dynamic> request, {Duration wait = const Duration(seconds: 10)}) async {
+  /// [request]'s answer from the Mac, sending included within [wait]. With
+  /// [onLate], an answer that comes after [wait] (the Mac did it after all)
+  /// still goes there, for a while.
+  Future<Map<String, dynamic>> _run(
+    Map<String, dynamic> request, {
+    Duration wait = const Duration(seconds: 10),
+    void Function(Map<String, dynamic> reply)? onLate,
+  }) async {
     if (!online) throw const TerminalException('The Mac is not answering.');
     final id = const Uuid().v4();
     final done = _pending[id] = Completer();
     final Map<String, dynamic> reply;
+    var later = false;
     try {
-      await _send('run', {'id': id, ...request});
-      reply = await done.future.timeout(wait);
+      reply = await Future(() async {
+        await _send('run', {'id': id, ...request});
+        return await done.future;
+      }).timeout(wait);
     } on TimeoutException {
+      if (onLate != null) {
+        later = true;
+        unawaited(
+          done.future
+              .timeout(_lateFor)
+              .then<void>(onLate, onError: (Object _) {})
+              .whenComplete(() => _pending.remove(id)),
+        );
+      }
       throw const TerminalException('The Mac did not answer.');
     } finally {
-      _pending.remove(id);
+      if (!later) _pending.remove(id);
     }
     final error = reply['error'] as String?;
     if (error != null) throw TerminalException(error);
     return reply;
   }
+
+  /// How long an answer that came too late is still taken.
+  static const _lateFor = Duration(minutes: 2);
 
   /// Types [text] into [window], then Enter.
   Future<void> send(String window, String text) => _run({'op': 'send', 'window': window, 'text': text});
@@ -444,9 +467,35 @@ class TerminalRemote extends ChangeNotifier {
   Future<void> close(String window) => _run({'op': 'close', 'window': window});
 
   /// A new terminal window in [cwd] (where [opensIn] says), running the Mac's coding [agent] if
-  /// [startAgent]; its window key.
-  Future<String> launch(String cwd, {required bool startAgent}) async =>
-      (await _run({'op': 'launch', 'cwd': cwd, 'agent': startAgent}))['window'] as String;
+  /// [startAgent]; its window key. Starting a terminal app can take a while;
+  /// a window that opens after the phone stopped waiting is still taken as
+  /// new ([_fresh]).
+  Future<String> launch(String cwd, {required bool startAgent}) async {
+    final reply = await _run(
+      {'op': 'launch', 'cwd': cwd, 'agent': startAgent},
+      wait: const Duration(seconds: 20),
+      onLate: (r) {
+        if (r['window'] case final String window) _fresh(window);
+      },
+    );
+    final window = reply['window'] as String;
+    _fresh(window);
+    return window;
+  }
+
+  /// A window just opened under [window]'s key. A key can come back (tmux
+  /// numbers panes from %0 again once its server restarts, Terminal reuses
+  /// ttys): what the phone kept for it is an ended session's, and goes.
+  void _fresh(String window) {
+    _views.remove(window);
+    _writes.remove(window)?.cancel();
+    try {
+      final f = _sessionFile(window);
+      if (f.existsSync()) f.deleteSync();
+    } on Object catch (e) {
+      debugPrint('Džep: terminal cache: $e');
+    }
+  }
 
   /// Prompts [session] with [text] and [images] (image files: PNG, JPEG),
   /// which pass through Storage. While omp works the prompt steers it, or

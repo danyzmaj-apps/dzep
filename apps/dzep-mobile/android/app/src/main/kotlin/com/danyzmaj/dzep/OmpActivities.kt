@@ -10,7 +10,7 @@ import androidx.core.app.NotificationCompat
 import org.json.JSONObject
 
 /**
- * omp sessions followed in the notification shade: one ongoing notification
+ * Coding sessions followed in the notification shade: one ongoing notification
  * per session, Android's take on the iPhone's Live Activities
  * (ios/Shared/OmpActivity.swift). Dart starts, updates and ends them while
  * the app runs (packages/dzep_core/lib/live_activity.dart); otherwise the server updates them by

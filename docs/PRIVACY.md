@@ -1,6 +1,6 @@
 # Privacy policy
 
-*Applies to the Džep apps for Mac, iPhone and Android published by Danijel Lovric ("the publisher"). Last updated 13 October 2026.*
+*Applies to the Džep apps for Mac, iPhone and Android published by Danijel Lovric ("the publisher"). Last updated 14 October 2026.*
 
 Short version: the publisher runs no Džep cloud and never receives what you write in Džep. Your data goes to a server you own. The only thing the publisher operates is a relay that forwards encrypted push notifications to Apple and Google.
 
@@ -16,7 +16,7 @@ What happens to that data on your server is up to you and Supabase's terms. You 
 - **To GitHub:** when you sign in with GitHub on the Mac, GitHub's usual sign-in exchange. Phones never sign in to GitHub: they sign in with a code from your Mac, which your server checks (it keeps only a hash of the code).
 - **To your AI provider:** only if you set up Ask. Your questions, the recent turns of that chat and attached images go from **your server** to the OpenAI-compatible provider you chose, with your key. The apps never contact the provider themselves.
 - **To the publisher's push relay** (phones only, when push is on):
-  - Every notification is encrypted on your server with an AES-256 key that only your phone and your server know. The relay receives the phone's push token, the kind of notification (reminder, terminal, or session state), a collapse id (a todo id or an omp session key) and the ciphertext.
+  - Every notification is encrypted on your server with an AES-256 key that only your phone and your server know. The relay receives the phone's push token, the kind of notification (reminder, terminal, or session state), a collapse id (a todo id or a coding session's key) and the ciphertext.
   - It can't read titles, todo text or terminal output. It forwards the message to Apple (APNs) or Google (Firebase Cloud Messaging) and stores nothing.
   - One exception, on iPhone: iOS shows Live Activity updates without running the app's code, so those can't be encrypted. For them the relay and Apple see the session's state (working, needs you, finished, ended) and since when, nothing else. Session titles and project names never travel through a push.
   - The relay runs on Supabase, whose platform keeps short-lived request logs (time, status, errors). The relay doesn't log tokens or message contents.
@@ -29,9 +29,9 @@ The apps contain no analytics, advertising or tracking SDKs, and the publisher d
 
 - **Camera** (phones): only to scan the setup code the Mac shows. Images from the camera aren't stored or sent.
 - **Photos / files**: only the images you pick to attach to a question, uploaded to your server.
-- **Notifications**: reminders, terminal alerts and followed omp sessions.
+- **Notifications**: reminders, terminal alerts and the coding sessions you follow.
 - **Alarms & reminders** (Android): to deliver reminders on time.
-- **Terminal from phone** (Mac, off by default): when you turn it on, the Mac lets phones signed in to your account see and type into your omp and kitty windows over your server's Realtime channel. Nothing it carries is stored.
+- **Terminal from phone** (Mac, off by default): when you turn it on, the Mac lets phones signed in to your account see and type into your coding sessions (omp, Claude Code) and terminal windows over your server's Realtime channel. Nothing it carries is stored.
 
 ## Children
 

@@ -62,6 +62,7 @@ class FakeKitty {
 }
 
 void main() {
+  _placement();
   late FakeKitty fake;
   setUp(() async => fake = await FakeKitty.start());
   tearDown(() => fake.stop());
@@ -231,5 +232,55 @@ void main() {
     // 59 full lines plus the prompt fit; the 60th would not.
     expect(lines, hasLength(60));
     expect(lines.first, body[41]);
+  });
+}
+
+void _placement() {
+  // kitty's ls: OS window 1 (focused) holds the person's window 1; OS window
+  // 2 holds windows 5 and 7 that Džep opened (user variable dzep).
+  final ls = jsonEncode([
+    {
+      'id': 1,
+      'is_focused': true,
+      'tabs': [
+        {
+          'windows': [
+            {'id': 1, 'user_vars': <String, String>{}},
+          ],
+        },
+      ],
+    },
+    {
+      'id': 2,
+      'is_focused': false,
+      'tabs': [
+        {
+          'windows': [
+            {
+              'id': 5,
+              'user_vars': {'dzep': '1'},
+            },
+          ],
+        },
+        {
+          'windows': [
+            {
+              'id': 7,
+              'user_vars': {'dzep': '1'},
+            },
+          ],
+        },
+      ],
+    },
+  ]);
+
+  test("a new session is a tab next to Džep's newest window, taking no focus; with none, an OS window", () {
+    expect(dzepTabSpot(ls), (window: 7, focused: false));
+    expect(dzepTabSpot(jsonEncode([(jsonDecode(ls) as List).first])), isNull);
+  });
+
+  test("closing an OS window's last window is told apart from closing a tab", () {
+    expect(lastInOsWindow(ls, 1), isTrue);
+    expect(lastInOsWindow(ls, 7), isFalse);
   });
 }

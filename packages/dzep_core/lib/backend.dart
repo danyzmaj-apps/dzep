@@ -7,11 +7,12 @@ import 'package:flutter/foundation.dart';
 
 /// The Supabase project Džep syncs through: each user runs their own (see
 /// docs/SELF_HOSTING.md). The Mac enters it on its setup screen or opens a
-/// setup link (`dzep://setup?url=…&key=…`, printed by tool/setup-backend.sh);
-/// a phone learns it only from the Mac's code, a setup link with a sign-in
-/// code in it (`…&code=…`, functions/pair). Kept in the App Group, where the
-/// iPhone's widget reads it too
-/// (apps/dzep-mobile/ios/Shared/DzepShared.swift).
+/// setup link (`dzep://setup?url=…&key=…`, printed by
+/// apps/dzep-macos-app/tool/setup-backend.sh); a phone learns it only from the
+/// Mac's code, a setup link with a sign-in code in it (`…&code=…`,
+/// functions/pair). Kept where the native side reads it too: the App Group on
+/// Apple platforms (apps/dzep-mobile/ios/Shared/DzepShared.swift), shared
+/// preferences on Android (DzepShared.kt).
 @immutable
 class Backend {
   const Backend({required this.url, required this.key});
@@ -113,8 +114,8 @@ class Backend {
       final settings = jsonDecode(body);
       final external = settings is Map ? settings['external'] : null;
       if (github && !(external is Map && external['github'] == true)) {
-        return 'GitHub sign-in is off on this project. Run tool/setup-backend.sh again, or turn it on under '
-            'Authentication → Sign In / Providers (docs/SELF_HOSTING.md).';
+        return 'GitHub sign-in is off on this project. Run apps/dzep-macos-app/tool/setup-backend.sh again, or turn it '
+            'on under Authentication → Sign In / Providers (docs/SELF_HOSTING.md).';
       }
       return null;
     } on SocketException {

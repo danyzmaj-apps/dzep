@@ -32,7 +32,7 @@ struct OmpActivity: ActivityAttributes {
     var sinceDate: Date { Date(timeIntervalSince1970: since) }
   }
 
-  /// The session's key (`kitty-<pid>/<window id>` or `pid:<pid>`).
+  /// The session's key (its terminal window's, like `kitty-<pid>/<window id>`, or `pid:<pid>`).
   var key: String
   var title: String
   var project: String

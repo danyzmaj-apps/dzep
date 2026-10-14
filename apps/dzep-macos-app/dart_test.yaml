@@ -1,0 +1,3 @@
+tags:
+  screenshots:
+    skip: "Screenshots for the README: fvm flutter test --tags screenshots --run-skipped"

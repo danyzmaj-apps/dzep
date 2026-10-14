@@ -11,24 +11,25 @@ import 'package:dzep_core/agent.dart';
 //   (apps/dzep-macos-app/lib/local_api.dart → apps/dzep-macos-app/lib/live_hub.dart)
 //   as transcript items. The phone
 //   lays them out itself, so the Mac window's width doesn't matter.
-// - kitty windows, as screens (lib/kitty.dart): shells and anything else,
+// - terminal windows, as screens (lib/terminals.dart: kitty, tmux, WezTerm,
+//   iTerm2, Terminal, Ghostty): shells and anything else,
 //   and the agents' own menus when the phone needs them.
 //
 // Mac ↔ phone: the private Realtime broadcast topic `terminal:<user id>`
 // (RLS: the user's own topic only). Nothing is stored on the server.
 //
-//   iPhone → Mac  hello  {from, session?, window?}   every 4 s while the app is in front;
+//   phone → Mac   hello  {from, session?, window?}   every 4 s while the app is in front;
 //                        session: the live session it shows, window: the screen it shows
-//   Mac → iPhone  state  {windows, sessions, projects, home, agent, error?}   on every hello and on changes;
+//   Mac → phone   state  {windows, sessions, projects, home, agent, error?}   on every hello and on changes;
 //                        sessions: LiveSummary.toJson, its slash commands as `cmds` [[name, description?]];
 //                        agent: what a new session starts (Agent.name, the Mac's setting)
-//   iPhone → Mac  sync   {from, session, epoch?, since}   catch up after a gap or on opening
-//   Mac → iPhone  items  {to, session, epoch, seq, reset, items, last}   answer to sync, in chunks
-//   Mac → iPhone  live   {session, epoch, ops}   changes to watched sessions, batched
-//   Mac → iPhone  screen {window, v, lines? | diff?, colors?}   a watched window's text (ANSI lines),
+//   phone → Mac   sync   {from, session, epoch?, since}   catch up after a gap or on opening
+//   Mac → phone   items  {to, session, epoch, seq, reset, items, last}   answer to sync, in chunks
+//   Mac → phone   live   {session, epoch, ops}   changes to watched sessions, batched
+//   Mac → phone   screen {window, v, lines? | diff?, colors?}   a watched window's text (ANSI lines),
 //                        whole (lines) or as a ScreenDiff on version v - 1
-//   iPhone → Mac  run    {id, op, …}   see TerminalBridge._onRun
-//   Mac → iPhone  ran    {id, error?, window?}
+//   phone → Mac   run    {id, op, …}   see TerminalBridge._onRun
+//   Mac → phone   ran    {id, error?, window?}
 //
 // Extension ↔ Mac, as JSON frames with the local API's bearer token, over
 // either transport (one connection per session, frames in order):
@@ -571,7 +572,7 @@ String? _custom(LiveAnswer a) {
   return custom == null || custom.isEmpty ? null : custom;
 }
 
-/// Steps that run consecutive key presses together, as one kitty command.
+/// Steps that run consecutive key presses together, as one keys request.
 class _Steps {
   final steps = <KeyStep>[];
 
@@ -1009,8 +1010,9 @@ class LiveSummary {
     ],
   );
 
-  /// Stable for the agent's process: its kitty window's key, or `pid:<pid>`
-  /// outside kitty. What the phone opens and notifications point at.
+  /// Stable for the agent's process: its terminal window's key (`kitty-<pid>/<id>`,
+  /// `tmux:default/3` …), or `pid:<pid>` when its window can't be told. What the
+  /// phone opens and notifications point at.
   final String key;
 
   /// The agent's session id (changes on /new, /resume, /clear).

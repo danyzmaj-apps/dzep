@@ -1,5 +1,5 @@
 name: dzep_mobile
-description: "Džep for iPhone and Android: your ideas, todos, notes and omp sessions, synced through your own Supabase."
+description: "Džep for iPhone and Android: your ideas, todos, notes and the Mac's coding sessions, synced through your own Supabase."
 publish_to: 'none'
 version: 0.3.0+3
 resolution: workspace
@@ -22,6 +22,7 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
   flutter_test:
     sdk: flutter
+  supabase_flutter: ^2.18.0
   very_good_analysis: ^11.0.0
 
 flutter:

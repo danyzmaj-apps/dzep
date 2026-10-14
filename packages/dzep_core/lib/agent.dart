@@ -10,7 +10,7 @@ enum Agent {
   /// How the phone and notifications name it: "Claude finished".
   final String label;
 
-  /// What a shell starts it with, which is also the program kitty reports.
+  /// What a shell starts it with, which is also the program the terminal reports.
   String get command => name;
 
   /// A prompt sent while it works steers the run (omp); Claude Code queues it
@@ -20,6 +20,6 @@ enum Agent {
   /// [name] as it travels; omp for anything else (an older peer sends none).
   static Agent parse(Object? name) => values.asNameMap()[name] ?? omp;
 
-  /// The agent kitty's foreground [program] is, if it is one.
+  /// The agent a terminal window's foreground [program] is, if it is one.
   static Agent? ofProgram(String program) => values.asNameMap()[program];
 }

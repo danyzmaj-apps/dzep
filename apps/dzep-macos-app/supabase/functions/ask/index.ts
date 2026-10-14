@@ -1,4 +1,4 @@
-// Quick questions from the Mac popup and the iPhone's Ask tab, answered by
+// Quick questions from the Mac popup and the phones' Ask tab, answered by
 // any OpenAI-compatible chat API. The key lives here, never in the apps:
 //
 //   AI_API_KEY     required: the provider's API key
@@ -101,7 +101,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function systemPrompt() {
   const today = new Date().toISOString().slice(0, 10);
-  return "You answer quick questions from a software developer in a small chat on their Mac or iPhone. " +
+  return "You answer quick questions from a software developer in a small chat on their Mac or phone. " +
     "Be brief and direct: lead with the answer, skip preamble. " +
     `Use Markdown only when it helps (code blocks for code, short lists). Today is ${today}.`;
 }
