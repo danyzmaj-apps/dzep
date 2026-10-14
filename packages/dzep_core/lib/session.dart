@@ -208,7 +208,7 @@ class Session extends ChangeNotifier {
   /// topic). supabase_flutter hands the token to Realtime only after
   /// `initialize` returns, and not at all when it expired while the app was
   /// closed; a channel joined before that joins as nobody, and a private one
-  /// then never hears a thing (the iPhone's Terminal tab spun forever).
+  /// then never hears a thing (the phone's Terminal tab spun forever).
   Future<void> _freshSession() async {
     final session = client.auth.currentSession;
     if (session == null) return;

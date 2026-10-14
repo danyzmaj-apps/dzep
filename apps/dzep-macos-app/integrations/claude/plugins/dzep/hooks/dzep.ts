@@ -23,7 +23,7 @@ import {
 //   work list; notes are free text. The todo command is /do, as in omp (whose own /todo wins there).
 // - This session goes to the phone through Džep: the transcript as items, the answer as it's written,
 //   whether Claude is busy, and the questions, approvals and plan reviews it waits on (answered on the phone
-//   by keys Džep types into this kitty window). From the phone you can prompt (with images), stop, and page
+//   by keys Džep types into this terminal window). From the phone you can prompt (with images), stop, and page
 //   back through older history. The protocol is described in packages/dzep_core/lib/live.dart; mods have no
 //   WebSocket, so it goes over HTTP long polls (POST /v1/live/http).
 //

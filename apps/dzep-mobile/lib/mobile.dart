@@ -184,7 +184,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Open whenever the idea store is (see Session).
   ChatStore get chats => widget.session.chats!;
 
-  /// The Mac's coding sessions and kitty windows, through Džep on the Mac; live
+  /// The Mac's coding sessions and terminal windows, through Džep on the Mac; live
   /// while the app is in front. Null until its cache folder is known.
   TerminalRemote? _terminal;
   bool _terminalAttached = false;

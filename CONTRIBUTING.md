@@ -26,6 +26,7 @@ The repo is a pub workspace: `apps/dzep-macos-app` (Mac app and the backend), `a
   claude plugin validate . && claude plugin test plugins/dzep
   ```
 - Add a test when you change behavior that can quietly break: parsing, sync, reminders.
+- Changed how a screen looks? Render the README's screenshots again ([BUILDING.md](docs/BUILDING.md#screenshots)).
 - Database changes go in a **new** migration in `apps/dzep-macos-app/supabase/migrations/`, timestamped after the latest. Never edit one that has shipped: self-hosters have already applied it.
 - Note user-visible changes under **Unreleased** in `CHANGELOG.md`, and say whether self-hosters must rerun `apps/dzep-macos-app/tool/setup-backend.sh`.
 - Never commit `config/Local.xcconfig`, `apps/dzep-macos-app/supabase/.env*`, `apps/dzep-mobile/android/key.properties`, `google-services.json`, keystores or any key.

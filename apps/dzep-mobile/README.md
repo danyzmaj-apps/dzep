@@ -6,10 +6,11 @@ The phone app: Todos, Ideas, Notes, Ask and Terminal, pairing with a server by s
 | --- | --- |
 | `lib/` | Flutter app (shared code comes from [`packages/dzep_core`](../../packages/dzep_core/)) |
 | `ios/` | Runner (native channel, push, Live Activities), `DzepWidget` (widgets and the Live Activity), `DzepPush` (decrypts pushes) |
-| `android/` | `MainActivity` (native channel), FCM service, reminders, the ongoing omp notification, Todos and New idea widgets |
+| `android/` | `MainActivity` (native channel), FCM service, reminders, the ongoing notification for followed coding sessions, Todos and New idea widgets |
 | `maestro/` | iOS simulator flows |
+| `test/screenshots/` | The README's phone screenshots, rendered on made-up data ([BUILDING.md](../../docs/BUILDING.md#screenshots)) |
 
-The two platforms do the same things. Android push needs `android/app/google-services.json` (not committed); without it the app works and keeps reminders local.
+The two platforms do the same things, push included. Building Android from source, push needs your Firebase project's `android/app/google-services.json` (not committed; [BUILDING.md](../../docs/BUILDING.md#android)); a build without it works and schedules reminders on the phone instead.
 
 Run it from this directory:
 

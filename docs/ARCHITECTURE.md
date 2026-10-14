@@ -1,6 +1,6 @@
 # Architecture
 
-How Džep is put together, and why some of it looks the way it does. For what it does and how to set it up, see the [README](../README.md).
+How Džep is put together, and why some of it looks the way it does. For what it does and how to set it up, see the [README](../README.md) and [USING.md](USING.md).
 
 One Dart pub workspace (root `pubspec.yaml`): the Mac app in `apps/dzep-macos-app/` (with the backend it bundles), the phone app for iPhone and Android in `apps/dzep-mobile/`, and what both use in `packages/dzep_core/` (each with its own `lib/` and `test/`). Below, `core/` stands for `packages/dzep_core/`, `mac/` for `apps/dzep-macos-app/` and `mobile/` for `apps/dzep-mobile/`. "Phone" means iPhone and Android alike; where they differ, the text says so.
 

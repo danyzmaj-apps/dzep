@@ -108,9 +108,9 @@ The Mac app updates itself. Release notes say when a new app version needs a bac
 
 ## Push
 
-Your server pushes reminders, omp notifications and omp session state to your phones. Only the app's publisher holds the credentials that reach Džep's installs (the APNs key for iPhones, the Firebase service account for Android), so your server's `push` function hands each notification to the publisher's **relay**, which passes it to Apple's APNs or Google's Firebase Cloud Messaging.
+Your server pushes reminders, coding-session notifications (a run ended, the agent needs you) and the state of the sessions you follow to your phones. Only the app's publisher holds the credentials that reach Džep's installs (the APNs key for iPhones, the Firebase service account for Android), so your server's `push` function hands each notification to the publisher's **relay**, which passes it to Apple's APNs or Google's Firebase Cloud Messaging.
 
-- Each phone makes its own AES-256 key and registers it with your server (`push_devices`, with the device's push token and its `platform`, `ios` or `android`). Your server encrypts every notification with that key; the relay sees the push token, the kind of notification (reminder, terminal or activity), a collapse id and ciphertext, and stores nothing. iPhone Live Activity updates are the exception: iOS can't decrypt them, so they carry the omp session's state (working, needs you, finished) in the clear, and no text.
+- Each phone makes its own AES-256 key and registers it with your server (`push_devices`, with the device's push token and its `platform`, `ios` or `android`). Your server encrypts every notification with that key; the relay sees the push token, the kind of notification (reminder, terminal or activity), a collapse id and ciphertext, and stores nothing. iPhone Live Activity updates are the exception: iOS can't decrypt them, so they carry the coding session's state (working, needs you, finished) in the clear, and no text.
 - Android messages are FCM data messages the app decrypts itself; iPhone messages are decrypted by its notification service extension.
 - No setup on your side: the default `PUSH_RELAY_URL` is the publisher's relay.
 

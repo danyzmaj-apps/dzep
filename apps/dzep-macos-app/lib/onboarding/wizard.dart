@@ -58,7 +58,7 @@ class _SetupWizardState extends State<SetupWizard> {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: flow,
-    // A tap outside a field puts the iPhone keyboard away.
+    // A tap outside a field takes the focus off it.
     builder: (context, _) => GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => FocusManager.instance.primaryFocus?.unfocus(),

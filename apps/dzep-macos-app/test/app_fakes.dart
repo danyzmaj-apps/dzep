@@ -25,7 +25,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// An [IdeaStore] in memory: no disk, no Supabase.
 class FakeStore extends ChangeNotifier implements IdeaStore {
   final _items = <Idea>[];
-  var _clock = DateTime.utc(2026, 10, 10, 9);
+
+  /// The time of the last change; each add is stamped a minute after it.
+  DateTime clock = DateTime.utc(2026, 10, 10, 9);
 
   @override
   String get userId => 'user';
@@ -64,7 +66,7 @@ class FakeStore extends ChangeNotifier implements IdeaStore {
   @override
   Idea add({required String title, Kind kind = Kind.idea, String notes = '', String project = '', DateTime? remindAt}) {
     // Each one a minute newer, so the newest-first order is the reverse of adding.
-    _clock = _clock.add(const Duration(minutes: 1));
+    clock = clock.add(const Duration(minutes: 1));
     final idea = Idea(
       id: 'i${_items.length}',
       kind: kind,
@@ -72,8 +74,8 @@ class FakeStore extends ChangeNotifier implements IdeaStore {
       notes: notes,
       project: project,
       remindAt: remindAt,
-      createdAt: _clock,
-      updatedAt: _clock,
+      createdAt: clock,
+      updatedAt: clock,
     );
     _items.add(idea);
     notifyListeners();
@@ -91,14 +93,14 @@ class FakeStore extends ChangeNotifier implements IdeaStore {
     if (title != null) idea.title = title;
     if (notes != null) idea.notes = notes;
     if (project != null) idea.project = project;
-    if (done != null) idea.doneAt = done ? _clock : null;
+    if (done != null) idea.doneAt = done ? clock : null;
     if (remind != null) idea.remindAt = remind.at;
     notifyListeners();
   }
 
   @override
   void delete(Idea idea) {
-    idea.deletedAt = _clock;
+    idea.deletedAt = clock;
     notifyListeners();
   }
 
@@ -191,11 +193,12 @@ class FakeChats extends ChangeNotifier implements ChatStore {
 /// An [AppController] signed in to [FakeStore] and [FakeChats], its native
 /// side answered by [calls].
 class FakeApp extends AppController {
-  FakeApp._(SharedPreferences prefs) : super(prefs, 'Mac');
+  FakeApp._(SharedPreferences prefs, this._givenTerminals) : super(prefs, 'Mac');
 
-  static Future<FakeApp> create({String? popupMode}) async {
+  /// [terminals] stand in for the Mac's; none found by default.
+  static Future<FakeApp> create({String? popupMode, Terminals? terminals}) async {
     SharedPreferences.setMockInitialValues({'popup_mode': ?popupMode});
-    final app = FakeApp._(await SharedPreferences.getInstance());
+    final app = FakeApp._(await SharedPreferences.getInstance(), terminals);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('dzep/native'),
       (call) async {
@@ -205,6 +208,12 @@ class FakeApp extends AppController {
     );
     return app;
   }
+
+  /// The signed-in user's name; Session's own when null.
+  String? name;
+
+  @override
+  String get userName => name ?? super.userName;
 
   final fakeStore = FakeStore();
   final fakeChats = FakeChats();
@@ -221,9 +230,10 @@ class FakeApp extends AppController {
   @override
   ChatStore get chats => fakeChats;
 
-  /// No terminal here: no kitty sockets, no tmux, no apps to script.
+  /// Unless given: no terminal here, no kitty sockets, no tmux, no apps to script.
   @override
-  Terminals get terminals => _terminals;
+  Terminals get terminals => _givenTerminals ?? _terminals;
+  final Terminals? _givenTerminals;
   late final _terminals = Terminals(
     kitty: Kitty(socketDir: '/nonexistent-dzep-test', home: '/nonexistent-dzep-test'),
     tmux: Tmux(executable: '/nonexistent-dzep-test/tmux', socketDirs: const []),

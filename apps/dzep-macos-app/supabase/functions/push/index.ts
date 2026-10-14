@@ -44,7 +44,7 @@ const relay = Deno.env.get("PUSH_RELAY_URL") ?? "https://tgqmhieundubwtyvsnih.su
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-/** The coding session a push is about: `kitty-<pid>/<window id>` or `pid:<pid>` (at most 64: also a collapse id). */
+/** The coding session a push is about: its terminal window's key (`kitty-<pid>/<window id>`, `tmux:default/3` …) or `pid:<pid>` (at most 64: also a collapse id). */
 const sessionKey = (v: unknown) => (typeof v === "string" && /^[\w.:/-]{1,64}$/.test(v) ? v : undefined);
 
 /** APNs tokens are hex; a Live Activity's is longer than a device's. */
@@ -163,7 +163,7 @@ async function send(userId: string, message: Notice): Promise<number> {
   return sent;
 }
 
-/** The scheduler's address and secret, set the first time an iPhone registers. */
+/** The scheduler's address and secret, set the first time a phone registers. */
 async function ensureConfig() {
   const { data } = await admin.from("push_config").select("id").maybeSingle();
   if (data) return;
