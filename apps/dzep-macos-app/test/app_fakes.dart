@@ -115,7 +115,8 @@ class FakeStore extends ChangeNotifier implements IdeaStore {
   Future<void> close() async {}
 }
 
-/// A [ChatStore] with no chats that never sends; the server's AI is [ai].
+/// A [ChatStore] holding [chats] (none to start) that never sends; the
+/// server's AI is [ai].
 class FakeChats extends ChangeNotifier implements ChatStore {
   @override
   String get userId => 'user';
@@ -140,14 +141,18 @@ class FakeChats extends ChangeNotifier implements ChatStore {
     return ai;
   }
 
-  @override
-  List<Conversation> get conversations => const [];
+  /// The saved chats, in any order.
+  final chats = <Conversation>[];
 
   @override
-  Conversation? byId(String id) => null;
+  List<Conversation> get conversations => [...chats]..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
   @override
-  Conversation? get current => null;
+  Conversation? byId(String id) => chats.where((c) => c.id == id).firstOrNull;
+
+  @override
+  Conversation? get current => _current;
+  Conversation? _current;
 
   @override
   Conversation? get streaming => null;
@@ -156,10 +161,16 @@ class FakeChats extends ChangeNotifier implements ChatStore {
   bool get busy => false;
 
   @override
-  void newChat() {}
+  void newChat() {
+    _current = null;
+    notifyListeners();
+  }
 
   @override
-  void resume(Conversation c) {}
+  void resume(Conversation c) {
+    _current = c;
+    notifyListeners();
+  }
 
   @override
   void delete(Conversation c) {}

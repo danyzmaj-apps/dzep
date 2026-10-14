@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/chat_view.dart';
+import 'package:dzep_core/ui.dart';
 import 'package:dzep_macos/popup.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -56,6 +57,36 @@ Future<void> unfocus(WidgetTester tester) async {
   await tester.pump();
   expect(field(tester).focusNode.hasFocus, isFalse);
 }
+
+/// The text field typing goes to (in Ask, not the transcript's text).
+Finder input() => find.descendant(of: find.byType(TextField), matching: find.byType(EditableText));
+
+/// Puts the caret in the mode's field at [offset].
+Future<void> caret(WidgetTester tester, int offset) async {
+  tester.widget<EditableText>(input()).controller.selection = TextSelection.collapsed(offset: offset);
+  await tester.pump();
+}
+
+/// The list row showing [label] (the last of that text: in Ask the
+/// transcript above may show it too) is the one ↑/↓ have picked.
+bool picked(WidgetTester tester, String label) =>
+    tester.widget<Container>(find.ancestor(of: find.text(label).last, matching: find.byType(Container)).first).color ==
+    C.sel;
+
+Future<void> key(WidgetTester tester, LogicalKeyboardKey k) async {
+  await tester.sendKeyEvent(k);
+  await tester.pumpAndSettle();
+}
+
+Conversation chat(String id, String question, int minute) => Conversation(
+  id: id,
+  createdAt: DateTime.utc(2026, 10, 10, 9, minute),
+  updatedAt: DateTime.utc(2026, 10, 10, 9, minute),
+  messages: [
+    ChatMessage(fromUser: true, text: question),
+    ChatMessage(fromUser: false, text: 'answer to $question'),
+  ],
+);
 
 void main() {
   testWidgets('⌘1 on an unfocused draft focuses it with the caret, never selecting it all', (tester) async {
@@ -177,4 +208,161 @@ void main() {
     await tester.pumpAndSettle();
     expect(field(tester).controller.text, isEmpty);
   }, variant: mac);
+
+  group('Note browses RECENT NOTES', () {
+    Future<FakeApp> pumpNotes(WidgetTester tester) async {
+      final app = await pumpPopup(tester, mode: 'note', open: false);
+      app.fakeStore
+        ..addNote('Older')
+        ..addNote('Newer');
+      await app.openPopup();
+      await tester.pumpAndSettle();
+      return app;
+    }
+
+    testWidgets('↓ goes in only from the last line; ↑/↓ move, ↑ past the top and Esc come back', (tester) async {
+      final app = await pumpNotes(tester);
+      await tester.enterText(input(), 'one\ntwo');
+
+      // On the first line ↓ is the field's.
+      await caret(tester, 1);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(find.text('back'), findsNothing);
+      expect(picked(tester, 'Newer'), isFalse);
+
+      await caret(tester, 7);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect((picked(tester, 'Newer'), picked(tester, 'Older')), (true, false));
+      expect(find.text('back'), findsOneWidget);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect((picked(tester, 'Newer'), picked(tester, 'Older')), (false, true));
+      // The last row stays picked.
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(picked(tester, 'Older'), isTrue);
+
+      await key(tester, LogicalKeyboardKey.arrowUp);
+      await key(tester, LogicalKeyboardKey.arrowUp);
+      expect((picked(tester, 'Newer'), picked(tester, 'Older')), (false, false));
+      expect(find.text('browse'), findsOneWidget);
+
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await key(tester, LogicalKeyboardKey.escape);
+      expect(picked(tester, 'Newer'), isFalse);
+      expect(app.popupOpen, isTrue);
+      expect(tester.widget<EditableText>(input()).focusNode.hasFocus, isTrue);
+      expect(tester.widget<EditableText>(input()).controller.text, 'one\ntwo');
+    }, variant: mac);
+
+    testWidgets('a long line wrapped: ↓ from its first row stays in the field', (tester) async {
+      await pumpNotes(tester);
+      await tester.enterText(input(), 'word ' * 40);
+      await caret(tester, 0);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(picked(tester, 'Newer'), isFalse);
+    }, variant: mac);
+
+    testWidgets('↵ opens the picked note in the main window, as a click does', (tester) async {
+      final app = await pumpNotes(tester);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await key(tester, LogicalKeyboardKey.enter);
+
+      final older = app.fakeStore.notes.last;
+      expect((app.pendingSelect, app.mainOpen, app.popupOpen), (older.id, true, false));
+    }, variant: mac);
+
+    testWidgets('⌘O opens the picked note in the main window, ⌘P in the note window', (tester) async {
+      final app = await pumpNotes(tester);
+      final newer = app.fakeStore.notes.first;
+      await tester.enterText(input(), 'draft');
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await cmd(tester, LogicalKeyboardKey.keyO);
+      await tester.pumpAndSettle();
+      expect((app.pendingSelect, app.mainOpen), (newer.id, true));
+
+      await app.openPopup();
+      await tester.pumpAndSettle();
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await cmd(tester, LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+      expect((app.noteOpen, app.noteId), (true, newer.id));
+      // The draft stays a draft.
+      expect(app.fakeStore.notes, hasLength(2));
+    }, variant: mac);
+  });
+
+  group('Ask browses the recent chats', () {
+    Future<(FakeApp, Conversation, Conversation)> pumpChats(WidgetTester tester) async {
+      final app = await pumpPopup(tester, mode: 'ask', open: false);
+      final older = chat('c1', 'Older question', 1);
+      final newer = chat('c2', 'Newer question', 2);
+      app.fakeChats
+        ..chats.addAll([older, newer])
+        ..resume(newer);
+      await app.openPopup();
+      await tester.pumpAndSettle();
+      return (app, older, newer);
+    }
+
+    testWidgets('↓ from the last line lists them; ↵ goes on with the picked one', (tester) async {
+      final (app, older, newer) = await pumpChats(tester);
+      expect(find.text('RECENT CHATS'), findsNothing);
+      await tester.enterText(input(), 'one\ntwo');
+
+      await caret(tester, 1);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(find.text('RECENT CHATS'), findsNothing);
+
+      await caret(tester, 7);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(find.text('RECENT CHATS'), findsOneWidget);
+      // Newest first; the one shown is the first picked.
+      expect(picked(tester, 'Newer question'), isTrue);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(picked(tester, 'Older question'), isTrue);
+
+      await key(tester, LogicalKeyboardKey.enter);
+      expect(app.fakeChats.current, older);
+      expect(find.text('RECENT CHATS'), findsNothing);
+      expect(find.text('answer to Older question'), findsOneWidget);
+      // The question being written stays, and nothing was asked.
+      expect(tester.widget<EditableText>(input()).controller.text, 'one\ntwo');
+      expect(tester.widget<EditableText>(input()).focusNode.hasFocus, isTrue);
+      expect(app.popupOpen, isTrue);
+    }, variant: mac);
+
+    testWidgets('Esc and ↑ past the top go back to the chat shown', (tester) async {
+      final (app, _, newer) = await pumpChats(tester);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await key(tester, LogicalKeyboardKey.escape);
+      expect(find.text('RECENT CHATS'), findsNothing);
+      expect((app.popupOpen, app.fakeChats.current), (true, newer));
+
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await key(tester, LogicalKeyboardKey.arrowUp);
+      expect(find.text('RECENT CHATS'), findsNothing);
+      expect(app.fakeChats.current, newer);
+
+      await key(tester, LogicalKeyboardKey.escape);
+      expect(app.popupOpen, isFalse);
+    }, variant: mac);
+
+    testWidgets('⌘O opens the picked chat in the main window; ⌘N still starts a new one', (tester) async {
+      final (app, older, _) = await pumpChats(tester);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await cmd(tester, LogicalKeyboardKey.keyO);
+      await tester.pumpAndSettle();
+      expect((app.pendingChat, app.pendingChats, app.mainOpen), (older, true, true));
+
+      await app.openPopup();
+      await tester.pumpAndSettle();
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      await cmd(tester, LogicalKeyboardKey.keyN);
+      await tester.pumpAndSettle();
+      expect(app.fakeChats.current, isNull);
+      expect(find.text('RECENT CHATS'), findsNothing);
+    }, variant: mac);
+  });
 }
