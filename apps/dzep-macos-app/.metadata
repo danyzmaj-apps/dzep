@@ -15,7 +15,7 @@ migration:
     - platform: root
       create_revision: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1
       base_revision: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1
-    - platform: ios
+    - platform: macos
       create_revision: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1
       base_revision: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1
 
@@ -27,4 +27,4 @@ migration:
   # Files that are not part of the templates will be ignored by default.
   unmanaged_files:
     - 'lib/main.dart'
-    - 'ios/Runner.xcodeproj/project.pbxproj'
+    - 'macos/Runner.xcodeproj/project.pbxproj'

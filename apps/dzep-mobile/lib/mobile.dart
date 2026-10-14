@@ -159,11 +159,6 @@ class MobileApp extends StatelessWidget {
   );
 }
 
-/// For fields' `onTapOutside`: a tap anywhere else puts the keyboard away.
-/// (A tap on the field itself never counts, unlike a screen-wide tap
-/// catcher, which can steal the tap that should focus it.)
-void dismissKeyboard(PointerDownEvent _) => FocusManager.instance.primaryFocus?.unfocus();
-
 // ==================================================================== home
 
 typedef _Filter = ({bool project, String id});
@@ -191,7 +186,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Open whenever the idea store is (see Session).
   ChatStore get chats => widget.session.chats!;
 
-  /// The Mac's omp sessions and kitty windows, through Džep on the Mac; live
+  /// The Mac's coding sessions and kitty windows, through Džep on the Mac; live
   /// while the app is in front. Null until its cache folder is known.
   TerminalRemote? _terminal;
   bool _terminalAttached = false;
@@ -232,7 +227,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     attach ? t.attach() : t.detach();
   }
 
-  /// The Terminal tab, on omp session [key] (from a tapped push or Live
+  /// The Terminal tab, on coding session [key] (from a tapped push or Live
   /// Activity).
   void _openSession(String key) {
     setState(() => _tab = 4);
@@ -286,6 +281,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _attachTerminal(attach: true);
         unawaited(widget.session.drainPending());
         unawaited(store.syncNow());
+        // An AI connected from the Mac meanwhile shows up.
+        unawaited(chats.checkAi());
         unawaited(_openTapped());
         unawaited(_openTappedSession());
       case AppLifecycleState.hidden || AppLifecycleState.paused:
@@ -505,7 +502,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             Expanded(
               child: switch (_tab) {
                 4 => _terminal == null ? const SizedBox.shrink() : TerminalList(remote: _terminal!),
-                3 => RefreshIndicator(onRefresh: chats.syncNow, child: _chatsList()),
+                3 => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (chats.aiMissing) ...const [
+                      Padding(padding: EdgeInsets.fromLTRB(20, 14, 20, 14), child: NoAiNotice()),
+                      Divider(height: 1, color: C.line),
+                    ],
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () => Future.wait([chats.syncNow(), chats.checkAi()]),
+                        child: _chatsList(),
+                      ),
+                    ),
+                  ],
+                ),
                 2 => RefreshIndicator(onRefresh: store.syncNow, child: _notesList()),
                 _ => RefreshIndicator(onRefresh: store.syncNow, child: _tab == 0 ? _todosList() : _ideasList()),
               },
@@ -531,7 +542,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Widget _chatsList() {
     final list = chats.conversations;
-    if (list.isEmpty) return _empty('No chats yet. Tap ✎ to ask a quick question.');
+    if (list.isEmpty) return _empty(chats.aiMissing ? 'No chats yet.' : 'No chats yet. Tap ✎ to ask a quick question.');
     return ListView.separated(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.only(bottom: 96),
@@ -961,7 +972,7 @@ class _AddSheetState extends State<AddSheet> {
 
   void _save() {
     final todo = _kind == Kind.todo;
-    // Todos take a `!` reminder (lib/remind.dart), ideas a `@project`.
+    // Todos take a `!` reminder (packages/dzep_core/lib/remind.dart), ideas a `@project`.
     final remind = todo ? parseReminder(_title.text, DateTime.now()) : null;
     final parsed = remind != null ? (title: remind.title, project: '') : parseTitle(_title.text);
     if (parsed.title.isEmpty) return;
@@ -1397,83 +1408,96 @@ class _ChatPageState extends State<ChatPage> {
           children: [
             Expanded(
               child: c == null || c.messages.isEmpty
-                  ? const Center(
-                      child: Text('Ask a quick question below.', style: TextStyle(color: C.dim)),
-                    )
+                  // The notice below says it all.
+                  ? chats.aiMissing
+                        ? const SizedBox.shrink()
+                        : const Center(
+                            child: Text('Ask a quick question below.', style: TextStyle(color: C.dim)),
+                          )
                   : ChatTranscript(chat: chats, conversation: c, padding: const EdgeInsets.fromLTRB(18, 8, 18, 16)),
             ),
-            Container(
-              decoration: const BoxDecoration(
-                color: C.bar,
-                border: Border(top: BorderSide(color: C.line)),
-              ),
-              padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, right: 8),
-                      child: AttachmentStrip(attachments: _attachments),
-                    ),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        TextFieldTapRegion(
-                          child: PopupMenuButton<String>(
-                            tooltip: 'Attach images',
-                            enabled: _attachments.room > 0,
-                            icon: Icon(
-                              Icons.add_photo_alternate_outlined,
-                              color: _attachments.room > 0 ? C.dim : C.dim2,
-                            ),
-                            color: C.bar,
-                            onSelected: (from) => unawaited(_attach(from)),
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(value: 'paste', child: Text('Paste image')),
-                              PopupMenuItem(value: 'photos', child: Text('Choose from Photos')),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: TextField(
-                            onTapOutside: dismissKeyboard,
-                            controller: _field,
-                            focusNode: _focus,
-                            minLines: 1,
-                            maxLines: 6,
-                            textCapitalization: TextCapitalization.sentences,
-                            style: const TextStyle(fontSize: 16, height: 1.4),
-                            decoration: plainInput.copyWith(
-                              hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
-                              hintStyle: const TextStyle(color: C.dim2),
-                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            if (chats.aiMissing)
+              Container(
+                decoration: const BoxDecoration(
+                  color: C.bar,
+                  border: Border(top: BorderSide(color: C.line)),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+                child: const SafeArea(top: false, child: NoAiNotice()),
+              )
+            else
+              Container(
+                decoration: const BoxDecoration(
+                  color: C.bar,
+                  border: Border(top: BorderSide(color: C.line)),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6, right: 8),
+                        child: AttachmentStrip(attachments: _attachments),
+                      ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          TextFieldTapRegion(
+                            child: PopupMenuButton<String>(
+                              tooltip: 'Attach images',
+                              enabled: _attachments.room > 0,
+                              icon: Icon(
+                                Icons.add_photo_alternate_outlined,
+                                color: _attachments.room > 0 ? C.dim : C.dim2,
+                              ),
+                              color: C.bar,
+                              onSelected: (from) => unawaited(_attach(from)),
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(value: 'paste', child: Text('Paste image')),
+                                PopupMenuItem(value: 'photos', child: Text('Choose from Photos')),
+                              ],
                             ),
                           ),
-                        ),
-                        // Part of the field for tap-outside: sending keeps the
-                        // keyboard up for the next question.
-                        TextFieldTapRegion(
-                          child: IconButton(
-                            tooltip: 'Send',
-                            onPressed: canSend ? _send : null,
-                            icon: chats.busy
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
+                          Expanded(
+                            child: TextField(
+                              onTapOutside: dismissKeyboard,
+                              controller: _field,
+                              focusNode: _focus,
+                              minLines: 1,
+                              maxLines: 6,
+                              textCapitalization: TextCapitalization.sentences,
+                              style: const TextStyle(fontSize: 16, height: 1.4),
+                              decoration: plainInput.copyWith(
+                                hintText: c == null ? 'Ask a quick question…' : 'Follow up…',
+                                hintStyle: const TextStyle(color: C.dim2),
+                                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                          // Part of the field for tap-outside: sending keeps the
+                          // keyboard up for the next question.
+                          TextFieldTapRegion(
+                            child: IconButton(
+                              tooltip: 'Send',
+                              onPressed: canSend ? _send : null,
+                              icon: chats.busy
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : Icon(Icons.arrow_upward, color: canSend ? C.accent : C.dim2),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       );

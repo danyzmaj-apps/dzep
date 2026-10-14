@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
   }).auth.getUser(token);
   if (!user) return json(401, { error: "Sign in first" });
   if (!user.email) {
-    return json(400, { error: "Your account has no email address, so it can't pair. Sign in with GitHub on the iPhone." });
+    return json(400, { error: "Your account has no email address, so it can't pair. Sign in with GitHub on the phone instead." });
   }
 
   const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });

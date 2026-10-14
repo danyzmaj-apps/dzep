@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dzep_core/backend.dart';
 import 'package:dzep_core/logo.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_macos/onboarding/flow.dart';
@@ -19,8 +20,8 @@ class SetupWizard extends StatefulWidget {
   const SetupWizard({required this.flow, required this.onConnect, required this.onExisting, super.key});
   final SetupFlow flow;
 
-  /// Called with the finished server; connects the app to it.
-  final Future<void> Function() onConnect;
+  /// Connects the app to the finished server (the session's connect).
+  final Future<void> Function(Backend backend) onConnect;
 
   /// "I already have a server": the plain connect form.
   final VoidCallback onExisting;
@@ -141,10 +142,12 @@ class _SetupWizardState extends State<SetupWizard> {
     ),
   );
 
+  /// Works while a new project starts too: the wizard stops waiting, and the
+  /// project stays picked for next time.
   Widget _back(WizardStep to) => Align(
     alignment: Alignment.centerLeft,
     child: TextButton(
-      onPressed: flow.busy ? null : () => flow.go(to),
+      onPressed: flow.busy && flow.waiting == null ? null : () => flow.go(to),
       style: TextButton.styleFrom(foregroundColor: C.dim2, padding: EdgeInsets.zero),
       child: const Text('← Back'),
     ),
@@ -287,21 +290,33 @@ class _SetupWizardState extends State<SetupWizard> {
             ? null
             : _dropdown(
                 value: flow.existingRef ?? usable.first.ref,
-                items: {for (final p in usable) p.ref: p.name},
+                items: {for (final p in usable) p.ref: p.status == 'ACTIVE_HEALTHY' ? p.name : '${p.name} (starting)'},
                 onChanged: (v) => flow.update(() => flow.existingRef = v),
               ),
       ),
-      if (!flow.createNew)
+      if (!flow.createNew && flow.caution == null)
         const Padding(
           padding: EdgeInsets.only(top: 8),
           child: Text(
-            "Džep adds its own tables and settings next to what is there; it doesn't touch your other data.",
+            'A project of its own is best: Džep makes sign-in private to your account. It looks at this one '
+            'first and tells you if something is in the way.',
             style: TextStyle(fontSize: 11.5, color: C.dim2),
           ),
         ),
+      if (flow.caution case final c?) ...[
+        const SizedBox(height: 14),
+        Text(c, style: const TextStyle(fontSize: 12.5, height: 1.4, color: C.warn)),
+      ],
       if (flow.waiting case final w?) ...[const SizedBox(height: 14), Text(w, style: const TextStyle(color: C.dim))],
       const SizedBox(height: 16),
-      _primary(flow.createNew ? 'Create project' : 'Continue', () => unawaited(flow.submitProject())),
+      _primary(
+        flow.createNew
+            ? 'Create project'
+            : flow.caution != null
+            ? 'Use it anyway'
+            : 'Continue',
+        () => unawaited(flow.submitProject()),
+      ),
       _back(WizardStep.token),
     ];
   }
@@ -320,6 +335,7 @@ class _SetupWizardState extends State<SetupWizard> {
     TextField(
       controller: _githubId,
       autocorrect: false,
+      enabled: !flow.busy,
       decoration: setupField('Client ID'),
       onChanged: (v) => flow.githubId = v,
     ),
@@ -328,12 +344,13 @@ class _SetupWizardState extends State<SetupWizard> {
       controller: _githubSecret,
       autocorrect: false,
       obscureText: true,
+      enabled: !flow.busy,
       decoration: setupField('Client secret ("Generate a new client secret")'),
       onChanged: (v) => flow.githubSecret = v,
-      onSubmitted: (_) => flow.submitGithub(),
+      onSubmitted: (_) => unawaited(flow.submitGithub()),
     ),
     const SizedBox(height: 16),
-    _primary('Continue', flow.submitGithub),
+    _primary('Continue', () => unawaited(flow.submitGithub())),
     _back(WizardStep.project),
   ];
 
@@ -349,7 +366,7 @@ class _SetupWizardState extends State<SetupWizard> {
       ..._header(
         '4. AI for quick questions (optional)',
         'Ask answers short questions using an AI service you choose; you pay it directly, usually '
-            'cents a month. Skip this and add one later if you like.',
+            'cents a month. Skip this and connect one later in Settings → AI.',
       ),
       Wrap(
         spacing: 6,
@@ -405,8 +422,8 @@ class _SetupWizardState extends State<SetupWizard> {
   }
 
   List<Widget> _setupStep() {
-    final failed = flow.error != null && !flow.busy;
-    final finished = flow.backend != null && !flow.busy && flow.error == null;
+    final finished = flow.ready;
+    final failed = !finished && flow.error != null && !flow.busy;
     return [
       ..._header(
         finished ? 'Your server is ready' : '5. Setting up your server',
@@ -416,7 +433,7 @@ class _SetupWizardState extends State<SetupWizard> {
             : 'This takes about a minute.',
       ),
       for (final s in ProvisionStep.values)
-        if (s != ProvisionStep.ai || flow.aiKey.trim().isNotEmpty || flow.done.contains(s))
+        if (s != ProvisionStep.ai || flow.usesAi || flow.done.contains(s))
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 5),
             child: Row(
@@ -438,11 +455,9 @@ class _SetupWizardState extends State<SetupWizard> {
             ),
           ),
       const SizedBox(height: 18),
-      if (finished) ...[_primary('Connect and sign in', () => unawaited(widget.onConnect()))],
-      if (failed) ...[
-        _primary('Retry', () => unawaited(flow.setUp(withAi: flow.aiKey.trim().isNotEmpty))),
-        _back(WizardStep.ai),
-      ],
+      // A failed connect shows its error below, and the button tries again.
+      if (finished) ...[_primary('Connect and sign in', () => unawaited(flow.connect(widget.onConnect)))],
+      if (failed) ...[_primary('Retry', () => unawaited(flow.setUp())), _back(WizardStep.ai)],
     ];
   }
 

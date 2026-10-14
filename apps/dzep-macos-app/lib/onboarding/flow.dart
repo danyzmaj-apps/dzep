@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:dzep_core/backend.dart';
 import 'package:dzep_macos/onboarding/provision.dart';
 import 'package:dzep_macos/onboarding/supabase_admin.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 enum WizardStep { welcome, token, project, github, ai, setup }
 
@@ -58,15 +60,66 @@ String guessRegion(Duration utcOffset) {
   return 'ap-southeast-2';
 }
 
+/// Asks GitHub to trade a made-up code with these OAuth app credentials:
+/// GitHub names a wrong client id, secret or callback URL before it gets to
+/// the code. Null when they look right, or when GitHub can't be asked (the
+/// setup goes on; the sign-in itself would tell).
+Future<String?> checkGithubApp(
+  http.Client client, {
+  required String clientId,
+  required String secret,
+  required String callback,
+}) async {
+  try {
+    final res = await client
+        .post(
+          Uri.https('github.com', '/login/oauth/access_token'),
+          headers: {'accept': 'application/json'},
+          body: {'client_id': clientId, 'client_secret': secret, 'code': 'dzep-setup-check', 'redirect_uri': callback},
+        )
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode == 404) return "GitHub doesn't know that Client ID. Copy it again from the OAuth app's page.";
+    final json = jsonDecode(res.body);
+    return switch (json is Map ? json['error'] : null) {
+      'incorrect_client_credentials' =>
+        "GitHub didn't accept that client secret. Generate a new one on the OAuth app's page and paste it.",
+      'redirect_uri_mismatch' => "The OAuth app's Authorization callback URL must be $callback. Fix it on GitHub.",
+      _ => null,
+    };
+  } on Object {
+    return null;
+  }
+}
+
 /// The setup wizard: Supabase access → a project → GitHub sign-in → AI →
 /// [Provisioner] does the rest. The access token and the secrets only live
 /// in this object; nothing here is saved.
 class SetupFlow extends ChangeNotifier {
-  SetupFlow({SupabaseAdmin Function(String token)? admin, this.source = const AssetBackendSource()})
-    : _newAdmin = admin ?? SupabaseAdmin.new;
+  SetupFlow({
+    SupabaseAdmin Function(String token)? admin,
+    this.source = const AssetBackendSource(),
+    http.Client? web,
+    Future<String?> Function(Backend backend)? check,
+    this.startTimeout = const Duration(minutes: 6),
+    this.checkPause = const Duration(seconds: 3),
+  }) : _newAdmin = admin ?? SupabaseAdmin.new,
+       _web = web ?? http.Client(),
+       _check = check ?? ((b) => b.check());
 
   final SupabaseAdmin Function(String token) _newAdmin;
   final BackendSource source;
+
+  /// GitHub, for [checkGithubApp].
+  final http.Client _web;
+  final Future<String?> Function(Backend backend) _check;
+
+  /// How long the wizard waits for a new project before it stops (Continue
+  /// waits again).
+  final Duration startTimeout;
+
+  /// Between checks of the finished server: its auth service takes a few
+  /// seconds to pick up new settings.
+  final Duration checkPause;
 
   WizardStep step = WizardStep.welcome;
   bool busy = false;
@@ -77,8 +130,11 @@ class SetupFlow extends ChangeNotifier {
   List<Org> orgs = const [];
   List<Project> projects = const [];
 
-  /// Projects that can hold a Džep server (running ones).
-  List<Project> get usableProjects => projects.where((p) => p.status == 'ACTIVE_HEALTHY').toList();
+  static const _usable = {'ACTIVE_HEALTHY', 'COMING_UP'};
+
+  /// Projects that can hold a Džep server: running ones, and ones still
+  /// starting (the wizard waits for them).
+  List<Project> get usableProjects => projects.where((p) => _usable.contains(p.status)).toList();
 
   // ---- project choice
   bool createNew = true;
@@ -88,8 +144,17 @@ class SetupFlow extends ChangeNotifier {
   String? existingRef;
   String? ref;
 
+  /// Projects this wizard created: fresh, nothing to look at first.
+  final Set<String> _made = {};
+
   /// While a new project starts.
   String? waiting;
+  Completer<void>? _stopWaiting;
+
+  /// What Džep would replace on the chosen existing project; the next
+  /// Continue takes it anyway.
+  String? get caution => !createNew && _caution?.ref == existingRef ? _caution?.text : null;
+  ({String ref, String text})? _caution;
 
   // ---- GitHub
   String githubId = '';
@@ -101,14 +166,29 @@ class SetupFlow extends ChangeNotifier {
   String aiModel = aiPresets.first.model;
   String aiKey = '';
 
+  /// False after "Skip AI for now", for Retry too.
+  bool withAi = true;
+  bool get usesAi => withAi && aiKey.trim().isNotEmpty;
+
   // ---- setup
   final Set<ProvisionStep> done = {};
+
+  /// What each step in [done] was done with: a step whose inputs changed
+  /// since (Back and an edit, another project) runs again.
+  final Map<ProvisionStep, Object?> _doneWith = {};
   ProvisionStep? current;
   Backend? backend;
 
+  /// Set up and checked: what is left is connecting.
+  bool ready = false;
+
   String get githubCallback => 'https://$ref.supabase.co/auth/v1/callback';
 
+  /// Leaving the project step stops waiting for a new project; it stays
+  /// picked, so coming back waits for the same one.
   void go(WizardStep s) {
+    _stopWaiting?.complete();
+    _stopWaiting = null;
     step = s;
     error = null;
     notifyListeners();
@@ -149,44 +229,74 @@ class SetupFlow extends ChangeNotifier {
     _admin = admin;
     orgs = o;
     projects = p;
-    org ??= o.first.slug;
+    if (!o.any((x) => x.slug == org)) org = o.first.slug;
+    if (!usableProjects.any((x) => x.ref == existingRef)) existingRef = null;
     // An existing project called dzep is most likely a previous attempt.
     final named = usableProjects.where((x) => x.name == 'dzep').firstOrNull;
-    if (named != null) {
-      createNew = false;
-      existingRef = named.ref;
-    }
+    if (existingRef == null && named != null) existingRef = named.ref;
+    if (existingRef != null) createNew = false;
     step = WizardStep.project;
   });
 
-  /// Creates the project (and waits for it) or takes the chosen one.
+  /// Creates the project (once: a retry, or coming back, waits for the same
+  /// one) or takes the chosen one, after it's up and checked.
   Future<void> submitProject() => _busy(() async {
     final admin = _admin!;
     if (createNew) {
       final name = newName.trim().isEmpty ? 'dzep' : newName.trim();
       final p = await admin.createProject(org: org!, name: name, region: region, dbPassword: _password());
-      ref = p.ref;
+      _made.add(p.ref);
+      projects = [
+        ...projects,
+        (ref: p.ref, name: p.name.isEmpty ? name : p.name, status: 'COMING_UP', region: p.region, org: p.org),
+      ];
+      createNew = false;
+      existingRef = p.ref;
+    }
+    final r = existingRef;
+    if (r == null) throw const AdminException('Pick a project.');
+    if (projects.where((x) => x.ref == r).firstOrNull?.status != 'ACTIVE_HEALTHY') {
+      final stop = _stopWaiting = Completer<void>();
       waiting = 'Starting your project. This takes a minute or two…';
       notifyListeners();
-      await admin.waitUntilReady(p.ref);
-      waiting = null;
-    } else {
-      final r = existingRef;
-      if (r == null) throw const AdminException('Pick a project.');
-      ref = r;
+      try {
+        final up = await admin.waitUntilReady(r, timeout: startTimeout, stop: stop.future);
+        if (!up || stop.isCompleted) return;
+      } finally {
+        if (_stopWaiting == stop) _stopWaiting = null;
+        waiting = null;
+      }
+      projects = [
+        for (final x in projects)
+          if (x.ref == r) (ref: x.ref, name: x.name, status: 'ACTIVE_HEALTHY', region: x.region, org: x.org) else x,
+      ];
     }
+    if (!_made.contains(r) && _caution?.ref != r) {
+      final found = await Provisioner(admin: admin, ref: r, source: source).inspect();
+      if (found.stop case final stop?) throw AdminException(stop);
+      if (found.replaces case final text?) {
+        _caution = (ref: r, text: text);
+        return;
+      }
+    }
+    ref = r;
     step = WizardStep.github;
-  }).whenComplete(() => waiting = null);
+  });
 
-  void submitGithub() {
+  /// Moves on once GitHub takes the credentials.
+  Future<void> submitGithub() => _busy(() async {
     if (githubId.trim().isEmpty || githubSecret.trim().isEmpty) {
-      error = 'Paste both the Client ID and the client secret.';
-    } else {
-      step = WizardStep.ai;
-      error = null;
+      throw const AdminException('Paste both the Client ID and the client secret.');
     }
-    notifyListeners();
-  }
+    final problem = await checkGithubApp(
+      _web,
+      clientId: githubId.trim(),
+      secret: githubSecret.trim(),
+      callback: githubCallback,
+    );
+    if (problem != null) throw AdminException(problem);
+    step = WizardStep.ai;
+  });
 
   void pickAi(AiPreset? preset) => update(() {
     aiPreset = preset;
@@ -196,29 +306,73 @@ class SetupFlow extends ChangeNotifier {
     }
   });
 
-  /// Runs the setup; a retry continues after the last finished step.
-  Future<void> setUp({required bool withAi}) async {
+  Object? _inputs(ProvisionStep s) => switch (s) {
+    ProvisionStep.signIn => (ref, githubId.trim(), githubSecret.trim()),
+    ProvisionStep.ai => (ref, aiBaseUrl.trim(), aiModel.trim(), aiKey.trim()),
+    _ => ref,
+  };
+
+  /// Runs the setup ([withAi] as last chosen when left out, like Retry); a
+  /// retry continues after the last finished step, and redoes the ones
+  /// whose values changed.
+  Future<void> setUp({bool? withAi}) async {
+    if (withAi != null) this.withAi = withAi;
     step = WizardStep.setup;
-    final ai = withAi && aiKey.trim().isNotEmpty ? (baseUrl: aiBaseUrl, model: aiModel, key: aiKey) : null;
+    ready = false;
+    current = null;
+    done.removeWhere((s) => _doneWith[s] != _inputs(s));
+    final ai = usesAi ? (baseUrl: aiBaseUrl, model: aiModel, key: aiKey) : null;
+    final inputs = {for (final s in ProvisionStep.values) s: _inputs(s)};
+    void finish() {
+      if (current case final s?) {
+        done.add(s);
+        _doneWith[s] = inputs[s];
+      }
+    }
+
     await _busy(() async {
       final p = Provisioner(admin: _admin!, ref: ref!, source: source);
-      backend = await p.run(
+      final b = backend = await p.run(
         githubClientId: githubId,
         githubSecret: githubSecret,
         ai: ai,
         done: done,
         onStep: (s) {
-          if (current != null) done.add(current!);
+          finish();
           current = s;
           notifyListeners();
         },
       );
-      if (current != null) done.add(current!);
+      finish();
       current = null;
-      final problem = await backend!.check();
-      if (problem != null) throw AdminException(problem);
+      final problem = await _verify(b);
+      if (problem != null) {
+        // Most likely sign-in didn't take: Retry sets it again.
+        done.remove(ProvisionStep.signIn);
+        current = ProvisionStep.signIn;
+        throw AdminException(problem);
+      }
+      ready = true;
     });
   }
+
+  Future<String?> _verify(Backend b) async {
+    for (var i = 1; ; i++) {
+      final problem = await _check(b);
+      if (problem == null || i == 10) return problem;
+      await Future<void>.delayed(checkPause);
+    }
+  }
+
+  /// Connects the app to the finished server ([open] is the session's
+  /// connect); a failure shows here and Connect tries again.
+  Future<void> connect(Future<void> Function(Backend backend) open) => _busy(() async {
+    try {
+      await open(backend!);
+    } on Object catch (e) {
+      throw AdminException("Couldn't connect: $e");
+    }
+  });
 
   static String _password() {
     const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -226,9 +380,21 @@ class SetupFlow extends ChangeNotifier {
     return List.generate(28, (_) => chars[r.nextInt(chars.length)]).join();
   }
 
+  bool _disposed = false;
+
+  /// Work still running when the wizard goes away (it does once connected)
+  /// finishes quietly.
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
   @override
   void dispose() {
+    _disposed = true;
+    _stopWaiting?.complete();
     _admin?.close();
+    _web.close();
     super.dispose();
   }
 }

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:dzep_core/chat.dart';
+import 'package:dzep_core/chat_view.dart';
 import 'package:dzep_macos/popup.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -93,6 +95,27 @@ void main() {
 
     expect(find.text('Ask a quick question…'), findsOneWidget);
     expect(field(tester).controller.text, 'hi');
+    expect(field(tester).focusNode.hasFocus, isTrue);
+  }, variant: mac);
+
+  testWidgets('with no AI connected, Ask has no field; ↵ opens the app on the connect sheet', (tester) async {
+    final app = await pumpPopup(tester, mode: 'ask');
+    app.fakeChats.ai = const AiStatus(connected: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(EditableText), findsNothing);
+    expect(find.byType(NoAiNotice), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect((app.popupOpen, app.mainOpen, app.pendingConnectAi), (false, true, true));
+
+    // Connected: the field is back, focused, without what was typed meanwhile.
+    app.fakeChats.ai = const AiStatus(connected: true);
+    await app.openPopup();
+    await tester.pumpAndSettle();
+    expect(find.byType(NoAiNotice), findsNothing);
+    expect(field(tester).controller.text, isEmpty);
     expect(field(tester).focusNode.hasFocus, isTrue);
   }, variant: mac);
 

@@ -1,23 +1,27 @@
 import 'dart:convert';
 import 'dart:math';
 
-// Terminal from the iPhone, version 2. Two kinds of things travel:
+import 'package:dzep_core/agent.dart';
+
+// Terminal from the phone, version 2. Two kinds of things travel:
 //
-// - omp sessions, live and structured. omp's extension
-//   (integrations/omp/live.ts) reports each session to the Mac app over a
-//   WebSocket on its local API (lib/local_api.dart → lib/live_hub.dart), as
-//   transcript items. The iPhone lays them out itself, so the Mac window's
-//   width doesn't matter.
+// - Coding sessions (omp, Claude Code: lib/agent.dart), live and structured.
+//   Each agent's extension (apps/dzep-macos-app/integrations/omp/live.ts, the
+//   Claude Code plugin in apps/dzep-macos-app/integrations/claude/) reports its session to the Mac app's local API
+//   (apps/dzep-macos-app/lib/local_api.dart → apps/dzep-macos-app/lib/live_hub.dart)
+//   as transcript items. The phone
+//   lays them out itself, so the Mac window's width doesn't matter.
 // - kitty windows, as screens (lib/kitty.dart): shells and anything else,
-//   and omp's own menus when the phone needs them.
+//   and the agents' own menus when the phone needs them.
 //
-// Mac ↔ iPhone: the private Realtime broadcast topic `terminal:<user id>`
+// Mac ↔ phone: the private Realtime broadcast topic `terminal:<user id>`
 // (RLS: the user's own topic only). Nothing is stored on the server.
 //
 //   iPhone → Mac  hello  {from, session?, window?}   every 4 s while the app is in front;
 //                        session: the live session it shows, window: the screen it shows
-//   Mac → iPhone  state  {windows, sessions, projects, home, error?}   on every hello and on changes;
-//                        sessions: LiveSummary.toJson, its slash commands as `cmds` [[name, description?]]
+//   Mac → iPhone  state  {windows, sessions, projects, home, agent, error?}   on every hello and on changes;
+//                        sessions: LiveSummary.toJson, its slash commands as `cmds` [[name, description?]];
+//                        agent: what a new session starts (Agent.name, the Mac's setting)
 //   iPhone → Mac  sync   {from, session, epoch?, since}   catch up after a gap or on opening
 //   Mac → iPhone  items  {to, session, epoch, seq, reset, items, last}   answer to sync, in chunks
 //   Mac → iPhone  live   {session, epoch, ops}   changes to watched sessions, batched
@@ -26,28 +30,36 @@ import 'dart:math';
 //   iPhone → Mac  run    {id, op, …}   see TerminalBridge._onRun
 //   Mac → iPhone  ran    {id, error?, window?}
 //
-// Extension ↔ Mac (JSON text frames on ws://127.0.0.1:<port>/v1/live, the
-// local API's bearer token):
+// Extension ↔ Mac, as JSON frames with the local API's bearer token, over
+// either transport (one connection per session, frames in order):
 //
-//   ext → Mac  hello  {v, session: {id, title, cwd, model}, window?, pid, busy, ctx?, items, older, commands}
-//                     the session's newest items, oldest first; again after /new, /resume, /tree.
-//                     commands: [{name, description?}] omp's builtin slash commands, then the session's own
+// - a WebSocket on ws://127.0.0.1:<port>/v1/live (omp), text frames;
+// - HTTP long polls on POST /v1/live/http (Claude Code mods have no
+//   WebSocket): {conn?, frames, wait?} → {conn, frames}. A request without
+//   conn opens a connection (its frames start with hello); its frames go in
+//   in order, the answer carries the Mac's frames, waiting up to 25 s for
+//   some when `wait`. An unknown conn answers 404: the extension says hello
+//   again. A connection nobody asks on for 60 s is gone.
+//
+//   ext → Mac  hello  {v, agent?, session: {id, title, cwd, model}, window?, pid, busy, ctx?, items, older,
+//                     commands}   agent: Agent.name (omp when left out); the session's newest items, oldest
+//                     first; again after /new, /resume, /clear.
+//                     commands: [{name, description?}] the agent's own slash commands, then the session's
 //   ext → Mac  meta   {title?, model?, ctx?, commands?}
 //   ext → Mac  item   {item}   a new or changed item (whole)
 //   ext → Mac  append {id, text}   streamed text added to an assistant item
 //   ext → Mac  busy   {busy, summary?}   summary: the last answer, when a run has really ended
-//   ext → Mac  ask    {ask?}   omp waits for an answer (null: not anymore): LiveAsk.toJson; a plan
-//                     review comes without options, which the Mac reads off omp's screen
+//   ext → Mac  ask    {ask?}   the agent waits for an answer (null: not anymore): LiveAsk.toJson; a plan
+//                     review comes without options, which the Mac reads off the agent's screen
 //   ext → Mac  reply  {req, error?, items?, older?}
-//   Mac → ext  prompt {req, text, images: [{data, mimeType}], deliver?: steer | followUp}
+//   Mac → ext  prompt {req, text, images: [{data, mimeType}], files?: [path], deliver?: steer | followUp}
+//                     files: the images saved on this Mac instead, for an agent that reads them from disk
+//                     (Claude Code); an agent that can't steer queues every prompt for the run's end
 //   Mac → ext  abort  {req}
 //   Mac → ext  older  {req, limit}   items before the oldest one sent
 
 /// The private Storage bucket images from the phone pass through.
 const imageBucket = 'terminal';
-
-/// The extension protocol's version (its hello's `v`).
-const liveVersion = 1;
 
 enum ItemKind { user, assistant, tool, notice }
 
@@ -328,7 +340,8 @@ class LiveView {
   }
 }
 
-/// One question of omp's `ask` tool.
+/// One question the agent asks (omp's `ask` tool, Claude Code's
+/// AskUserQuestion).
 class LiveQuestion {
   const LiveQuestion({
     required this.id,
@@ -367,16 +380,16 @@ class LiveQuestion {
 
 enum AskKind { questions, approval, plan, menu }
 
-/// One row of an omp picker: its `label`, and what it shows under or beside
-/// it (`detail`).
+/// One row of an agent's picker: its `label`, and what it shows under or
+/// beside it (`detail`).
 typedef MenuItem = ({String label, String detail});
 
-/// omp is waiting on the person: the `ask` tool's [questions], approval of
-/// [tool] ([summary]: what it would do), its plan review (plan mode's last
-/// step) of the plan [title], or a picker a slash command opened (/resume,
-/// /model …) titled [title]. A plan's [options], a picker's [items] and the
-/// [selected] row of either are read off omp's screen by the Mac (none when
-/// it couldn't read them); a picker with [filter] narrows as you type.
+/// The agent is waiting on the person: its questions, approval of [tool]
+/// ([summary]: what it would do), its plan review (plan mode's last step) of
+/// the plan [title], or a picker a slash command opened (/resume, /model …)
+/// titled [title]. A plan's [options], a picker's [items] and the [selected]
+/// row of either are read off the agent's screen by the Mac (none when it
+/// couldn't read them); a picker with [filter] narrows as you type.
 class LiveAsk {
   const LiveAsk.questions(this.id, List<LiveQuestion> this.questions)
     : kind = AskKind.questions,
@@ -501,7 +514,7 @@ class LiveAnswer {
   Map<String, dynamic> toJson() => {'picks': picks, 'custom': ?custom};
 }
 
-/// One step of answering omp's dialog with the keyboard: keys (kitty's
+/// One step of answering an agent's dialog with the keyboard: keys (kitty's
 /// names) pressed, or text typed.
 sealed class KeyStep {
   const KeyStep();
@@ -517,33 +530,51 @@ class Typed extends KeyStep {
   final String text;
 }
 
-/// Wait for omp to redraw before the next keys: closing the typed-answer
-/// editor and moving to the Submit tab take a moment, and keys sent before
-/// that are dropped.
+/// Wait for the agent to redraw before the next keys: opening or closing a
+/// typed answer and moving to the Submit tab take a moment, and keys sent
+/// before that are dropped.
 class Settle extends KeyStep {
   const Settle();
 }
 
-/// The keystrokes that answer [ask] in omp's terminal UI. The ask dialog
-/// lists each question's options and then "Other"; its cursor stops at the
-/// ends, so going up past the top and then down picks a row wherever the
-/// cursor started. Enter on a single-choice row answers and moves on, Space
-/// toggles a multiple-choice row and Enter moves on; after several questions
-/// a Submit tab takes a last Enter. A typed answer goes through an editor;
-/// its Enter closes it, and the next keys wait for that ([Settle]). An
-/// approval is omp's Approve/Deny menu,
-/// which opens on Approve. A plan review or a picker is answered from where
-/// its cursor is now, with [menuKeys].
-List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool approve = false}) {
+/// The keystrokes that answer [ask] in [agent]'s terminal UI (a question or
+/// an approval). A plan review or a picker is answered from where its cursor
+/// is now: [menuKeys], or [claudeRowKey] for Claude Code's plan review.
+List<KeyStep> answerKeys(
+  LiveAsk ask, {
+  List<LiveAnswer> answers = const [],
+  bool approve = false,
+  Agent agent = Agent.omp,
+}) {
   if (ask.isPlan || ask.isMenu) throw ArgumentError('A plan review or a picker is answered with menuKeys.');
-  if (ask.isApproval) {
-    return [
-      Keys(approve ? const ['enter'] : const ['down', 'enter']),
-    ];
+  final questions = ask.questions;
+  if (questions != null) {
+    if (answers.length != questions.length) throw ArgumentError('One answer per question.');
+    for (final (i, q) in questions.indexed) {
+      final a = answers[i];
+      for (final p in a.picks) {
+        if (p < 0 || p >= q.options.length) throw ArgumentError('No option $p in "${q.question}".');
+      }
+      if (!q.multi && (a.picks.length + (_custom(a) == null ? 0 : 1)) != 1) {
+        throw ArgumentError('Pick one answer for "${q.question}".');
+      }
+    }
   }
-  final questions = ask.questions!;
-  if (answers.length != questions.length) throw ArgumentError('One answer per question.');
+  return switch (agent) {
+    Agent.omp => _ompKeys(ask, answers, approve: approve),
+    Agent.claude => _claudeKeys(ask, answers, approve: approve),
+  };
+}
+
+String? _custom(LiveAnswer a) {
+  final custom = a.custom?.trim();
+  return custom == null || custom.isEmpty ? null : custom;
+}
+
+/// Steps that run consecutive key presses together, as one kitty command.
+class _Steps {
   final steps = <KeyStep>[];
+
   void press(List<String> keys) {
     if (steps.lastOrNull case Keys(keys: final last)) {
       last.addAll(keys);
@@ -552,57 +583,172 @@ List<KeyStep> answerKeys(LiveAsk ask, {List<LiveAnswer> answers = const [], bool
     }
   }
 
+  void add(KeyStep step) => steps.add(step);
+
+  void settle() {
+    if (steps.lastOrNull is! Settle) steps.add(const Settle());
+  }
+}
+
+/// omp: the ask dialog lists each question's options and then "Other"; its
+/// cursor stops at the ends, so going up past the top and then down picks a
+/// row wherever the cursor started. Enter on a single-choice row answers and
+/// moves on, Space toggles a multiple-choice row and Enter moves on; after
+/// several questions a Submit tab takes a last Enter. A typed answer goes
+/// through an editor; its Enter closes it, and the next keys wait for that
+/// ([Settle]). An approval is omp's Approve/Deny menu, which opens on Approve.
+List<KeyStep> _ompKeys(LiveAsk ask, List<LiveAnswer> answers, {required bool approve}) {
+  if (ask.isApproval) {
+    return [
+      Keys(approve ? const ['enter'] : const ['down', 'enter']),
+    ];
+  }
+  final questions = ask.questions!;
+  final s = _Steps();
   var onSubmitTab = false;
   for (final (i, q) in questions.indexed) {
     final a = answers[i];
     final rows = q.options.length + 1;
     List<String> rowKeys(int row) => [for (var k = 0; k < rows; k++) 'up', for (var k = 0; k < row; k++) 'down'];
-    for (final p in a.picks) {
-      if (p < 0 || p >= q.options.length) throw ArgumentError('No option $p in "${q.question}".');
-    }
-    final custom = a.custom?.trim();
-    final hasCustom = custom != null && custom.isNotEmpty;
-    if (!q.multi && (a.picks.length + (hasCustom ? 1 : 0)) != 1) {
-      throw ArgumentError('Pick one answer for "${q.question}".');
-    }
+    final custom = _custom(a);
     if (q.multi) {
       for (final p in a.picks) {
-        press([...rowKeys(p), 'space']);
+        s.press([...rowKeys(p), 'space']);
       }
     }
-    if (hasCustom) {
-      press([...rowKeys(q.options.length), 'enter']);
-      steps
+    if (custom != null) {
+      s
+        ..press([...rowKeys(q.options.length), 'enter'])
         ..add(const Settle())
-        ..add(Typed(custom));
-      press(['enter']);
-      steps.add(const Settle());
+        ..add(Typed(custom))
+        ..press(['enter'])
+        ..add(const Settle());
       // A lone multiple-choice question goes to its Submit tab after a typed answer.
       if (q.multi && questions.length == 1) onSubmitTab = true;
     } else if (q.multi) {
-      press(['enter']);
+      s.press(['enter']);
     } else {
-      press([...rowKeys(a.picks.single), 'enter']);
+      s.press([...rowKeys(a.picks.single), 'enter']);
     }
   }
   if (questions.length > 1 || onSubmitTab) {
-    if (steps.lastOrNull is! Settle) steps.add(const Settle());
-    press(['enter']);
+    s
+      ..settle()
+      ..press(['enter']);
   }
-  return steps;
+  return s.steps;
 }
 
-/// How to tell [ask] is the dialog on the screen: some of its words in the
-/// screen's text, compared without spacing or Markdown marks (the terminal
-/// wraps and styles them).
-bool askOnScreen(LiveAsk ask, String screen) {
+/// Claude Code numbers the rows of its dialogs from 1: a row's digit picks
+/// it (or toggles it, in a multiple-choice question) wherever the cursor is.
+String claudeRowKey(int row) => '${row + 1}';
+
+/// Claude Code: a question lists its options, then "Type something", then
+/// (multiple choice) a Submit row. A single-choice row's digit answers and
+/// moves on; the typed row's digit opens it for typing, and Enter answers.
+/// Multiple choice: digits toggle rows without moving the cursor from the
+/// first, ↓ takes it to the typed row (whose text ticks it) and on to
+/// Submit, where Enter moves on. Several questions, or a multiple-choice
+/// one, end on a review tab whose first row submits. An approval opens on
+/// Yes; Esc refuses.
+List<KeyStep> _claudeKeys(LiveAsk ask, List<LiveAnswer> answers, {required bool approve}) {
+  if (ask.isApproval) {
+    return [
+      Keys([if (approve) claudeRowKey(0) else 'esc']),
+    ];
+  }
+  final questions = ask.questions!;
+  final s = _Steps();
+  for (final (i, q) in questions.indexed) {
+    final a = answers[i];
+    final n = q.options.length;
+    final custom = _custom(a);
+    if (i > 0) s.settle();
+    if (!q.multi) {
+      if (custom == null) {
+        s.press([claudeRowKey(a.picks.single)]);
+        continue;
+      }
+      s
+        ..press([claudeRowKey(n)])
+        ..add(const Settle())
+        ..add(Typed(custom))
+        ..add(const Settle())
+        ..press(['enter']);
+      continue;
+    }
+    for (final p in a.picks) {
+      s.press([claudeRowKey(p)]);
+    }
+    if (custom == null) {
+      s.press([for (var k = 0; k <= n; k++) 'down', 'enter']);
+      continue;
+    }
+    s
+      ..press([claudeRowKey(n), for (var k = 0; k < n; k++) 'down'])
+      ..add(const Settle())
+      ..add(Typed(custom))
+      ..add(const Settle())
+      ..press(['down', 'enter']);
+  }
+  if (questions.length > 1 || questions.single.multi) {
+    s
+      ..settle()
+      ..press([claudeRowKey(0)]);
+  }
+  return s.steps;
+}
+
+/// How to tell [ask] is [agent]'s dialog on the screen: some of its words in
+/// the screen's text, compared without spacing or Markdown marks (the
+/// terminal wraps and styles them).
+bool askOnScreen(LiveAsk ask, String screen, {Agent agent = Agent.omp}) {
   String flat(String s) => s.replaceAll(RegExp(r'[\s*_`#>]+'), '').toLowerCase();
   final text = flat(screen);
-  if (ask.isPlan) return text.contains('planmode-nextstep') || parsePlanReview(screen) != null;
+  if (ask.isPlan) {
+    return (agent == Agent.omp && text.contains('planmode-nextstep')) || parsePlanReview(screen, agent: agent) != null;
+  }
   if (ask.isMenu) return parseMenu(screen)?.title == ask.title;
-  if (ask.isApproval) return text.contains('approve') && text.contains('deny');
+  if (ask.isApproval) {
+    return switch (agent) {
+      Agent.omp => text.contains('approve') && text.contains('deny'),
+      // "Do you want to proceed?" (or "… to create notes.txt?") over "❯ 1. Yes".
+      Agent.claude => text.contains('doyouwant') && text.contains('❯1.yes'),
+    };
+  }
   final q = flat(ask.questions!.first.question);
   return text.contains(q.length > 24 ? q.substring(0, 24) : q);
+}
+
+/// [agent]'s plan review (the last step of plan mode), read off the plain
+/// text of its screen: its options and the one its cursor (❯) is on. Null
+/// unless a review is up with its options focused.
+({List<String> options, int current})? parsePlanReview(String screen, {Agent agent = Agent.omp}) => switch (agent) {
+  Agent.omp => _ompPlanReview(screen),
+  Agent.claude => _claudePlanReview(screen),
+};
+
+final _claudePlanHeader = RegExp(r'Would you like to proceed\?|Exit plan mode\?');
+final _claudeRow = RegExp(r'^\s*(❯\s*)?(\d+)\.\s+(\S.*?)\s*$');
+
+/// Claude Code's plan review: the numbered rows under its last "Would you
+/// like to proceed?" ("Exit plan mode?" when no plan was written). Lines
+/// between them (a row's hint) are skipped; a number out of turn ends them.
+({List<String> options, int current})? _claudePlanReview(String screen) {
+  final lines = screen.split('\n');
+  final header = lines.lastIndexWhere(_claudePlanHeader.hasMatch);
+  if (header < 0) return null;
+  final options = <String>[];
+  var current = -1;
+  for (final l in lines.skip(header + 1)) {
+    final m = _claudeRow.firstMatch(l);
+    if (m == null) continue;
+    if (int.parse(m[2]!) != options.length + 1) break;
+    if (m[1] != null) current = options.length;
+    options.add(m[3]!);
+  }
+  if (current < 0) return null;
+  return (options: options, current: current);
 }
 
 final _planHeader = RegExp(r'plan mode\s*[-–—]\s*next step', caseSensitive: false);
@@ -612,14 +758,14 @@ final _rightEdge = RegExp(r'\s*[│┃║|]\s*$');
 final _cursor = RegExp(r'^(\s*)[❯›>]\s+(?=\S)');
 final _rule = RegExp(r'^[─━═┄┈╌\-+├┤┼┬┴╭╮╰╯]+$');
 
-/// omp's plan review (the last step of plan mode), read off the plain text
-/// of its screen: the options listed between its "Plan mode - next step"
-/// header and the help line under them ("↑/↓ select · ⏎ confirm · …"), and
-/// the one its cursor (❯) is on. The model slider above them ("continue
-/// with ◂ smol default slow ▸" and its "↳ model" line) is skipped, and a row
-/// the terminal wrapped is joined again. Null unless a review is up with its
-/// options focused, the only time ↑/↓ move between them.
-({List<String> options, int current})? parsePlanReview(String screen) {
+/// omp's plan review, read off the plain text of its screen: the options
+/// listed between its "Plan mode - next step" header and the help line
+/// under them ("↑/↓ select · ⏎ confirm · …"), and the one its cursor (❯) is
+/// on. The model slider above them ("continue with ◂ smol default slow ▸"
+/// and its "↳ model" line) is skipped, and a row the terminal wrapped is
+/// joined again. Null unless a review is up with its options focused, the
+/// only time ↑/↓ move between them.
+({List<String> options, int current})? _ompPlanReview(String screen) {
   final lines = screen.split('\n');
   final header = lines.lastIndexWhere(_planHeader.hasMatch);
   if (header < 0) return null;
@@ -680,6 +826,10 @@ List<String> menuKeys(int current, int target, {bool enter = true}) {
 }
 
 final _menuCursor = RegExp(r'^\s*❯ ');
+
+/// Claude Code's prompt line: ❯ and a no-break space. It shows only while no
+/// picker is up; the `❯ ` rows above it are prompts in its transcript.
+final _claudePrompt = RegExp('^\\s*❯\u00a0');
 final _menuLeft = RegExp(r'^\s*[│┃║]');
 final _menuRight = RegExp(r'(\s*[│┃║█])+\s*$');
 final _menuChrome = RegExp(r'^[\s─━═╭╮┌┐╔╗├┤╰╯└┘]+|[\s─━═╭╮┌┐╔╗├┤╰╯└┘]+$');
@@ -689,7 +839,11 @@ final _menuStatus = RegExp(
 );
 final _menuGap = RegExp(r'\s{2,}');
 
-/// A picker omp's terminal UI shows (/resume, /model, /tree, a hook's
+/// A numbered row's number (Claude Code's pickers: `1.  Default`), whose gap
+/// is part of the label, not the one before its detail.
+final _menuNumber = RegExp(r'^(\d+\.)\s+');
+
+/// A picker the agent's terminal UI shows (/resume, /model, /tree, a hook's
 /// selector …), read off the plain text of its screen: the rows around the
 /// last cursor (❯) at the cursor's label column, a `title` above them (its
 /// box's top border, or a line of its own) and whether typing filters them
@@ -698,12 +852,13 @@ final _menuGap = RegExp(r'\s{2,}');
 /// detail); otherwise every line is one, with what's indented deeper or
 /// set apart by a wide gap as its detail. Box edges, scrollbars, padding
 /// and lone "…" lines are left out; a footer of keys ends the rows. Null
-/// for anything else, the plan review included.
+/// for anything else: the plan review, or Claude Code's prompt under a
+/// transcript whose prompts read `❯ …` too.
 ({String title, List<MenuItem> items, int current, bool filter})? parseMenu(String screen) {
   if (_planHeader.hasMatch(screen)) return null;
   final lines = [for (final l in screen.split('\n')) l.replaceFirst(_menuLeft, '').replaceFirst(_menuRight, '')];
   final at = lines.lastIndexWhere(_menuCursor.hasMatch);
-  if (at < 0) return null;
+  if (at < 0 || lines.skip(at + 1).any(_claudePrompt.hasMatch)) return null;
   final column = _menuCursor.firstMatch(lines[at])!.end;
   int indent(String s) => s.length - s.trimLeft().length;
   var filter = false;
@@ -744,7 +899,7 @@ final _menuGap = RegExp(r'\s{2,}');
       continue;
     }
     if (isItem(r) && (!blocks || gap || items.isEmpty)) {
-      final row = r.text.substring(column).trim();
+      final row = r.text.substring(column).trim().replaceFirstMapped(_menuNumber, (m) => '${m[1]} ');
       final split = _menuGap.firstMatch(row);
       items.add(split == null ? [row] : [row.substring(0, split.start), row.substring(split.end)]);
     } else if (items.isNotEmpty) {
@@ -819,6 +974,7 @@ class LiveSummary {
     required this.cwd,
     required this.epoch,
     required this.seq,
+    this.agent = Agent.omp,
     this.window,
     this.model = '',
     this.busy = false,
@@ -833,6 +989,7 @@ class LiveSummary {
   factory LiveSummary.fromJson(Map<String, dynamic> j) => LiveSummary(
     key: j['key'] as String,
     id: j['id'] as String? ?? '',
+    agent: Agent.parse(j['agent']),
     window: j['window'] as String?,
     title: j['title'] as String? ?? '',
     cwd: j['cwd'] as String? ?? '',
@@ -852,12 +1009,15 @@ class LiveSummary {
     ],
   );
 
-  /// Stable for the omp process: its kitty window's key, or `pid:<pid>`
+  /// Stable for the agent's process: its kitty window's key, or `pid:<pid>`
   /// outside kitty. What the phone opens and notifications point at.
   final String key;
 
-  /// omp's session id (changes on /new, /resume).
+  /// The agent's session id (changes on /new, /resume, /clear).
   final String id;
+
+  /// Which coding agent this is.
+  final Agent agent;
   final String? window;
   final String title;
   final String cwd;
@@ -877,12 +1037,13 @@ class LiveSummary {
   final int seq;
   final bool older;
 
-  /// omp's slash commands, for the composer.
+  /// The agent's slash commands, for the composer.
   final List<LiveCommand> commands;
 
   Map<String, dynamic> toJson() => {
     'key': key,
     'id': id,
+    'agent': agent.name,
     'window': ?window,
     'title': title,
     'cwd': cwd,

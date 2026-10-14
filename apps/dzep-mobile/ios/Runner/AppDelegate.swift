@@ -41,7 +41,7 @@ import WidgetKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    // The iPhone half of lib/native.dart: device name, the App Group the Siri
+    // The iPhone half of packages/dzep_core/lib/native.dart: device name, the App Group the Siri
     // intents and the widget read (ios/Shared/DzepShared.swift), reminders.
     let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "DzepNative")!
     let channel = FlutterMethodChannel(name: "dzep/native", binaryMessenger: registrar.messenger())
@@ -123,7 +123,7 @@ import WidgetKit
 
 /// omp sessions on the Lock Screen and in the Dynamic Island
 /// (ios/Shared/OmpActivity.swift, drawn by the widget extension). Dart
-/// starts, updates and ends them while the app runs (lib/live_activity.dart);
+/// starts, updates and ends them while the app runs (packages/dzep_core/lib/live_activity.dart);
 /// otherwise the server updates them by push, at each one's push token,
 /// which goes to Dart as `activityToken {key, token}`. One per session key.
 final class OmpActivities {
@@ -179,7 +179,7 @@ final class OmpActivities {
     if !active(key).isEmpty { return update(args, result: result) }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return result(false) }
     let attributes = OmpActivity(
-      key: key, title: args["title"] as? String ?? "omp", project: args["project"] as? String ?? "")
+      key: key, title: args["title"] as? String ?? "Session", project: args["project"] as? String ?? "")
     do {
       watch(try Activity.request(attributes: attributes, content: content, pushType: .token))
       result(true)
@@ -239,7 +239,7 @@ final class OmpActivities {
   }
 }
 
-/// Todo reminders as local notifications. Dart picks them (lib/remind.dart)
+/// Todo reminders as local notifications. Dart picks them (packages/dzep_core/lib/remind.dart)
 /// and hands over the whole set on every change. A tap opens the app on that
 /// todo; Done ticks it off the way the Todos widget does, so it works with
 /// the app closed (and the app replays it if the server can't be reached).
@@ -251,7 +251,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
   /// launched the app arrives before Dart listens.
   private var tapped: String?
 
-  /// The same for a terminal push: the omp session it is about.
+  /// The same for a terminal push: the coding session it is about.
   private var tappedSession: String?
 
   func install() {

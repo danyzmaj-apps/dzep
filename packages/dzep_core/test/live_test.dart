@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/live.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -444,6 +445,35 @@ void main() {
       expect(parseMenu(_planScreen()), isNull);
     });
 
+    test("Claude Code's transcript prompts are not pickers; its /model is", () {
+      // Its prompt line is ❯ and a no-break space, under the transcript's `❯ ` prompts.
+      const idle =
+          '⏺ pong\n'
+          '\n'
+          '› Prompt from the dzep plugin\n'
+          '❯ Reply just: Q3OK\n'
+          '\n'
+          '⏺ Q3OK\n'
+          '────────────────────────────────────────\n'
+          '❯\u00a0\n'
+          '────────────────────────────────────────\n'
+          '  ⏸ manual mode on · ? for shortcuts';
+      expect(parseMenu(idle), isNull);
+      const model =
+          '❯ Reply just: Q3OK\n'
+          '▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔\n'
+          '   Select model\n'
+          '\n'
+          '   ❯ 1.  Default (recommended) ✔  Opus 5.5\n'
+          '     2.  Sonnet 5.5               Most efficient\n'
+          '\n'
+          '   Enter to set as default · Esc to cancel';
+      final menu = parseMenu(model);
+      expect(menu?.title, 'Select model');
+      expect(menu?.current, 0);
+      expect(menu?.items.map((i) => i.label), ['1. Default (recommended) ✔', '2. Sonnet 5.5']);
+    });
+
     test('a picker is on screen while its title is', () {
       const ask = LiveAsk.menu('m1', title: 'Resume Session (current folder)', items: []);
       expect(askOnScreen(ask, resume), isTrue);
@@ -541,6 +571,127 @@ void main() {
       expect(utf8.encode(jsonEncode(c)).length, lessThan(5000 + 100));
     }
     expect(chunks.expand((c) => c).length, 50);
+  });
+
+  // The screens and keys below were read off and tried on Claude Code 2.1.296 in kitty.
+  group('Claude Code dialogs', () {
+    const color = LiveQuestion(
+      id: '',
+      question: 'Which color should the button be?',
+      options: ['Red', 'Blue', 'Green'],
+    );
+    const sizes = LiveQuestion(
+      id: '',
+      question: 'Which sizes do you want?',
+      options: ['Small', 'Medium', 'Large'],
+      multi: true,
+    );
+    List<Object> flat(List<KeyStep> steps) => [
+      for (final s in steps)
+        switch (s) {
+          Keys(:final keys) => keys.join(' '),
+          Typed(:final text) => 'type:$text',
+          Settle() => 'settle',
+        },
+    ];
+
+    test('a single question answers by its row number, or opens "Type something" for typed text', () {
+      const ask = LiveAsk.questions('t1', [color]);
+      expect(
+        flat(
+          answerKeys(
+            ask,
+            answers: const [
+              LiveAnswer(picks: [1]),
+            ],
+            agent: Agent.claude,
+          ),
+        ),
+        ['2'],
+      );
+      expect(
+        flat(
+          answerKeys(
+            ask,
+            answers: const [LiveAnswer(custom: 'Purple')],
+            agent: Agent.claude,
+          ),
+        ),
+        ['4', 'settle', 'type:Purple', 'settle', 'enter'],
+      );
+    });
+
+    test('multiple choice toggles by number, walks to Submit, and the review tab submits', () {
+      const ask = LiveAsk.questions('t2', [color, sizes]);
+      expect(
+        flat(
+          answerKeys(
+            ask,
+            answers: const [
+              LiveAnswer(picks: [2]),
+              LiveAnswer(picks: [0, 2]),
+            ],
+            agent: Agent.claude,
+          ),
+        ),
+        ['3', 'settle', '1 3 down down down down enter', 'settle', '1'],
+      );
+      expect(
+        flat(
+          answerKeys(
+            const LiveAsk.questions('t3', [sizes]),
+            answers: const [
+              LiveAnswer(picks: [1], custom: 'Huge'),
+            ],
+            agent: Agent.claude,
+          ),
+        ),
+        ['2 4 down down down', 'settle', 'type:Huge', 'settle', 'down enter', 'settle', '1'],
+      );
+    });
+
+    test('an approval is Yes by number, Esc to refuse, and shows as "Do you want …?" over "❯ 1. Yes"', () {
+      const ask = LiveAsk.approval('t4', tool: 'Bash', summary: 'touch made-by-fake.txt');
+      expect(flat(answerKeys(ask, approve: true, agent: Agent.claude)), ['1']);
+      expect(flat(answerKeys(ask, agent: Agent.claude)), ['esc']);
+      const screen = '''
+ Bash command
+ Create a marker file
+ touch made-by-fake.txt
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and always allow access to /private/tmp/work from this project
+   3. No
+ Esc to cancel · Tab to amend''';
+      expect(askOnScreen(ask, screen, agent: Agent.claude), isTrue);
+      expect(askOnScreen(ask, '❯ say hello\n⏺ Hello.', agent: Agent.claude), isFalse);
+    });
+
+    test('the plan review is read under "Would you like to proceed?", past the plan\'s own numbered list', () {
+      const screen = '''
+ Ready to code?
+ Here is Claude's plan:
+ Paint the button
+ 1. Pick a color
+ 2. Paint it
+ Claude has written up a plan and is ready to execute. Would you like to proceed?
+ ❯ 1. Yes, auto-accept edits
+   2. Yes, manually approve edits
+   3. Tell Claude what to change
+      shift+tab to approve with this feedback
+ ctrl+g to edit in True · /tmp/plans/paint.md''';
+      final review = parsePlanReview(screen, agent: Agent.claude)!;
+      expect(review.options, ['Yes, auto-accept edits', 'Yes, manually approve edits', 'Tell Claude what to change']);
+      expect(review.current, 0);
+      expect(askOnScreen(const LiveAsk.plan('t5'), screen, agent: Agent.claude), isTrue);
+      final exit = parsePlanReview(
+        ' Exit plan mode?\n Claude wants to exit plan mode\n   1. Yes\n ❯ 2. No',
+        agent: Agent.claude,
+      )!;
+      expect(exit.options, ['Yes', 'No']);
+      expect(exit.current, 1);
+      expect(parsePlanReview(screen), isNull);
+    });
   });
 }
 

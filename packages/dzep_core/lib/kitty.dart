@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-/// One kitty window, as the iPhone sees it (kitty's `ls`, minus everything
+import 'package:dzep_core/agent.dart';
+
+/// One kitty window, as the phone sees it (kitty's `ls`, minus everything
 /// the phone has no business seeing, like the window's environment).
 class TermWindow {
   const TermWindow({
@@ -34,13 +36,14 @@ class TermWindow {
   /// The foreground program's working directory.
   final String cwd;
 
-  /// The foreground program's name: `omp`, `zsh`, `nvim`.
+  /// The foreground program's name: `omp`, `claude`, `zsh`, `nvim`.
   final String program;
 
   /// The window kitty has focused.
   final bool focused;
 
-  bool get isOmp => program == 'omp';
+  /// The coding agent running in it, if one is.
+  Agent? get agent => Agent.ofProgram(program);
 
   Map<String, dynamic> toJson() => {
     'key': key,
@@ -80,7 +83,7 @@ class Kitty {
       "kitty isn't listening. Add `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty` "
       'to kitty.conf, then restart kitty.';
 
-  /// Keys the iPhone may press, as kitty names them.
+  /// Keys the phone may press, as kitty names them.
   static const keys = {'esc', 'tab', 'up', 'down', 'enter', 'ctrl+c'};
 
   /// The protocol version we claim; kitty refuses clients newer than itself.
@@ -281,7 +284,7 @@ class Kitty {
     await _rc(socket, 'send-text', {'match': match, 'data': 'text:$text', 'bracketed_paste': 'disable'});
   }
 
-  /// Presses one of [keys] (what the iPhone may press).
+  /// Presses one of [keys] (what the phone may press).
   Future<void> press(String key, String name) async {
     if (!keys.contains(name)) throw KittyException('Unknown key: $name');
     await pressKeys(key, [name]);
@@ -296,16 +299,16 @@ class Kitty {
   }
 
   /// Closes the window and whatever runs in it (kitty doesn't ask; the
-  /// iPhone does, before it sends this).
+  /// phone does, before it sends this).
   Future<void> close(String key) async {
     final (socket, match) = _parse(key);
     await _rc(socket, 'close-window', {'match': match});
   }
 
   /// A new kitty OS window in [cwd] (a session of its own, like one opened by
-  /// hand) running the login shell, which then starts omp if [omp]; returns
-  /// the new window's key. kitty keeps its current focus.
-  Future<String> launch(String cwd, {required bool omp}) async {
+  /// hand) running the login shell, which then starts [agent] if given;
+  /// returns the new window's key. kitty keeps its current focus.
+  Future<String> launch(String cwd, {Agent? agent}) async {
     if (!Directory(cwd).existsSync()) throw KittyException('No such folder: $cwd');
     final sockets = _sockets();
     if (sockets.isEmpty) throw const KittyException(notListening);
@@ -326,14 +329,14 @@ class Kitty {
       }
       final key = '$socket/$id';
       // The shell reads it once it's up: the terminal holds what's typed.
-      if (omp) await send(key, 'omp', enter: true);
+      if (agent != null) await send(key, agent.command, enter: true);
       return key;
     }
     throw last ?? const KittyException(notListening);
   }
 
   /// Git repositories up to three levels under the usual code folders, for
-  /// the iPhone's New session list.
+  /// the phone's New session list.
   Future<List<String>> projects() async {
     final found = <String>[];
     Future<void> walk(Directory dir, int depth) async {

@@ -3,10 +3,10 @@ import Security
 
 /// What the app, its Siri intents and the widget extension share through the
 /// App Group: the backend (the Supabase project the user connected, written
-/// by lib/backend.dart), the device token (written by lib/mobile.dart at
+/// by packages/dzep_core/lib/backend.dart), the device token (written by lib/mobile.dart at
 /// sign-in), a snapshot of open todos for the widget, and actions queued
 /// while offline (the app replays them on next open). Compiled into Runner
-/// and DzepWidget, the iPhone's and the Mac's (macos/Runner.xcodeproj; see
+/// and DzepWidget, the iPhone's and the Mac's (apps/dzep-macos-app/macos/Runner.xcodeproj; see
 /// the end).
 enum DzepShared {
   /// The App Group id, from config/Dzep.xcconfig through each target's

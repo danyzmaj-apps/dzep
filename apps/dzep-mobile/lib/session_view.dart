@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/chat_images.dart';
 import 'package:dzep_core/live.dart';
 import 'package:dzep_core/live_activity.dart';
@@ -15,19 +16,17 @@ import 'package:url_launcher/url_launcher.dart';
 const _mono = TextStyle(fontFamily: 'Menlo', fontFamilyFallback: ['Courier'], fontSize: 12, height: 1.35);
 const _danger = Color(0xFFFCA5A5);
 
-/// How long a just-launched omp may take to report before the page says so.
+/// How long a just-launched agent may take to report before the page says so.
 const _startWait = Duration(seconds: 20);
 
-void _unfocus(PointerDownEvent _) => FocusManager.instance.primaryFocus?.unfocus();
-
-/// One omp session, live: its transcript laid out for the phone, what omp
-/// asks, and a composer that prompts it.
+/// One coding session, live: its transcript laid out for the phone, what its
+/// agent asks, and a composer that prompts it.
 class SessionPage extends StatefulWidget {
   const SessionPage({required this.remote, required this.sessionKey, this.starting = false, super.key});
   final TerminalRemote remote;
   final String sessionKey;
 
-  /// Just launched: omp may not have reported yet.
+  /// Just launched: its agent may not have reported yet.
   final bool starting;
 
   @override
@@ -86,9 +85,13 @@ class _SessionPageState extends State<SessionPage> {
     super.dispose();
   }
 
-  /// The kitty window omp runs in, if it runs in one (a launched one before
-  /// omp reports: the session's key is its window's).
+  /// The kitty window the agent runs in, if it runs in one (a launched one
+  /// before it reports: the session's key is its window's).
   String? _windowKey(LiveSummary? s) => s?.window ?? (remote.window(key) != null ? key : null);
+
+  /// The session's agent: as it reports, else its window's program, else the
+  /// one the Mac starts (a just-launched session).
+  Agent _agent(LiveSummary? s) => s?.agent ?? remote.window(key)?.agent ?? remote.agent;
 
   Future<void> _attach(String from) async {
     if (from == 'photos') return await _attachments.pick();
@@ -102,7 +105,8 @@ class _SessionPageState extends State<SessionPage> {
     final images = List.of(_attachments.images);
     setState(() => _sending = true);
     try {
-      await remote.prompt(key, text, images: [for (final i in images) i.bytes], followUp: busy && _followUp);
+      final queue = busy && (_followUp || !_agent(remote.session(key)).steers);
+      await remote.prompt(key, text, images: [for (final i in images) i.bytes], followUp: queue);
       final s = remote.session(key);
       final command = text.startsWith('/') && images.isEmpty;
       final window = s?.window;
@@ -125,8 +129,8 @@ class _SessionPageState extends State<SessionPage> {
   }
 
   /// A command's picker (/resume, /model, /tree …) shows here as a menu once
-  /// the Mac has read it off omp's screen; when none comes (a command
-  /// without one, or one the Mac can't read), omp's screen opens instead.
+  /// the Mac has read it off the agent's screen; when none comes (a command
+  /// without one, or one the Mac can't read), its screen opens instead.
   Future<void> _menuOrScreen(String window) async {
     final until = DateTime.now().add(const Duration(seconds: 3));
     while (DateTime.now().isBefore(until)) {
@@ -148,16 +152,16 @@ class _SessionPageState extends State<SessionPage> {
     );
   }
 
-  /// Slash commands go to omp's kitty window: the [matches] while the name
-  /// is typed, or a word that they can't run without one.
-  Widget? _commands(List<LiveCommand> matches, {required bool noWindow}) {
+  /// Slash commands go to the agent's kitty window: the [matches] while the
+  /// name is typed, or a word that they can't run without one.
+  Widget? _commands(List<LiveCommand> matches, {required bool noWindow, required Agent agent}) {
     if (noWindow) {
-      return const Padding(
-        key: ValueKey('commands-need-window'),
-        padding: EdgeInsets.fromLTRB(12, 2, 12, 6),
+      return Padding(
+        key: const ValueKey('commands-need-window'),
+        padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
         child: Text(
-          'Slash commands run in omp’s kitty window, and this session has none.',
-          style: TextStyle(color: C.dim, fontSize: 12),
+          'Slash commands run in ${agent.label}’s kitty window, and this session has none.',
+          style: const TextStyle(color: C.dim, fontSize: 12),
         ),
       );
     }
@@ -285,24 +289,42 @@ class _SessionPageState extends State<SessionPage> {
       _built.clear();
     }
     if (items.isEmpty) {
+      final agent = _agent(s).label;
       final starting = widget.starting && !_seen;
       final late = DateTime.now().difference(_openedAt) > _startWait;
       final text = starting
-          ? (late ? "omp hasn't reported yet. Its screen shows what it's doing." : 'Starting omp…')
+          ? (late
+                ? "$agent hasn't reported yet. It may be asking something on its screen first (like whether to "
+                      'trust this folder): open the screen to answer.'
+                : 'Starting $agent…')
           : ended
           ? 'This session has ended.'
           : v != null
-          ? 'Nothing yet. Prompt omp below.'
+          ? 'Nothing yet. Prompt $agent below.'
           : remote.online
           ? 'Loading…'
           : 'Not on this phone yet.';
+      final window = starting ? _windowKey(s) : null;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: C.dim, height: 1.5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                text,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: C.dim, height: 1.5),
+              ),
+              if (window != null && remote.online) ...[
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () => openWindow(context, remote, window),
+                  icon: const Icon(Icons.terminal, size: 18),
+                  label: const Text('Open its screen'),
+                ),
+              ],
+            ],
           ),
         ),
       );
@@ -381,7 +403,7 @@ class _SessionPageState extends State<SessionPage> {
   Widget _status(LiveSummary? s) {
     final parts = <InlineSpan>[];
     if (s == null) {
-      parts.add(const TextSpan(text: 'omp'));
+      parts.add(TextSpan(text: _agent(s).label));
     } else {
       parts.add(
         TextSpan(
@@ -422,12 +444,13 @@ class _SessionPageState extends State<SessionPage> {
 
   Widget _composer(LiveSummary? s, {required bool online}) {
     final busy = s?.busy ?? false;
+    final agent = _agent(s);
     final canSend = online && !_sending && (_field.text.trim().isNotEmpty || !_attachments.isEmpty);
     final slash = _field.text.startsWith('/');
     final commanding = online && s != null && slash;
     final noWindow = commanding && _windowKey(s) == null;
     final matches = commanding && !noWindow ? matchCommands(s.commands, _field.text) : const <LiveCommand>[];
-    final commands = _commands(matches, noWindow: noWindow);
+    final commands = _commands(matches, noWindow: noWindow, agent: agent);
     return Container(
       decoration: const BoxDecoration(
         color: C.bar,
@@ -447,16 +470,18 @@ class _SessionPageState extends State<SessionPage> {
                   padding: const EdgeInsets.fromLTRB(4, 0, 0, 2),
                   child: Row(
                     children: [
-                      FilterChip(
-                        key: const ValueKey('follow-up'),
-                        label: const Text('Queue', style: TextStyle(fontSize: 12)),
-                        tooltip: 'Off: the prompt steers omp now',
-                        selected: _followUp,
-                        showCheckmark: true,
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        onSelected: (v) => setState(() => _followUp = v),
-                      ),
+                      // An agent that can't steer queues every prompt while busy.
+                      if (agent.steers)
+                        FilterChip(
+                          key: const ValueKey('follow-up'),
+                          label: const Text('Queue', style: TextStyle(fontSize: 12)),
+                          tooltip: 'Off: the prompt steers ${agent.label} now',
+                          selected: _followUp,
+                          showCheckmark: true,
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          onSelected: (v) => setState(() => _followUp = v),
+                        ),
                       const Spacer(),
                       TextButton.icon(
                         key: const ValueKey('stop'),
@@ -500,7 +525,7 @@ class _SessionPageState extends State<SessionPage> {
                     },
                     child: TextField(
                       key: const ValueKey('session-input'),
-                      onTapOutside: _unfocus,
+                      onTapOutside: dismissKeyboard,
                       controller: _field,
                       minLines: 1,
                       maxLines: 6,
@@ -511,7 +536,9 @@ class _SessionPageState extends State<SessionPage> {
                       textCapitalization: slash ? TextCapitalization.none : TextCapitalization.sentences,
                       style: const TextStyle(fontSize: 16, height: 1.4),
                       decoration: plainInput.copyWith(
-                        hintText: busy ? (_followUp ? 'Queue a prompt…' : 'Steer omp…') : 'Prompt omp…',
+                        hintText: busy
+                            ? (_followUp || !agent.steers ? 'Queue a prompt…' : 'Steer ${agent.label}…')
+                            : 'Prompt ${agent.label}…',
                         hintStyle: const TextStyle(color: C.dim2),
                         contentPadding: const EdgeInsets.symmetric(vertical: 10),
                       ),
@@ -549,7 +576,7 @@ class _SessionPageState extends State<SessionPage> {
       final ended = online && !remote.fromCache && s == null && (_seen || !widget.starting);
       final windowKey = _windowKey(s);
       final window = windowKey == null ? null : remote.window(windowKey);
-      final title = s == null ? (window?.title.isNotEmpty ?? false ? window!.title : 'omp') : _title(s);
+      final title = s == null ? (window?.title.isNotEmpty ?? false ? window!.title : _agent(s).label) : _title(s);
       final note = linkNote(remote);
       final ask = s?.ask;
       void screen() => openWindow(context, remote, windowKey!);
@@ -677,7 +704,7 @@ class _AssistantText extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MarkdownBody(
     data: text,
-    // A line break in the answer is one on screen, as omp's terminal shows it.
+    // A line break in the answer is one on screen, as the agent's terminal shows it.
     softLineBreak: true,
     onTapLink: (_, href, _) {
       final uri = href == null ? null : Uri.tryParse(href);
@@ -702,7 +729,7 @@ class _AssistantText extends StatelessWidget {
   );
 }
 
-/// omp's own lines in the transcript ("Interrupted", a finished background
+/// The agent's own lines in the transcript ("Interrupted", a finished background
 /// job). A short one sits centered; a long one is left-aligned and folded to
 /// three lines until tapped.
 class _Notice extends StatelessWidget {
@@ -806,9 +833,9 @@ class _ToolCard extends StatelessWidget {
   }
 }
 
-/// What omp asks, answered from the phone: the `ask` tool's questions, an
-/// approval, or the plan review at the end of plan mode (its options as the
-/// Mac read them off omp's screen; the plan itself is read on the screen).
+/// What the agent asks, answered from the phone: the `ask` tool's questions,
+/// an approval, or the plan review at the end of plan mode (its options as
+/// the Mac read them off the agent's screen; the plan itself is read there).
 class _AskCard extends StatefulWidget {
   const _AskCard({required this.remote, required this.session, required this.ask, this.onScreen, super.key});
   final TerminalRemote remote;
@@ -832,7 +859,7 @@ class _AskCardState extends State<_AskCard> {
   /// The plan review option being sent.
   int? _planPick;
 
-  /// Sent; the card stays until omp moves on.
+  /// Sent; the card stays until the agent moves on.
   bool _sent = false;
 
   @override
@@ -926,7 +953,7 @@ class _AskCardState extends State<_AskCard> {
         TextField(
           controller: _other[i],
           enabled: !busy,
-          onTapOutside: _unfocus,
+          onTapOutside: dismissKeyboard,
           onChanged: (t) => setState(() {
             if (!q.multi && t.trim().isNotEmpty) _picks[i].clear();
           }),
@@ -946,6 +973,7 @@ class _AskCardState extends State<_AskCard> {
 
   @override
   Widget build(BuildContext context) {
+    final agent = (widget.remote.session(widget.session)?.agent ?? widget.remote.agent).label;
     final ask = widget.ask;
     final busy = _sending || _sent;
     final online = widget.remote.online;
@@ -966,9 +994,9 @@ class _AskCardState extends State<_AskCard> {
               child: Text(ask.title, style: _mono.copyWith(color: C.dim)),
             ),
           if (ask.options.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text('omp is waiting on its screen', style: TextStyle(fontSize: 13, color: C.dim)),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('$agent is waiting on its screen', style: const TextStyle(fontSize: 13, color: C.dim)),
             ),
           for (final (i, label) in ask.options.indexed)
             Padding(
@@ -1051,9 +1079,9 @@ class _AskCardState extends State<_AskCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Text('omp needs you', style: TextStyle(fontSize: 12, color: C.warn)),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('$agent needs you', style: const TextStyle(fontSize: 12, color: C.warn)),
             ),
             body,
             const SizedBox(height: 10),
@@ -1065,7 +1093,7 @@ class _AskCardState extends State<_AskCard> {
   }
 }
 
-/// A picker a slash command opened in omp's terminal UI (/resume, /model,
+/// A picker a slash command opened in the agent's terminal UI (/resume, /model,
 /// /tree …), as the Mac read it off the screen: its items to pick from, a
 /// search when it has one, Cancel (Esc) and the screen itself.
 class _MenuCard extends StatefulWidget {
@@ -1080,7 +1108,7 @@ class _MenuCard extends StatefulWidget {
   final TerminalRemote remote;
   final String session;
 
-  /// The kitty window omp runs in, for Esc.
+  /// The kitty window the agent runs in, for Esc.
   final String? window;
   final LiveAsk ask;
   final VoidCallback? onScreen;
@@ -1199,7 +1227,9 @@ class _MenuCardState extends State<_MenuCard> {
               children: [
                 Expanded(
                   child: Text(
-                    ask.title.isEmpty ? 'omp' : ask.title,
+                    ask.title.isEmpty
+                        ? (widget.remote.session(widget.session)?.agent ?? widget.remote.agent).label
+                        : ask.title,
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -1221,7 +1251,7 @@ class _MenuCardState extends State<_MenuCard> {
                 key: const ValueKey('menu-search'),
                 controller: _search,
                 enabled: widget.remote.online,
-                onTapOutside: _unfocus,
+                onTapOutside: dismissKeyboard,
                 onChanged: _searchChanged,
                 autocorrect: false,
                 style: const TextStyle(fontSize: 14),

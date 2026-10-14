@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- lib/ui.dart's C -->
+    <!-- packages/dzep_core/lib/ui.dart's C -->
     <color name="dzep_win">#FF17181D</color>
     <color name="dzep_text">#FFFFFFFF</color>
     <color name="dzep_dim">#FF8A8F9C</color>

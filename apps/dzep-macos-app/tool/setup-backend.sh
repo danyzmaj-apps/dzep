@@ -76,7 +76,7 @@ Any OpenAI-compatible API works. Examples:
   DeepSeek     https://api.deepseek.com        deepseek-flash   (default)
   OpenAI       https://api.openai.com/v1       gpt-5-mini
   OpenRouter   https://openrouter.ai/api/v1    anthropic/claude-haiku-4.5
-Leave the key empty to skip; Ask then says the server has no AI key.
+Leave the key empty to skip; connect one later from the Mac app (Settings → AI).
 EOF
   ask AI_BASE_URL "API base URL" "https://api.deepseek.com"
   ask AI_MODEL "Model" "deepseek-flash"

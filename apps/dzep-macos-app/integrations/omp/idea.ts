@@ -3,14 +3,15 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
-// /idea, /todo and /note talk to the Džep menu-bar app (github.com/danyzmaj-apps/dzep)
+// /idea, /do and /note talk to the Džep menu-bar app (github.com/danyzmaj-apps/dzep)
 // over its localhost API. Ideas land under the current repo's name as their
 // @project, so they show up in the app's sidebar next to the popup ones.
-// Todos are one global work list (no project); notes are free text.
+// Todos are one global work list (no project); notes are free text. The todo
+// command is /do: omp's own /todo (its task list) wins over an extension's.
 //
 // Install: copy this file to ~/.omp/agent/extensions/idea.ts and restart omp.
 
-const CLI_FILE = join(homedir(), ".config", "dzep", "cli.json");
+const CLI_FILE = process.env.DZEP_CLI_JSON || join(homedir(), ".config", "dzep", "cli.json");
 const USAGE = "Usage: /idea <text> | /idea list | /idea do <n|text>";
 const NOT_RUNNING = "Džep isn't running. Open it (it lives in the menu bar), then try again.";
 
@@ -142,19 +143,19 @@ export default function ideaExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("todo", {
-		description: "Add a todo to Džep (or /todo list, /todo done <n|text>) without interrupting the agent",
+	pi.registerCommand("do", {
+		description: "Add a todo to Džep (or /do list, /do done <n|text>) without interrupting the agent",
 		handler: async (args, ctx) => {
 			const raw = (args ?? "").trim();
 			if (!raw) {
-				ctx.ui.notify("Usage: /todo <text> | /todo list | /todo done <n|text>", "warning");
+				ctx.ui.notify("Usage: /do <text> | /do list | /do done <n|text>", "warning");
 				return;
 			}
 			const head = raw.split(/\s+/)[0] ?? "";
 			const sub = head.toLowerCase();
 			const tail = raw.slice(head.length).trim();
 			try {
-				// Open todos, oldest first, numbered like /todo list prints them.
+				// Open todos, oldest first, numbered like /do list prints them.
 				const open = async () => {
 					const { ideas } = await call<{ ideas: Idea[] }>("GET", "/v1/ideas?kind=todo");
 					return ideas.map((todo, i) => ({ ...todo, index: i + 1 }));
@@ -176,7 +177,7 @@ export default function ideaExtension(pi: ExtensionAPI) {
 
 				if (sub === "done") {
 					if (!tail) {
-						ctx.ui.notify("Usage: /todo done <n|text>", "warning");
+						ctx.ui.notify("Usage: /do done <n|text>", "warning");
 						return;
 					}
 					const todos = await open();

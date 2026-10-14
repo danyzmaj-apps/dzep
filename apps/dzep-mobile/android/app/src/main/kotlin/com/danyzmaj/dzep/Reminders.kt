@@ -34,11 +34,11 @@ object Notifications {
                 NotificationChannel(REMINDERS, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "Todo reminders, with Done to tick them off."
                 },
-                NotificationChannel(SESSIONS, "omp sessions", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "An omp session on your Mac finished or needs you."
+                NotificationChannel(SESSIONS, "Coding sessions", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "A coding session on your Mac finished or needs you."
                 },
                 NotificationChannel(FOLLOWED, "Followed sessions", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "What a followed omp session is doing, kept up to date."
+                    description = "What a followed coding session is doing, kept up to date."
                     setShowBadge(false)
                 },
             ),
@@ -125,7 +125,7 @@ object Notifications {
 }
 
 /**
- * Todo reminders as alarms. Dart picks them (lib/remind.dart) and hands over
+ * Todo reminders as alarms. Dart picks them (packages/dzep_core/lib/remind.dart) and hands over
  * the whole set on every change; they're kept so a reboot can set them again.
  * Exact when Android allows it (Alarms & reminders), else within minutes.
  */

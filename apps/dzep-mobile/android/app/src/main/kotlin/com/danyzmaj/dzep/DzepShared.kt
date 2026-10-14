@@ -17,7 +17,7 @@ import javax.crypto.spec.SecretKeySpec
 /**
  * What the app, its widgets, its notifications and its push service share,
  * in app-private storage: the backend (the Supabase project the user
- * connected, written by lib/backend.dart), the device token (written by
+ * connected, written by packages/dzep_core/lib/backend.dart), the device token (written by
  * lib/mobile.dart at sign-in), a snapshot of open todos for the widget, the
  * push key, and actions queued while offline (the app replays them on next
  * open). Android's ios/Shared/DzepShared.swift.

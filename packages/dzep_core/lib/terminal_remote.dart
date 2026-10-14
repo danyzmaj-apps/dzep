@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/ansi.dart';
 import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/live.dart';
@@ -12,7 +13,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
-// The iPhone side of the terminal protocol (lib/live.dart): the Mac's omp
+// The phone side of the terminal protocol (lib/live.dart): the Mac's coding
 // sessions and kitty windows, what the phone watches, and a disk cache so
 // the Terminal tab shows the last known state before the Mac answers.
 
@@ -57,7 +58,7 @@ class _Watch {
   final String? window;
 }
 
-/// The iPhone side: the Mac's omp sessions (structured, per [LiveView]) and
+/// The phone side: the Mac's coding sessions (structured, per [LiveView]) and
 /// kitty windows (as screens). The channel and the hellos run between
 /// [attach] and [detach]: while the app is in front.
 class TerminalRemote extends ChangeNotifier {
@@ -112,10 +113,13 @@ class TerminalRemote extends ChangeNotifier {
   /// The Mac's home folder, shown as ~.
   String home = '';
 
+  /// What a new session starts on the Mac (its setting).
+  Agent agent = Agent.omp;
+
   /// The Mac couldn't reach kitty (not listening, no kitten).
   String? error;
 
-  /// iPhone: the sessions followed as Live Activities; set by the app (null
+  /// Phone: the sessions followed (Live Activities, Android notifications); set by the app (null
   /// in tests and wherever there are none).
   LiveActivities? activities;
 
@@ -300,6 +304,7 @@ class TerminalRemote extends ChangeNotifier {
     sessions = [for (final s in p['sessions'] as List? ?? const []) LiveSummary.fromJson((s as Map).cast())];
     projects = (p['projects'] as List?)?.cast<String>() ?? projects;
     home = p['home'] as String? ?? home;
+    agent = Agent.parse(p['agent']);
   }
 
   void _onState(Map<String, dynamic> p) {
@@ -435,13 +440,14 @@ class TerminalRemote extends ChangeNotifier {
   /// Closes [window] on the Mac, with what runs in it.
   Future<void> close(String window) => _run({'op': 'close', 'window': window});
 
-  /// A new kitty window in [cwd], running omp if [omp]; its window key.
-  Future<String> launch(String cwd, {required bool omp}) async =>
-      (await _run({'op': 'launch', 'cwd': cwd, 'omp': omp}))['window'] as String;
+  /// A new kitty window in [cwd], running the Mac's coding [agent] if
+  /// [startAgent]; its window key.
+  Future<String> launch(String cwd, {required bool startAgent}) async =>
+      (await _run({'op': 'launch', 'cwd': cwd, 'agent': startAgent}))['window'] as String;
 
   /// Prompts [session] with [text] and [images] (image files: PNG, JPEG),
   /// which pass through Storage. While omp works the prompt steers it, or
-  /// waits for the turn to end if [followUp].
+  /// waits for the turn to end if [followUp]; Claude Code always waits.
   Future<void> prompt(String session, String text, {List<Uint8List> images = const [], bool followUp = false}) async {
     if (!online) throw const TerminalException('The Mac is not answering.');
     final bucket = _client.storage.from(imageBucket);
@@ -476,7 +482,7 @@ class TerminalRemote extends ChangeNotifier {
     }
   }
 
-  /// Esc: stops what omp is doing.
+  /// Esc: stops what the agent is doing.
   Future<void> abort(String session) => _run({'op': 'abort', 'session': session});
 
   /// Answers [ask]: [answers] (one per question), or [approve] an approval.
@@ -550,6 +556,7 @@ class TerminalRemote extends ChangeNotifier {
         'sessions': [for (final s in sessions) s.toJson()],
         'projects': projects,
         'home': home,
+        'agent': agent.name,
         'at': stateAt?.millisecondsSinceEpoch ?? now,
       };
     } else {

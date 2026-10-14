@@ -32,6 +32,12 @@ flutter:
     - supabase/functions/device/
     - supabase/functions/pair/
     - supabase/functions/push/
+    # The coding agents' Džep integrations, for Settings to install
+    # (lib/integrations.dart). Claude Code's plugin without its tests/.
+    - integrations/omp/
+    - integrations/claude/.claude-plugin/
+    - integrations/claude/plugins/dzep/.claude-plugin/
+    - integrations/claude/plugins/dzep/hooks/
 
 # `swift tool/make_icon.swift && fvm dart run flutter_launcher_icons`
 flutter_launcher_icons:

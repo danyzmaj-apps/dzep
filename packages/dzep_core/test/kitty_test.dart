@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/kitty.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -171,7 +172,7 @@ void main() {
         },
       ],
     );
-    expect(windows.first.isOmp, isTrue);
+    expect(windows.first.agent, Agent.omp);
   });
 
   test('a window kitty no longer has reads as gone; other errors pass through', () async {

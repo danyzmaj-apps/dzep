@@ -60,3 +60,8 @@ app.*.map.json
 /apps/dzep-macos-app/supabase/.env.local
 # Your own signing identity (config/Local.xcconfig.example)
 config/Local.xcconfig
+# Keys never belong in the repo (keep them in your keys folder, backed up)
+sparkle-private-key
+*.p8
+*service-account*.json
+google-services.json

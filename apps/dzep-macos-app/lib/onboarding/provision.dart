@@ -67,6 +67,82 @@ class Provisioner {
   /// GitHub's "Authorization callback URL" for this project.
   String get githubCallback => '$url/auth/v1/callback';
 
+  /// Looks at a project before Džep goes on it. `stop`: why it can't (it has
+  /// accounts, so the private-server hook would turn the owner away, or
+  /// tables and the like the migrations need to create). `replaces`: the
+  /// settings of its own that Džep would overwrite. Both null for a fresh
+  /// project, or one Džep is already on (an update).
+  Future<({String? stop, String? replaces})> inspect() async {
+    final migrations = await source.migrations();
+    String list(Iterable<String> names) =>
+        'array[${names.map((n) => "'${n.replaceAll("'", "''")}'").join(',')}]::text[]';
+    final recorded = await admin.query(
+      ref,
+      "select to_regclass('supabase_migrations.schema_migrations') is not null as recorded",
+    );
+    if (recorded.firstOrNull?['recorded'] == true) {
+      final ours = await admin.query(
+        ref,
+        'select exists (select 1 from supabase_migrations.schema_migrations '
+        'where version = any(${list(migrations.map((m) => m.version))})) as ours',
+      );
+      if (ours.firstOrNull?['ours'] == true) return (stop: null, replaces: null);
+    }
+
+    Set<String> named(String pattern) => {
+      for (final m in migrations)
+        for (final hit in RegExp(pattern, caseSensitive: false).allMatches(m.sql)) hit.group(1)!,
+    };
+    final relations = named(
+      r'create\s+(?:table|view|(?:unique\s+)?index)\s+(?:if\s+not\s+exists\s+)?(?:public\.)?(\w+)(?![\w.])',
+    );
+    final functions = named(r'create\s+function\s+public\.(\w+)');
+    final buckets = named(r"insert\s+into\s+storage\.buckets[^;]*?values\s*\(\s*'([^']+)'");
+    final found = (await admin.query(ref, '''
+select
+  (select count(*) from auth.users)::int as users,
+  concat_ws(', ',
+    (select string_agg(relname, ', ' order by relname) from pg_class
+      where relnamespace = 'public'::regnamespace and relname = any(${list(relations)})),
+    (select string_agg(distinct proname || '()', ', ') from pg_proc
+      where pronamespace = 'public'::regnamespace and proname = any(${list(functions)})),
+    (select string_agg('storage bucket ' || id, ', ' order by id) from storage.buckets where id = any(${list(buckets)}))
+  ) as taken''')).firstOrNull;
+    final users = (found?['users'] as num?) ?? 0;
+    final taken = found?['taken'] as String? ?? '';
+    if (users > 0) {
+      return (
+        stop:
+            'This project already has accounts. A Džep server lets in only the first account to sign in, so '
+            'yours would be turned away. Create a new project for Džep instead.',
+        replaces: null,
+      );
+    }
+    if (taken.isNotEmpty) {
+      return (
+        stop:
+            'This project already has $taken, which Džep needs to make itself. Create a new project for Džep instead.',
+        replaces: null,
+      );
+    }
+
+    final auth = await admin.authConfig(ref);
+    final site = auth['site_url'] as String? ?? '';
+    final hookUri = auth['hook_before_user_created_uri'] as String? ?? '';
+    final replaces = [
+      if (site.isNotEmpty && site != redirect && site != 'http://localhost:3000') 'Site URL ($site)',
+      if (auth['hook_before_user_created_enabled'] == true && hookUri != hook) 'before-user-created hook',
+      if (auth['external_github_enabled'] == true) 'GitHub sign-in app',
+    ];
+    return (
+      stop: null,
+      replaces: replaces.isEmpty
+          ? null
+          : "Džep sets sign-in up its own way and would replace this project's ${replaces.join(', ')}. "
+                'Anything that uses them now stops working.',
+    );
+  }
+
   /// Applies the migrations the project hasn't had yet, each in its own
   /// transaction, recording them where the Supabase CLI does (so a later
   /// `supabase db push` agrees). Returns how many were applied.

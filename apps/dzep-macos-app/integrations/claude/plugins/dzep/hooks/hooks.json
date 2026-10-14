@@ -1,0 +1,4 @@
+{
+  "description": "Džep: /idea, /do and /note, and this session live on your phone",
+  "modules": ["./dzep.ts"]
+}

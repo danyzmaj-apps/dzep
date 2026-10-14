@@ -1,4 +1,7 @@
+import 'package:dzep_core/chat.dart';
+import 'package:dzep_core/chat_view.dart';
 import 'package:dzep_macos/main_window.dart';
+import 'package:dzep_macos/onboarding/connect_ai.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -172,5 +175,49 @@ void main() {
     expect(app.settingsOpen, isFalse);
     // And the field has the focus back.
     expect(field.hasFocus, isTrue);
+  }, variant: mac);
+
+  testWidgets('with no AI connected, Ask offers to connect one instead of a field', (tester) async {
+    final app = await pumpMain(tester);
+    app.fakeChats.ai = const AiStatus(connected: false);
+    await app.openMain(chats: true);
+    await tester.pumpAndSettle();
+    expect(find.byType(NoAiNotice), findsOneWidget);
+    expect(find.text('Ask a quick question…  ↵'), findsNothing);
+
+    await tester.tap(find.text('Connect an AI…'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ConnectAiSheet), findsOneWidget);
+  }, variant: mac);
+
+  testWidgets('the popup’s Connect opens the sheet in the main window, once', (tester) async {
+    final app = await pumpMain(tester);
+    app.fakeChats.ai = const AiStatus(connected: false);
+    await app.connectAi();
+    await tester.pumpAndSettle();
+    expect(find.byType(ConnectAiSheet), findsOneWidget);
+    expect(app.pendingConnectAi, isFalse);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    await app.openMain();
+    await tester.pumpAndSettle();
+    expect(find.byType(ConnectAiSheet), findsNothing);
+  }, variant: mac);
+
+  testWidgets('opening Settings picks up an AI connected elsewhere, and Ask takes questions again', (tester) async {
+    final app = await pumpMain(tester);
+    app.fakeChats.ai = const AiStatus(connected: false);
+    await app.openMain(chats: true);
+    await tester.pumpAndSettle();
+    expect(find.byType(NoAiNotice), findsOneWidget);
+
+    app.fakeChats.server = const AiStatus(connected: true, model: 'gpt-5-mini', baseUrl: 'https://api.openai.com/v1');
+    app.setSettingsOpen(open: true);
+    await tester.pumpAndSettle();
+    app.setSettingsOpen(open: false);
+    await tester.pumpAndSettle();
+    expect(find.byType(NoAiNotice), findsNothing);
+    expect(find.text('Ask a quick question…  ↵'), findsOneWidget);
   }, variant: mac);
 }

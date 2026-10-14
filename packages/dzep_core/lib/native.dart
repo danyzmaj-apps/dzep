@@ -7,10 +7,10 @@ import 'package:flutter/services.dart';
 /// Android.
 String get pushPlatform => Platform.isAndroid ? 'android' : 'ios';
 
-/// The native side: the Mac's (macos/Runner/MainFlutterWindow.swift: the
+/// The native side: the Mac's (apps/dzep-macos-app/macos/Runner/MainFlutterWindow.swift: the
 /// popup panel and the main window, menu-bar icon, global hotkey, launch at
-/// login), the iPhone's (ios/Runner/AppDelegate.swift) and Android's
-/// (android/app/src/main/kotlin/com/danyzmaj/dzep/MainActivity.kt).
+/// login), the iPhone's (apps/dzep-mobile/ios/Runner/AppDelegate.swift) and Android's
+/// (apps/dzep-mobile/android/app/src/main/kotlin/com/danyzmaj/dzep/MainActivity.kt).
 class Native {
   static const _channel = MethodChannel('dzep/native');
 
@@ -63,7 +63,7 @@ class Native {
   /// the app lands before Dart listens, so openTodo only says "look").
   static Future<String?> takeTappedTodo() => _channel.invokeMethod<String>('takeTappedTodo');
 
-  /// Phone: the omp session (its key) whose terminal push was tapped, once.
+  /// Phone: the coding session (its key) whose terminal push was tapped, once.
   static Future<String?> takeTappedSession() => _channel.invokeMethod<String>('takeTappedSession');
 
   /// Phone: asks for notification permission and this phone's push token
@@ -76,8 +76,8 @@ class Native {
     return token == null || key == null ? null : (token: token, key: key);
   }
 
-  // Phone: followed omp sessions, as Live Activities on iOS
-  // (ios/Shared/OmpActivity.swift) and ongoing notifications on Android
+  // Phone: followed coding sessions, as Live Activities on iOS
+  // (apps/dzep-mobile/ios/Shared/OmpActivity.swift) and ongoing notifications on Android
   // (OmpActivities.kt); lib/live_activity.dart. [since]: when it got into
   // [state].
 
@@ -127,7 +127,7 @@ class Native {
   ];
 
   // What the widgets (and the iPhone's Siri intents) read:
-  // ios/Shared/DzepShared.swift, android/…/DzepShared.kt.
+  // apps/dzep-mobile/ios/Shared/DzepShared.swift, android/…/DzepShared.kt.
   static Future<void> setSharedToken(String? token) => _channel.invokeMethod('setSharedToken', {'token': token});
 
   /// Null on the Mac's sign-out, which its widget shows as signed out (the

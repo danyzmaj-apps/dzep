@@ -48,6 +48,20 @@ xcodebuild -workspace macos/Runner.xcworkspace -scheme Runner -configuration Deb
 
 A free Apple ID can build and run the Mac app for yourself. Notarized releases need a paid account ([RELEASING.md](RELEASING.md)).
 
+### Running a second Džep for testing
+
+A debug build next to the Džep you use shares more than its code. Built with the same bundle id, it reads and writes the same preferences and App Group (account, widget data), and by default both write `~/.config/dzep/cli.json` (the terminal API's port and token) and talk to the kitty behind `/tmp/kitty*`. To keep a test run apart:
+
+```sh
+# in apps/dzep-macos-app
+mkdir -p /tmp/dzep-e2e
+DZEP_CLI_JSON=/tmp/dzep-e2e/cli.json DZEP_KITTY_DIR=/tmp/dzep-e2e fvm flutter run -d macos
+```
+
+- `DZEP_CLI_JSON`: the file it writes its port and token to. omp's extensions and the Claude Code plugin read the same variable, so start the omp or `claude` you test with under it too.
+- `DZEP_KITTY_DIR`: the directory whose `kitty*` sockets it uses for Terminal from phone. Give it a kitty of its own: `kitty -o allow_remote_control=socket-only -o listen_on=unix:/tmp/dzep-e2e/kitty`.
+- Preferences: the simple way is to quit the installed Džep while the test build runs. To run both at once, set another `DZEP_BUNDLE_ID` and `DZEP_APP_GROUP` in `config/Local.xcconfig` ([above](#your-signing-identity)). Xcode must register the new ids and App Group with your team first: build once with the `xcodebuild … -allowProvisioningUpdates` line above (or from Xcode). Until then `flutter run` and `flutter build macos` fail with "No profiles for '<id>'".
+
 ## iPhone
 
 Install it on your own phone from source until the TestFlight build is out. It needs a **paid** Apple Developer account, because its widgets and Siri intents share data through an App Group.
@@ -102,15 +116,7 @@ supabase functions serve --no-verify-jwt --env-file supabase/.env.local
 
 ## Checks
 
-```sh
-# in each of packages/dzep_core, apps/dzep-macos-app, apps/dzep-mobile:
-fvm flutter analyze
-fvm flutter test
-# at the root:
-deno check apps/dzep-macos-app/supabase/functions/*/index.ts
-```
-
-CI runs the same checks on every pull request (`.github/workflows/ci.yml`).
+The checks to run before a pull request, and which of them CI runs (`.github/workflows/ci.yml`), are listed in [CONTRIBUTING.md](../CONTRIBUTING.md#pull-requests).
 
 [Maestro](https://maestro.mobile.dev) flows drive the iOS simulator app. They need a simulator signed in to a test backend, and `ask.yaml` needs an AI key there. Set `appId` in each flow to your bundle id.
 

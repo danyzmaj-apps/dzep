@@ -156,7 +156,7 @@ struct TodosWidget: Widget {
 
 // MARK: - omp session (Live Activity)
 
-/// The app's colours (lib/ui.dart's C).
+/// The app's colours (packages/dzep_core/lib/ui.dart's C).
 private enum Palette {
   static let win = Color(red: 0x17 / 255, green: 0x18 / 255, blue: 0x1D / 255)
   static let dim = Color(red: 0x8A / 255, green: 0x8F / 255, blue: 0x9C / 255)

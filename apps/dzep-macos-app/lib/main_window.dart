@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dzep_core/account.dart';
+import 'package:dzep_core/agent.dart';
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/chat_view.dart';
 import 'package:dzep_core/idea.dart';
@@ -11,6 +12,8 @@ import 'package:dzep_core/remind.dart';
 import 'package:dzep_core/store.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_macos/controller.dart';
+import 'package:dzep_macos/integrations.dart';
+import 'package:dzep_macos/onboarding/connect_ai.dart';
 import 'package:dzep_macos/onboarding/pair.dart';
 import 'package:dzep_macos/setup_page.dart';
 import 'package:flutter/material.dart';
@@ -197,6 +200,14 @@ class _LibraryState extends State<Library> {
       app.pendingChats = false;
       _beforePopup = null;
       _setView(_chats);
+    }
+    if (app.pendingConnectAi) {
+      app.pendingConnectAi = false;
+      _beforePopup = null;
+      // After the frame that shows the window again.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(showConnectAi(context, app));
+      });
     }
     final section = app.pendingSection;
     if (section != null) {
@@ -467,6 +478,7 @@ class _LibraryState extends State<Library> {
                           conversation: _chat,
                           onSent: (c) => setState(() => _chat = c),
                           onContinue: (c) => unawaited(widget.app.openAsk(c)),
+                          onConnectAi: () => unawaited(showConnectAi(context, widget.app)),
                         )
                       : selected == null
                       ? const _EmptyDetail()
@@ -1412,8 +1424,11 @@ class _SegButton extends StatelessWidget {
 // ==================================================================== settings
 
 class SettingsSheet extends StatefulWidget {
-  const SettingsSheet({required this.app, super.key});
+  const SettingsSheet({required this.app, this.integrations, super.key});
   final AppController app;
+
+  /// Installs the coding agents' Džep integrations; the real ones if null.
+  final Integrations? integrations;
 
   @override
   State<SettingsSheet> createState() => _SettingsSheetState();
@@ -1427,6 +1442,17 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
   /// kitty as the bridge would find it: its window count, or what's wrong.
   ({int? windows, String? error})? _kitty;
+
+  /// The chosen coding agent's Džep integration, and how installing it went.
+  IntegrationState? _integration;
+  String? _installNote;
+  bool _installFailed = false;
+
+  /// Claude Code has mods off, so its installed plugin doesn't run
+  /// ([Integrations.claudeModsOff]).
+  bool _modsOff = false;
+  bool _installing = false;
+  late final Integrations _integrations = widget.integrations ?? Integrations();
   final _recorderFocus = FocusNode();
 
   /// What had the focus in this window before Settings: it gets it back.
@@ -1439,6 +1465,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
     super.initState();
     unawaited(Native.launchAtLogin().then((v) => mounted ? setState(() => _launchAtLogin = v) : null));
     unawaited(_checkKitty());
+    unawaited(_checkIntegration());
+    unawaited(app.chats?.checkAi());
     // Taken even from a focused field (autofocus wouldn't), so Esc closes
     // Settings and typing doesn't go into the field behind it.
     _before = FocusManager.instance.primaryFocus;
@@ -1457,6 +1485,75 @@ class _SettingsSheetState extends State<SettingsSheet> {
       r = (windows: null, error: e.message);
     }
     if (mounted) setState(() => _kitty = r);
+  }
+
+  Future<void> _checkIntegration() async {
+    final agent = app.codingAgent;
+    IntegrationState r;
+    var modsOff = false;
+    try {
+      r = await _integrations.state(agent);
+      if (agent == Agent.claude && r.installed) modsOff = await _integrations.claudeModsOff();
+    } on Object catch (e) {
+      r = (installed: false, current: false, problem: '$e');
+    }
+    if (mounted && agent == app.codingAgent) {
+      setState(() {
+        _integration = r;
+        _modsOff = modsOff;
+      });
+    }
+  }
+
+  /// What to do while Claude Code has mods off: its rollout switch stays
+  /// cached as off until Claude Code, logged in, fetches it again.
+  static const _modsOffHint =
+      'Claude Code has mods turned off for now: run claude /login, start claude once, '
+      'then restart your Claude sessions';
+
+  Future<void> _setAgent(Agent agent) async {
+    if (agent == app.codingAgent) return;
+    setState(() {
+      _integration = _installNote = null;
+      _installFailed = _modsOff = false;
+    });
+    await app.setCodingAgent(agent);
+    await _checkIntegration();
+  }
+
+  Future<void> _install() async {
+    final agent = app.codingAgent;
+    setState(() => _installing = true);
+    String? error;
+    try {
+      await _integrations.install(agent);
+    } on Object catch (e) {
+      error = "Couldn't install: $e";
+    }
+    if (!mounted) return;
+    // Whether it runs: mods may be off.
+    if (error == null) await _checkIntegration();
+    if (!mounted) return;
+    // Settings may have moved on to the other agent meanwhile.
+    if (agent != app.codingAgent) return setState(() => _installing = false);
+    setState(() {
+      _installing = false;
+      _installNote =
+          error ??
+          (_modsOff ? 'Installed · $_modsOffHint' : 'Installed · restart your ${agent.label} sessions to load it');
+      _installFailed = error != null || _modsOff;
+    });
+    if (error != null) await _checkIntegration();
+  }
+
+  /// Where the chosen agent's integration stands, for its row.
+  String get _integrationSub {
+    final s = _integration;
+    if (s == null) return 'Checking…';
+    if (s.problem case final p?) return p;
+    if (!s.installed) return 'Not installed · /idea, /do, /note and its sessions on your phone need it';
+    if (_modsOff) return _modsOffHint;
+    return s.current ? 'Installed and up to date' : 'Out of date';
   }
 
   @override
@@ -1525,13 +1622,33 @@ class _SettingsSheetState extends State<SettingsSheet> {
                         _row(
                           leading: Avatar(url: app.avatarUrl, name: app.userName),
                           label: app.userName,
-                          sub: 'Signed in with GitHub · ${app.store?.ideas.length ?? 0} ideas',
+                          sub: 'Signed in with GitHub · ${_count(app.store?.ideas.length ?? 0, 'idea')}',
                           trailing: _button('Sign out', () => unawaited(app.signOut()), danger: true),
                         ),
                         _row(
                           label: 'Your server',
                           sub: '${app.backend?.host ?? ''} · Scan a code with your phone to connect it',
                           trailing: _button('Set up phone…', () => unawaited(showPairingQr(context, app))),
+                        ),
+                        ListenableBuilder(
+                          listenable: app.chats!,
+                          builder: (context, _) {
+                            final ai = app.chats!.ai;
+                            final connected = ai?.connected ?? false;
+                            return _row(
+                              label: 'AI',
+                              sub: switch (ai) {
+                                AiStatus(connected: true, :final model?, :final baseUrl?) =>
+                                  'Ask uses $model · ${Uri.tryParse(baseUrl)?.host ?? baseUrl}',
+                                AiStatus(connected: false) => 'Not connected · Ask needs an AI to answer',
+                                _ => 'Ask answers with an AI service you choose',
+                              },
+                              trailing: _button(
+                                connected ? 'Change…' : 'Connect…',
+                                () => unawaited(showConnectAi(context, app)),
+                              ),
+                            );
+                          },
                         ),
                         _row(
                           label: 'Delete account',
@@ -1589,11 +1706,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
                         _row(
                           label: 'Terminal from phone',
                           sub: !app.terminalOn
-                              ? 'Your phone sees omp sessions and kitty, and types into them, while this Mac is awake'
+                              ? 'Your phone sees and types into kitty and coding sessions while this Mac is awake'
                               : _kitty?.error ??
                                     (_kitty == null
                                         ? 'Looking for kitty…'
-                                        : '${_kitty!.windows} kitty windows · ${app.live.sessions.length} omp sessions '
+                                        : '${_count(_kitty!.windows ?? 0, 'kitty window')} · '
+                                              '${_count(app.live.sessions.length, 'coding session')} '
                                               '· keeps this Mac from idle sleep'),
                           subError: app.terminalOn && _kitty?.error != null,
                           trailing: Switch(
@@ -1603,6 +1721,36 @@ class _SettingsSheetState extends State<SettingsSheet> {
                               unawaited(_checkKitty());
                             },
                           ),
+                        ),
+                        _row(
+                          label: 'Coding agent',
+                          sub: 'What a new session from your phone starts',
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            spacing: 6,
+                            children: [
+                              for (final a in Agent.values)
+                                _button(
+                                  Integrations.name(a),
+                                  () => unawaited(_setAgent(a)),
+                                  active: a == app.codingAgent,
+                                ),
+                            ],
+                          ),
+                        ),
+                        _row(
+                          label: 'Džep in ${Integrations.name(app.codingAgent)}',
+                          sub: _installNote ?? _integrationSub,
+                          subError: _installNote != null ? _installFailed : _integration?.problem != null || _modsOff,
+                          trailing: _installing
+                              ? _button('Installing…', () {}, active: true)
+                              : switch (_integration) {
+                                  (:final installed, current: false, problem: null) => _button(
+                                    installed ? 'Update' : 'Install',
+                                    () => unawaited(_install()),
+                                  ),
+                                  _ => const SizedBox.shrink(),
+                                },
                         ),
                       ]),
                       const SizedBox(height: 18),
@@ -1623,6 +1771,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
       ),
     ),
   );
+
+  /// "1 idea", "2 ideas".
+  static String _count(int n, String noun) => '$n $noun${n == 1 ? '' : 's'}';
 
   Widget _group(String title, List<Widget> rows) => Padding(
     padding: const EdgeInsets.only(top: 18),

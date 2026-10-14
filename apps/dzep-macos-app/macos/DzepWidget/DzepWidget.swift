@@ -4,7 +4,7 @@ import WidgetKit
 import notify
 
 // The Mac's Todos widget (desktop and Notification Center). Same look as the
-// iPhone's (ios/DzepWidget), but a tick never touches the network: the
+// iPhone's (apps/dzep-mobile/ios/DzepWidget), but a tick never touches the network: the
 // menu-bar app is always running and has the session, so it applies them.
 
 /// Ticks a todo off: hides it from the widget at once and queues it in the App

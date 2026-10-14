@@ -4,16 +4,18 @@ import { basename, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 
 // Streams this omp session to the Džep menu-bar app (github.com/danyzmaj-apps/dzep), which relays it to the
-// iPhone: the transcript as items (messages, tool calls with the end of their output), the answer as it's
+// phone: the transcript as items (messages, tool calls with the end of their output), the answer as it's
 // written, whether omp is busy, and the questions and approvals it waits on. From the phone you can prompt
-// (with images), interrupt, and page back through older history. The protocol is described in lib/live.dart.
+// (with images), interrupt, and page back through older history. The protocol is described in packages/dzep_core/lib/live.dart.
 //
 // Only the top-level interactive session talks, and only to Džep's local API on 127.0.0.1 (port and token
-// from ~/.config/dzep/cli.json). While Džep isn't running it quietly tries again every few seconds.
+// from ~/.config/dzep/cli.json, or the file DZEP_CLI_JSON names). While Džep isn't running it quietly tries
+// again every few seconds.
 //
-// Install: copy this file to ~/.omp/agent/extensions/live.ts and restart omp.
+// Install: copy this file to ~/.omp/agent/extensions/live.ts and restart omp (or use Install in Džep's
+// Settings).
 
-const CLI_FILE = join(homedir(), ".config", "dzep", "cli.json");
+const CLI_FILE = process.env.DZEP_CLI_JSON || join(homedir(), ".config", "dzep", "cli.json");
 const VERSION = 1;
 const HELLO_ITEMS = 300;
 const RETRY_MS = 3000;
@@ -28,7 +30,7 @@ const SUMMARY_CHARS = 400;
 const COMMAND_CHARS = 80;
 const SILENT_ABORT = "__omp.silent_abort__";
 
-/** One transcript entry, keyed like LiveItem.toJson in lib/live.dart (the Mac adds `o` and `s`). */
+/** One transcript entry, keyed like LiveItem.toJson in packages/dzep_core/lib/live.dart (the Mac adds `o` and `s`). */
 export type Item = {
 	id: string;
 	k: "user" | "assistant" | "tool" | "notice";
@@ -511,6 +513,7 @@ export default function liveExtension(pi: ExtensionAPI) {
 		send({
 			t: "hello",
 			v: VERSION,
+			agent: "omp",
 			session: { id: c.sessionManager.getSessionId(), title: m.title, cwd: c.cwd, model: m.model },
 			window: windowKey(),
 			pid: process.pid,

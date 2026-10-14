@@ -115,30 +115,39 @@ class SupabaseAdmin {
         ),
       );
     } on AdminException catch (e) {
-      if (e.message.toLowerCase().contains('limit') || e.message.toLowerCase().contains('maximum')) {
-        throw const AdminException(
-          'Your Supabase plan has no room for another active project (the free plan allows two). '
-          'Pause one you no longer use in the Supabase dashboard, or pick an existing project.',
+      final m = e.message.toLowerCase();
+      // 429 is "rate-limiting", not the plan.
+      if (e.status != 429 && (m.contains('limit') || m.contains('maximum'))) {
+        throw AdminException(
+          'Your Supabase account already has the two active projects the free plan allows. Pause or delete one '
+          "you don't need (open it at supabase.com/dashboard, then Project Settings → General), then press "
+          'Create project again. Or choose "Use an existing project".',
+          status: e.status,
         );
       }
       rethrow;
     }
   }
 
-  /// Polls until the project is up, or fails after [timeout].
-  Future<void> waitUntilReady(String ref, {Duration timeout = const Duration(minutes: 6)}) async {
+  /// Polls until the project is up, or fails after [timeout]. False when
+  /// [stop] completes first.
+  Future<bool> waitUntilReady(String ref, {Duration timeout = const Duration(minutes: 6), Future<void>? stop}) async {
     final end = DateTime.now().add(timeout);
-    while (true) {
+    var stopped = false;
+    unawaited(stop?.then((_) => stopped = true));
+    while (!stopped) {
       final status = (await project(ref)).status;
-      if (status == 'ACTIVE_HEALTHY') return;
+      if (stopped) break;
+      if (status == 'ACTIVE_HEALTHY') return true;
       if (status.contains('FAILED') || status == 'INACTIVE' || status == 'PAUSED') {
         throw AdminException('The project is $status. Restore it in the Supabase dashboard, then retry.');
       }
-      if (DateTime.now().isAfter(end)) {
-        throw const AdminException('The project is still starting. Give it another minute, then retry.');
+      if (!DateTime.now().isBefore(end)) {
+        throw const AdminException('The project is still starting. Give it another minute, then continue.');
       }
-      await Future<void>.delayed(const Duration(seconds: 5));
+      await Future.any([Future<void>.delayed(const Duration(seconds: 5)), ?stop]);
     }
+    return false;
   }
 
   /// Runs SQL as the database owner; the rows of the last statement.
@@ -154,10 +163,6 @@ class SupabaseAdmin {
 
   Future<void> updateAuthConfig(String ref, Map<String, Object?> changes) =>
       _send('PATCH', '/v1/projects/$ref/config/auth', body: changes);
-
-  Future<Set<String>> secretNames(String ref) async => {
-    for (final s in await _list('/v1/projects/$ref/secrets')) s['name'] as String,
-  };
 
   Future<void> setSecrets(String ref, Map<String, String> secrets) => _send(
     'POST',
