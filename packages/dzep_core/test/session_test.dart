@@ -35,7 +35,82 @@ String _jwt(Map<String, Object> claims) {
   return '${part({'alg': 'HS256', 'typ': 'JWT'})}.${part(claims)}.c2ln';
 }
 
+/// The reviewer demo account's phone, on a server whose `/auth/v1/user`
+/// answers with [user].
+class _DemoSession extends Session {
+  _DemoSession(this._client) : super('iPhone');
+  final SupabaseClient _client;
+
+  @override
+  SupabaseClient get client => _client;
+}
+
+Future<SupabaseClient> _signedInDemo(Future<http.Response> Function(http.Request req) user) async {
+  final client = SupabaseClient(
+    'http://localhost:54321',
+    'publishable',
+    httpClient: MockClient((req) async {
+      if (req.url.path == '/auth/v1/user') return await user(req);
+      return http.Response('', 204, request: req);
+    }),
+    authOptions: const AuthClientOptions(autoRefreshToken: false),
+  );
+  final exp = DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch ~/ 1000;
+  await client.auth.recoverSession(
+    jsonEncode({
+      'access_token': _jwt({'sub': 'demo', 'exp': exp}),
+      'refresh_token': 'r',
+      'token_type': 'bearer',
+      'expires_in': 3600,
+      'user': {
+        'id': 'demo',
+        'aud': 'authenticated',
+        'created_at': '2026-01-01T00:00:00Z',
+        'app_metadata': {'dzep_demo': true},
+      },
+    }),
+  );
+  return client;
+}
+
 void main() {
+  group("the reviewer demo account's phone", () {
+    test('signs out once the server ended its session (the last reviewer code revoked)', () async {
+      final client = await _signedInDemo(
+        (req) async => http.Response(
+          jsonEncode({'code': 'session_not_found', 'msg': 'Session from session_id claim in JWT does not exist'}),
+          403,
+          request: req,
+          headers: {'content-type': 'application/json'},
+        ),
+      );
+      addTearDown(client.dispose);
+
+      await _DemoSession(client).checkReviewerAccess();
+
+      expect(client.auth.currentSession, isNull);
+    });
+
+    test('stays signed in while the server knows the session, and while offline', () async {
+      final ok = await _signedInDemo(
+        (req) async => http.Response(
+          jsonEncode({'id': 'demo', 'aud': 'authenticated', 'created_at': '2026-01-01T00:00:00Z'}),
+          200,
+          request: req,
+          headers: {'content-type': 'application/json'},
+        ),
+      );
+      addTearDown(ok.dispose);
+      await _DemoSession(ok).checkReviewerAccess();
+      expect(ok.auth.currentSession, isNotNull);
+
+      final offline = await _signedInDemo((req) async => throw http.ClientException('offline', req.url));
+      addTearDown(offline.dispose);
+      await _DemoSession(offline).checkReviewerAccess();
+      expect(offline.auth.currentSession, isNotNull, reason: 'no answer proves nothing');
+    });
+  });
+
   test('signing out drops the saved session even when the cleanup before it fails', () async {
     final requests = <String>[];
     final client = SupabaseClient(
