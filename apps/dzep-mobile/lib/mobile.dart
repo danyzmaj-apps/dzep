@@ -176,6 +176,15 @@ class MobileSession extends Session {
   }
 }
 
+/// A toast saying [text] with Undo. Flutter keeps a SnackBar with an action
+/// up until it's dismissed unless told otherwise; this one goes on its own,
+/// like the Mac's.
+SnackBar undoSnackBar(String text, VoidCallback undo) => SnackBar(
+  content: Text(text),
+  persist: false,
+  action: SnackBarAction(label: 'Undo', onPressed: undo),
+);
+
 class MobileApp extends StatelessWidget {
   const MobileApp({required this.session, super.key});
   final MobileSession session;
@@ -426,15 +435,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     unawaited(HapticFeedback.lightImpact());
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(todo.done ? 'Done ✓' : 'Reopened'),
-          action: SnackBarAction(
-            label: 'Undo',
-            onPressed: () => store.update(todo, done: !todo.done),
-          ),
-        ),
-      );
+      ..showSnackBar(undoSnackBar(todo.done ? 'Done ✓' : 'Reopened', () => store.update(todo, done: !todo.done)));
   }
 
   bool _matches(Idea i) {
@@ -447,14 +448,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(switch (i.kind) {
-            Kind.todo => 'Todo deleted',
-            Kind.note => 'Note deleted',
-            Kind.idea => 'Idea deleted',
-          }),
-          action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(i)),
-        ),
+        undoSnackBar(switch (i.kind) {
+          Kind.todo => 'Todo deleted',
+          Kind.note => 'Note deleted',
+          Kind.idea => 'Idea deleted',
+        }, () => store.restore(i)),
       );
   }
 
@@ -1201,12 +1199,7 @@ class _DetailPageState extends State<DetailPage> {
           onPressed: () {
             widget.store.delete(idea);
             Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Idea deleted'),
-                action: SnackBarAction(label: 'Undo', onPressed: () => widget.store.restore(idea)),
-              ),
-            );
+            ScaffoldMessenger.of(context).showSnackBar(undoSnackBar('Idea deleted', () => widget.store.restore(idea)));
           },
         ),
       ],
@@ -1627,12 +1620,7 @@ class _NotePageState extends State<NotePage> {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context)
                   ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: const Text('Note deleted'),
-                      action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(note)),
-                    ),
-                  );
+                  ..showSnackBar(undoSnackBar('Note deleted', () => store.restore(note)));
               },
             ),
           ],

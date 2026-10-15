@@ -26,6 +26,7 @@
 - Android: Džep's data stays out of a device-to-device transfer to a new phone too (Android 12+ copied it on some phones despite backups being off), so a new phone never inherits the old one's sign-in, push key or widget token; it pairs with a code of its own.
 - Mac: **Settings → Coding agent** now really updates Džep's Claude Code plugin. Its version never changed, and Claude Code installs a plugin only at a new version, so the update said done while Claude Code kept the old hooks (without the `/v1/ping` proof above). The plugin now carries the app's version, and `tool/release.sh` refuses a release where they differ.
 - Sync no longer stalls on a device whose clock runs behind the server's. Its session was refreshed by the device's own clock, so for as long as it was behind (each hour) the server refused the old token and the device showed offline; it now refreshes as soon as the server says the token expired.
+- Fixed, phones: the toast with **Undo** after deleting an idea, todo or note, or ticking a todo, stayed at the bottom of the screen until you swiped it away; it goes after a few seconds again.
 
 ## 0.3.0
 
