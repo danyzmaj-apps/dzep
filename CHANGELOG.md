@@ -19,6 +19,7 @@
 - Phones: signing out ends every Live Activity or ongoing session notification at once and tells the server, so it stops updating the old account's sessions.
 - Mac: Terminal from the phone restarts its connection whenever the signed-in account changes, including when the server ends the session.
 - iPhone: a widget tick or notification **Done** queued while offline can no longer be lost when the app reads the queue at the same moment, and the phone registers for push only once it has made its encryption key.
+- Fixed, phones: the toast with **Undo** after deleting an idea, todo or note, or ticking a todo, stayed at the bottom of the screen until you swiped it away; it goes after a few seconds again.
 
 ## 0.3.0
 
