@@ -13,12 +13,15 @@
     <!-- A phone without a camera can still paste the Mac's code. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
-    <!-- allowBackup off: the device token, the push key and the session stay on this phone. -->
+    <!-- No backup and no device-to-device transfer (dataExtractionRules, Android 12+, where
+         allowBackup alone doesn't stop the transfer): the device token, the push key and the
+         session stay on this phone. -->
     <application
         android:label="Džep"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:allowBackup="false">
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <activity
             android:name=".MainActivity"
             android:exported="true"

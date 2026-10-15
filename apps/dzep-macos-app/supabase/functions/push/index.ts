@@ -44,6 +44,9 @@ const relay = Deno.env.get("PUSH_RELAY_URL") ?? "https://tgqmhieundubwtyvsnih.su
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
+/** [s] cut to at most [max] UTF-16 units, never through a character: half of one is valid JSON for neither Postgres nor the iPhone's JSONDecoder. */
+const clip = (s: string, max: number) => s.slice(0, /[\uD800-\uDBFF]/.test(s[max - 1] ?? "") ? max - 1 : max);
+
 /** The coding session a push is about: its terminal window's key (`kitty-<pid>/<window id>`, `tmux:default/3` …) or `pid:<pid>` (at most 64: also a collapse id). */
 const sessionKey = (v: unknown) => (typeof v === "string" && /^[\w.:/-]{1,64}$/.test(v) ? v : undefined);
 
@@ -173,7 +176,7 @@ async function ensureConfig() {
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json(405, { error: "POST only" });
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
 
   if (body.action === "tick") {
     const { data: config } = await admin.from("push_config").select("secret").maybeSingle();
@@ -197,14 +200,16 @@ Deno.serve(async (req) => {
     if (platform === "android") {
       if (!fcmToken(body.token)) return json(400, { error: "token must be the FCM registration token" });
     } else if (!apnsToken(body.token)) return json(400, { error: "token must be the APNs device token (hex)" });
-    if (typeof body.key !== "string" || decodeBase64(body.key).length !== 32) {
-      return json(400, { error: "key must be 32 bytes" });
-    }
+    let key: Uint8Array | null = null;
+    try {
+      if (typeof body.key === "string") key = decodeBase64(body.key);
+    } catch { /* not base64 */ }
+    if (key?.length !== 32) return json(400, { error: "key must be 32 bytes, base64" });
     const { error } = await admin.from("push_devices").upsert({
       token: body.token,
       user_id: user,
       key: body.key,
-      label: typeof body.label === "string" ? body.label.slice(0, 80) : "",
+      label: typeof body.label === "string" ? clip(body.label, 80) : "",
       platform,
       updated_at: new Date().toISOString(),
     });
@@ -221,9 +226,9 @@ Deno.serve(async (req) => {
   }
 
   if (body.action === "notify") {
-    const title = typeof body.title === "string" ? body.title.trim().slice(0, 120) : "";
+    const title = typeof body.title === "string" ? clip(body.title.trim(), 120) : "";
     if (!title) return json(400, { error: "title is required" });
-    const text = typeof body.body === "string" ? body.body.trim().slice(0, 400) : "";
+    const text = typeof body.body === "string" ? clip(body.body.trim(), 400) : "";
     const session = sessionKey(body.session);
     const sent = await send(user, { kind: "terminal", title, body: text, session });
     // The Mac's session alerts (lib/controller.dart) also move the session's Live Activities.

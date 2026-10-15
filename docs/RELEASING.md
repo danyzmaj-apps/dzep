@@ -40,7 +40,7 @@ Each release is a notarized DMG on GitHub Releases, plus an `appcast.xml` that i
 
 ### Each release
 
-1. Bump `version:` in `apps/dzep-macos-app/pubspec.yaml` (for example `0.3.0+3`).
+1. Bump `version:` in `apps/dzep-macos-app/pubspec.yaml` (for example `0.3.0+3`), and set the same version name in `apps/dzep-macos-app/integrations/claude/plugins/dzep/.claude-plugin/plugin.json`: Claude Code updates a plugin only to a new version, so installed copies would keep their old hooks (`tool/release.sh` refuses a mismatch).
 2. Turn **Unreleased** in `CHANGELOG.md` into a `## 0.3.0` section. Say whether servers need `apps/dzep-macos-app/tool/setup-backend.sh` again (new migrations or function changes) and whether the relay must be redeployed.
 3. Commit and push to `main`, then (in `apps/dzep-macos-app`):
    ```sh

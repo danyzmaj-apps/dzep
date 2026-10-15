@@ -24,6 +24,23 @@ Future<List<Map<String, dynamic>>> fetchAll(
   }
 }
 
+/// Refreshes the session when [error] is the server refusing an access
+/// token it has expired (PostgREST's PGRST303) while this device still
+/// calls it good: gotrue refreshes by the token's `exp` read against the
+/// local clock, so a device whose clock runs behind the server's would keep
+/// a dead token, and sync nothing, for as long as it's behind. True once a
+/// fresh token is in place, so the caller can try again.
+Future<bool> refreshIfExpired(SupabaseClient client, Object error) async {
+  if (error is! PostgrestException || error.code != 'PGRST303') return false;
+  try {
+    await client.auth.refreshSession();
+    return true;
+  } on Object catch (e) {
+    debugPrint('Džep: expired session not refreshed: $e');
+    return false;
+  }
+}
+
 enum SyncState { synced, syncing, offline }
 
 /// The signed-in user's ideas: a JSON file on this Mac that every edit lands
@@ -37,6 +54,15 @@ class IdeaStore extends ChangeNotifier {
     final store = IdeaStore._(client, userId, File('${dir.path}/ideas-$userId.json'), device);
     await store._load();
     store._start();
+    return store;
+  }
+
+  /// A store from [file] that syncs only when told ([syncNow], [receive]):
+  /// no realtime, no timers.
+  @visibleForTesting
+  static Future<IdeaStore> cached(SupabaseClient client, String userId, File file, String device) async {
+    final store = IdeaStore._(client, userId, file, device);
+    await store._load();
     return store;
   }
 
@@ -192,7 +218,7 @@ class IdeaStore extends ChangeNotifier {
           table: 'ideas',
           filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'user_id', value: userId),
           callback: (payload) {
-            if (payload.newRecord.isNotEmpty) _merge([payload.newRecord]);
+            if (payload.newRecord.isNotEmpty) receive(payload.newRecord);
           },
         )
         .subscribe((status, _) {
@@ -207,6 +233,13 @@ class IdeaStore extends ChangeNotifier {
     await _push();
     await _pull();
   }
+
+  /// A row realtime brought. It leaves the pull cursor where it is: realtime
+  /// skips rows (while offline, a dropped event) and runs ahead of the pull
+  /// (the echo of this device's own push), so only a pull may say "everything
+  /// up to here is in".
+  @visibleForTesting
+  void receive(Map<String, dynamic> row) => _merge([row], advanceCursor: false);
 
   Future<void> _pull() async {
     try {
@@ -225,10 +258,11 @@ class IdeaStore extends ChangeNotifier {
     } on Object catch (e) {
       debugPrint('Džep: pull failed: $e');
       _setSync(SyncState.offline);
+      if (await refreshIfExpired(_client, e)) unawaited(_pull());
     }
   }
 
-  void _merge(List<Map<String, dynamic>> rows) {
+  void _merge(List<Map<String, dynamic>> rows, {bool advanceCursor = true}) {
     if (_closed || rows.isEmpty) return;
     for (final row in rows) {
       final incoming = Idea.fromServer(row);
@@ -241,7 +275,7 @@ class IdeaStore extends ChangeNotifier {
       } else if (!local.dirty) {
         local.absorb(incoming);
       }
-      if (_cursor == null || incoming.updatedAt.isAfter(_cursor!)) _cursor = incoming.updatedAt;
+      if (advanceCursor && (_cursor == null || incoming.updatedAt.isAfter(_cursor!))) _cursor = incoming.updatedAt;
     }
     notifyListeners();
     _scheduleSave();
@@ -268,9 +302,11 @@ class IdeaStore extends ChangeNotifier {
     } on Object catch (e) {
       debugPrint('Džep: push failed: $e');
       _setSync(SyncState.offline);
-      // Retry later; the edits are safe on disk.
+      // Retry later; the edits are safe on disk. At once with a fresh
+      // token, when the server only refused the old one.
       _pushTimer?.cancel();
-      _pushTimer = Timer(const Duration(seconds: 20), _push);
+      final again = await refreshIfExpired(_client, e) ? Duration.zero : const Duration(seconds: 20);
+      _pushTimer = Timer(again, _push);
     } finally {
       _pushing = false;
     }

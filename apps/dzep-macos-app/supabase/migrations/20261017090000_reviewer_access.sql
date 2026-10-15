@@ -76,8 +76,9 @@ grant execute on function public.reviewer_access_active() to authenticated;
 
 -- Signs the demo account out everywhere once no reviewer code of it works:
 -- a session made from a code (a magic link, then rotating refresh tokens)
--- would otherwise outlive the code. Access tokens already out stop working
--- with their session. Returns how many sessions ended.
+-- would otherwise outlive the code. An access token already out stays a
+-- valid JWT for PostgREST until it expires; the phone notices the session is
+-- gone (Session.checkReviewerAccess) and signs out. Returns how many sessions ended.
 create function public.end_idle_demo_sessions() returns integer
 language plpgsql security definer set search_path = '' as $$
 declare

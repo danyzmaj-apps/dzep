@@ -66,7 +66,7 @@ What works depends on the terminal:
 | iTerm2 | ✓ | – | ✓ | ✓ |
 | WezTerm | ✓ | ✓ | ✓ | ✓ |
 | tmux (in any terminal) | ✓ | ✓ | ✓ | ✓ |
-| Ghostty | Sessions, no screen | – | ✓ | ✓ |
+| Ghostty | Sessions, no screen | – | Keys; – (answer on the Mac) | ✓ |
 | Terminal (macOS's) | ✓, whole lines only | – | – (answer on the Mac) | ✓ |
 
 With tmux installed (`brew install tmux`), sessions the phone starts in Terminal or Ghostty run inside tmux and get full control. To turn it on, use Mac **Settings → Terminal from phone** (off by default). **Settings → Terminals** and **Settings → Coding agent** set up the rest ([step by step](docs/USING.md#terminal-from-the-phone)). Claude Code needs version 2.1.287 or later.
@@ -86,7 +86,7 @@ flowchart LR
   subgraph yours ["Your Supabase project"]
     direction TB
     db[("Your data<br/>row-level security")]
-    fn["Functions<br/>ask · pair · push"]
+    fn["Functions<br/>ask · device · pair · push"]
   end
   phones["Your phones<br/>iPhone · Android"]
   ai["AI provider<br/>(your key)"]

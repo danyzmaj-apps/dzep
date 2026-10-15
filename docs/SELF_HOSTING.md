@@ -60,7 +60,7 @@ The first account that signs in **owns the server**.
 
 Reviewers can't scan your Mac, and must not get into your account. On the Mac, **Settings → Reviewer access → Codes…** makes a **reviewer code**: it signs a phone into a separate demo account on your server (`reviewer@<project-ref>.dzep.invalid`, made the first time), works as often as needed for 7, 30 or 90 days, and can be revoked there at any time. Give the reviewer its link (**Copy**) or its QR (**Save QR as PNG**); in the phone app it goes into **Paste a code instead**, or the camera reads the QR. The code is shown only when it's made: your server keeps a hash of it.
 
-The demo account sees none of your ideas, todos, notes or chats, but Ask works for it, on your AI key, so revoke the code when the review is done. Once no code of it works, the demo account is shut out: revoking the last working code signs every phone on it out at once, a code running out does the same within 10 minutes, and Ask turns it away from then on. If a reviewer taps **Delete account**, the demo account is emptied but stays, with your reviewer codes, so a code you gave Apple or Google keeps working for the next review. No email is ever sent to the demo address, and it isn't let in through `allowed_signups`: the `pair` function makes it with the service role.
+The demo account sees none of your ideas, todos, notes or chats, but Ask works for it, on your AI key, so revoke the code when the review is done. Once no code of it works, the demo account is shut out: revoking the last working code signs every phone on it out within 30 seconds, a code running out does the same within 10 minutes, and Ask turns it away from then on. If a reviewer taps **Delete account**, the demo account is emptied but stays, with your reviewer codes, so a code you gave Apple or Google keeps working for the next review. No email is ever sent to the demo address, and it isn't let in through `allowed_signups`: the `pair` function makes it with the service role.
 
 ## AI provider
 
@@ -75,7 +75,7 @@ Quick questions work with any OpenAI-compatible chat API. Set these as edge func
 
 ### Connect or switch it later
 
-Skipped it during setup, or want another provider? On the Mac, open **Settings → AI → Connect…** (or **Connect an AI…** in Ask). Pick DeepSeek, OpenAI, OpenRouter or **Other** (any OpenAI-compatible URL and model), paste the API key, and paste a Supabase [access token](https://supabase.com/dashboard/account/tokens). Džep uses the token once to save the three secrets on your project and doesn't keep it; you can delete the token afterwards. The Mac and your phones pick up the change by themselves (a phone when it next comes to the front). This works for projects on supabase.com; on a server you run yourself, use the CLI.
+Skipped it during setup, or want another provider? On the Mac, open **Settings → AI → Connect…** (**Change…** once one is connected; or **Connect an AI…** in Ask). Pick DeepSeek, OpenAI, OpenRouter or **Other** (any OpenAI-compatible URL and model), paste the API key, and paste a Supabase [access token](https://supabase.com/dashboard/account/tokens). Džep uses the token once to save the three secrets on your project and doesn't keep it; you can delete the token afterwards. The Mac and your phones pick up the change by themselves (a phone when it next comes to the front). This works for projects on supabase.com; on a server you run yourself, use the CLI.
 
 From a terminal:
 
@@ -111,7 +111,7 @@ The Mac app updates itself. Release notes say when a new app version needs a bac
 
 Your server pushes reminders, coding-session notifications (a run ended, the agent needs you) and the state of the sessions you follow to your phones. Only the app's publisher holds the credentials that reach Džep's installs (the APNs key for iPhones, the Firebase service account for Android), so your server's `push` function hands each notification to the publisher's **relay**, which passes it to Apple's APNs or Google's Firebase Cloud Messaging.
 
-- Each phone makes its own AES-256 key and registers it with your server (`push_devices`, with the device's push token and its `platform`, `ios` or `android`). Your server encrypts every notification with that key; the relay sees the push token, the kind of notification (reminder, terminal or activity), a collapse id and ciphertext, and stores nothing. iPhone Live Activity updates are the exception: iOS can't decrypt them, so they carry the coding session's state (working, needs you, finished) in the clear, and no text.
+- Each phone makes its own AES-256 key and registers it with your server (`push_devices`, with the device's push token and its `platform`, `ios` or `android`). Your server encrypts every notification with that key; the relay sees the push token, the kind of notification (reminder, terminal, a session's state), a collapse id and ciphertext, and stores nothing on disk. iPhone Live Activity updates are the exception: iOS can't decrypt them, so they carry the coding session's state (working, needs you, finished, ended), since when and, when it needs you, for what (a question, an approval or a plan) in the clear, and no text.
 - Android messages are FCM data messages the app decrypts itself; iPhone messages are decrypted by its notification service extension.
 - No setup on your side: the default `PUSH_RELAY_URL` is the publisher's relay.
 
@@ -134,7 +134,7 @@ A relay only reaches apps signed with the publisher's ids. A fork that ships its
 | Ask: "… rejected the server's API key" / "doesn't know the model" | Check `AI_API_KEY` / `AI_MODEL` for your provider. |
 | "The project refused this key" on the setup screen | Use the **publishable** key (Project Settings → API Keys), never a secret one. |
 | Terminal: "Džep may not control iTerm2" (or Terminal, Ghostty) | Allow it in System Settings → Privacy & Security → Automation → Džep. |
-| Terminal: "kitty isn't listening" | On the Mac, **Settings → Terminals → Set up…** next to kitty, then restart kitty. |
+| Terminal: "kitty isn't listening" | On the Mac, **Settings → Terminals → Set up** next to kitty, then restart kitty. |
 | Terminal: Ghostty windows show no screen | Expected: Ghostty's screen can't be read. Install tmux (`brew install tmux`) and start sessions from the phone: they run inside tmux with full control. |
 | Terminal: can't answer or press keys in a Terminal (macOS) window | Expected: Terminal takes only whole lines. Same fix: install tmux and start sessions from the phone. |
 | Terminal: a Ghostty session isn't matched to its window | Ghostty tells no tty, so Džep matches the session by its folder: keep one Ghostty window per folder. |
