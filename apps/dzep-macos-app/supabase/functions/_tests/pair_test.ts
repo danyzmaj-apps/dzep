@@ -138,3 +138,23 @@ Deno.test("revoking takes a code's id and nothing else", async () => {
   assertEquals(res.status, 400);
   assertEquals(sent.some((r) => r.url.pathname === "/rest/v1/pairing_codes"), false, "nothing was asked of the database");
 });
+
+Deno.test("any code at all, however long or strange, is refused with 400, and only a well-formed one is looked up", async () => {
+  // Seeded: a failure names the round and replays.
+  let seed = 1;
+  const next = (n: number) => (seed = (seed * 48271) % 2147483647) % n;
+  const pieces = ["-", " ", "o", "O", "i", "I", "l", "L", "u", "U", "😀", "\u0301", "\u0000", "\uD83D", "Ж", "\n", "%", "0", "Z"];
+  for (let round = 0; round < 300; round++) {
+    const len = [0, 7, 28, 35, 1000, 100_000][next(6)];
+    let code = "";
+    for (let i = 0; i < len; i++) {
+      code += next(3) === 0 ? pieces[next(pieces.length)] : String.fromCharCode(next(0x3000));
+    }
+    const body = [code, null, 42, ["x"], { code }][next(5)];
+    supabase();
+    const res = await pair(post({ action: "redeem", code: body }));
+    assertEquals(res.status, 400, `round ${round}`);
+    const hash = redeemArgs().p_hash as string;
+    assertMatch(hash, /^(|[0-9a-f]{64})$/, `round ${round}`);
+  }
+});
