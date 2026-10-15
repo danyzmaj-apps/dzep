@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:dzep_core/store.dart' show fetchAll;
+import 'package:dzep_core/store.dart' show fetchAll, refreshIfExpired;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -502,6 +502,8 @@ class ChatStore extends ChangeNotifier {
       _merge(rows, messages);
     } on Object catch (e) {
       debugPrint('Džep: chats pull failed: $e');
+      // The next pull carries the fresh token.
+      unawaited(refreshIfExpired(_client, e));
     } finally {
       _pulling = false;
     }
