@@ -1,7 +1,7 @@
 name: dzep_macos
 description: "Džep: a hotkey idea inbox for macOS, synced through Supabase."
 publish_to: 'none'
-version: 0.3.0+3
+version: 0.4.0+4
 resolution: workspace
 
 environment:
