@@ -57,9 +57,10 @@ app.*.map.json
 .fvm/
 # Supabase CLI state
 /apps/dzep-macos-app/supabase/.temp/
-# Secrets for the CLI and local functions (apps/dzep-macos-app/tool/setup-backend.sh, docs/BUILDING.md)
-/apps/dzep-macos-app/supabase/.env
-/apps/dzep-macos-app/supabase/.env.local
+# Secrets for the CLI and local functions (apps/dzep-macos-app/tool/setup-backend.sh, docs/BUILDING.md),
+# and any other env file anywhere in the repo
+.env
+.env.*
 # Your own signing identity (config/Local.xcconfig.example)
 config/Local.xcconfig
 # Keys never belong in the repo (keep them in your keys folder, backed up)
