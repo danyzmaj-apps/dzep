@@ -1,15 +1,17 @@
-# Signed-in iPhone app: on the Ideas tab, add an idea with the + button, put
-# it under a project from its detail page, then find it under that project's
-# filter chip. Needs a signed-in session.
+# Pocket tab, Ideas: add an idea with the + button, put it under a project
+# from its detail page, then find it under that project's filter pill. Needs
+# a signed-in session.
 # Run: maestro test -e TS=$(date +%H%M%S) maestro/
 appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Ideas.*"
+    visible: "Pocket"
     timeout: 15000
-- tapOn: "Ideas.*"
-- tapOn: "New idea"
+- tapOn: "Pocket"
+- waitForAnimationToEnd
+- tapOn: "Ideas"
+- tapOn: "New"
 - tapOn: "Drop an idea.*"
 - inputText: "Maestro idea ${TS}"
 - tapOn: "Save"

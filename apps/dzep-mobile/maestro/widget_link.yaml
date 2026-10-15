@@ -1,5 +1,5 @@
-# The widgets' tap targets: dzep://add opens the add sheet as an idea,
-# dzep://add?kind=todo as a todo; each save lands in its tab.
+# The widgets' tap targets: dzep://add opens the Pocket tab's add sheet as an
+# idea, dzep://add?kind=todo as a todo; each save lands in the list.
 appId: com.danyzmaj.dzep
 ---
 - tapOn:
@@ -7,7 +7,7 @@ appId: com.danyzmaj.dzep
     optional: true
 - launchApp
 - extendedWaitUntil:
-    visible: "Todos.*"
+    visible: "Pocket"
     timeout: 15000
 - openLink: "dzep://add?kind=todo"
 - tapOn:

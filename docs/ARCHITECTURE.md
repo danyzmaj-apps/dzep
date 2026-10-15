@@ -33,7 +33,8 @@ One Dart pub workspace (root `pubspec.yaml`): the Mac app in `apps/dzep-macos-ap
 | `core/lib/live_activity.dart` | Phone: followed coding sessions (Live Activities on iOS, ongoing notifications on Android; start, local updates, push tokens to the server); Mac and phone: a session's state as an activity's (`core/test/live_activity_test.dart`) |
 | `mac/lib/local_api.dart` | Mac: 127.0.0.1 API for `/idea`, `/do`, `/note` and the coding agents' live sessions; keeps `cli.json` naming a Džep that runs (`mac/test/local_api_test.dart`, with the long-poll transport) |
 | `mac/lib/integrations.dart` | Mac: **Settings → Coding agent**'s Install/Update: the bundled integrations copied (omp's to `~/.omp/agent/extensions/`, Claude Code's marketplace to `~/.config/dzep/claude-plugin`, then `claude plugin marketplace add`/`update` and `plugin install`/`update`/`enable dzep@dzep`), whether they're current, whether Claude Code has mods off (`mac/test/integrations_test.dart`) |
-| `mobile/lib/main.dart`, `mobile.dart` | Phone app (iPhone and Android) |
+| `mobile/lib/main.dart`, `mobile.dart` | Phone app (iPhone and Android): sign-in, the home page and its three tabs, the add sheet, the item and note pages, Ask |
+| `mobile/lib/pocket.dart`, `chrome.dart` | Phone: the Pocket tab (todos, ideas and notes in one list); the chrome per platform (`nativeIos`): on an iPhone UIKit's tab bar with its action button, search field and segmented control, hosted as platform views by `native_liquid_glass` (Liquid Glass on iOS 26), over iOS-style inset grouped lists; elsewhere, widget tests included, Material 3's navigation bar, filter chips, tonal cards and FAB. The app forces dark mode (`UIUserInterfaceStyle`) so the UIKit controls match it |
 | `mac/macos/Runner/MainFlutterWindow.swift`, `AppDelegate.swift` | Popup panel, main window and note window on one multi-view engine, menu-bar icon, Carbon hotkey, activation policy, launch at login, reminder notifications, idle time |
 | `mobile/ios/Runner/AppDelegate.swift` | The iPhone half of `native.dart`: App Group, reminder notifications, push registration, Live Activities |
 | `mobile/android/app/src/main/kotlin/…/MainActivity.kt` | The Android half of `native.dart`: the same methods and events as the iPhone's |
@@ -47,7 +48,7 @@ One Dart pub workspace (root `pubspec.yaml`): the Mac app in `apps/dzep-macos-ap
 | `mobile/ios/Shared/DzepShared.swift` | App Group storage + `device` function client (app and widget; the Mac's app and widget compile it too, from this path) |
 | `mobile/ios/Shared/SessionActivity.swift` | The coding session Live Activity's attributes and state (iPhone app and widget only) |
 | `mac/supabase/` | Migrations and the `ask`, `device`, `pair` and `push` edge functions (bundled as Mac app assets for the setup wizard); `relay` is the publisher's push relay for APNs and FCM (`mac/tool/deploy-relay.sh`) |
-| `mobile/maestro/` | Simulator flows |
+| `mobile/maestro/` | iOS simulator flows |
 | `config/Dzep.xcconfig` | Team, bundle id and App Group for every Xcode target of both apps (`Local.xcconfig` overrides them) |
 | `mac/tool/setup-backend.sh`, `release.sh` | Self-hosting setup; Mac release (DMG, notarization, Sparkle appcast) |
 | `mac/integrations/omp/idea.ts`, `live.ts` | omp extensions: `/idea`, `/do` (a todo; omp's own `/todo` is its task list) and `/note`; the session, live, for the phone |

@@ -8,7 +8,7 @@
 [![Platforms: macOS, iOS, Android](https://img.shields.io/badge/platforms-macOS%20%7C%20iOS%20%7C%20Android-lightgrey.svg)](#install)
 
 <p align="center">
-  <img src="docs/images/hero.png" alt="The Mac popup in Todo mode next to an iPhone on its Todos tab: the same open todos, with reminder chips, on both" width="860">
+  <img src="docs/images/hero.png" alt="The Mac popup in Todo mode next to an iPhone on its Pocket tab, showing todos: the same open todos, with reminder chips, on both" width="860">
 </p>
 
 Džep is a Mac menu-bar app with an ⇧⌘Space popup, plus iPhone and Android apps. They sync through a free [Supabase](https://supabase.com) project that **you** own: there is no Džep cloud. *Džep* is Croatian for "pocket", said roughly "jep".
@@ -18,6 +18,7 @@ Džep is a Mac menu-bar app with an ⇧⌘Space popup, plus iPhone and Android a
 - **Capture anywhere:** the Mac popup, phone widgets, or `/idea`, `/do` and `/note` in your coding agent.
 - **Todos with reminders:** `call bank !15:00` reminds every device; tick it off on one and it's done on all.
 - **Notes and Ask:** free-text notes, and short streamed chats with any OpenAI-compatible AI.
+- **Phone apps with three tabs:** **Pocket** (todos, ideas and notes in one list), **Terminal** and **Ask**. iOS's own Liquid Glass controls on iPhone, Material 3 on Android.
 - **Terminal from the phone:** your Mac's [omp](https://github.com/can1357/oh-my-pi) and [Claude Code](https://github.com/anthropics/claude-code) sessions as a conversation, with a push when the agent finishes or needs you.
 - **Private by design:** your data stays in your Supabase project, and pushes reach your phones encrypted.
 
@@ -54,9 +55,18 @@ Until the phone links are up, you can [build the phone app from source](docs/BUI
 
 The phone's Terminal tab shows the Mac's omp and Claude Code sessions as conversations. From it you can prompt (with images), stop a run, and answer questions, approvals and plan reviews. Any other terminal window shows as a live screen you can type into, and **+** opens a new session in one of your projects.
 
-<p align="center">
-  <img src="docs/images/phone-session.png" alt="Phone: a coding session as a conversation, with tool-call cards" width="280">
-</p>
+<table>
+  <tr>
+    <td width="33%"><img src="docs/images/phone-pocket.png" alt="iPhone: the Pocket tab with iOS's own Liquid Glass tab bar, + button, search field and kind picker" width="260"></td>
+    <td width="33%"><img src="docs/images/phone-session.png" alt="Phone: a coding session as a conversation, with tool-call cards" width="260"></td>
+    <td width="33%"><img src="docs/images/phone-terminal-android.png" alt="Android: the Terminal tab in Material 3, listing the Mac's coding sessions and windows" width="260"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>iPhone: todos, ideas and notes in Pocket</sub></td>
+    <td align="center"><sub>A coding session as a conversation</sub></td>
+    <td align="center"><sub>Android: the Terminal tab, where the app opens</sub></td>
+  </tr>
+</table>
 
 What works depends on the terminal:
 
