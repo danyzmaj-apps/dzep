@@ -19,7 +19,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// terminal can do it. The terminals are polled only while a phone has said
 /// hello lately.
 class TerminalBridge {
-  TerminalBridge(this._client, this._userId, this._terms, this._hub, this._agent, this._app);
+  TerminalBridge(this._client, this._userId, this._terms, this._hub, this._agent, this._app, this._roots);
 
   final SupabaseClient _client;
   final String _userId;
@@ -31,6 +31,9 @@ class TerminalBridge {
 
   /// The terminal app it opens in: an app's id or `auto` (the Mac's setting).
   final String Function() _app;
+
+  /// The Mac's Project folders setting.
+  final List<String> Function() _roots;
 
   /// A phone that hasn't said hello for this long has left.
   static const _gone = Duration(seconds: 12);
@@ -63,6 +66,7 @@ class TerminalBridge {
   String? _termError;
   List<String>? _projects;
   DateTime? _projectsAt;
+  List<String> _projectsRoots = const [];
 
   /// The installed terminals and how they stand, and where a new session
   /// opens (its label), as of [_statusesAt].
@@ -308,6 +312,7 @@ class TerminalBridge {
       'windows': [for (final w in _windows) w.toJson()],
       'sessions': sessions,
       'projects': _projects,
+      'roots': _roots(),
       'home': _terms.home,
       'agent': _agent().name,
       'opensIn': ?_opensIn,
@@ -354,10 +359,16 @@ class TerminalBridge {
           _opensIn = _terms.describe(await _terms.opensIn(_app()));
         }
         _termError = terminalsError(_statuses, nothingShown: _windows.isEmpty && _hub.sessions.isEmpty);
-        if (_projectsAt == null || now.difference(_projectsAt!) > const Duration(minutes: 5)) {
+        final roots = _roots();
+        if (_projectsAt == null ||
+            !listEquals(roots, _projectsRoots) ||
+            now.difference(_projectsAt!) > const Duration(minutes: 5)) {
           _projectsAt = now;
+          _projectsRoots = roots;
           unawaited(
-            _terms.projects().then((p) {
+            _terms.projects(roots).then((p) {
+              // A scan of folders since changed (a slow one, of ~ say) is stale.
+              if (!listEquals(roots, _projectsRoots)) return;
               _projects = p;
               _stateChanged();
             }),
@@ -434,6 +445,14 @@ class TerminalBridge {
           final start = p['agent'] == true || p['omp'] == true;
           final host = await _terms.opensIn(_app());
           window = await _terms.launch(p['cwd'] as String, host: host, agent: start ? _agent() : null);
+        case 'create':
+          window = await _terms.launchNewProject(
+            p['root'] as String,
+            p['name'] as String? ?? '',
+            roots: _roots(),
+            host: await _terms.opensIn(_app()),
+            agent: p['agent'] == true ? _agent() : null,
+          );
         case 'prompt':
           await _prompt(p);
         case 'abort':
@@ -453,7 +472,7 @@ class TerminalBridge {
       error = 'The Mac could not do that: $e';
     }
     _send('ran', {'id': id, 'error': ?error, 'window': ?window});
-    unawaited(_poll(windows: p['op'] == 'launch' || p['op'] == 'close'));
+    unawaited(_poll(windows: p['op'] == 'launch' || p['op'] == 'create' || p['op'] == 'close'));
   }
 
   /// The phone's prompt, with its images fetched from Storage (and deleted).

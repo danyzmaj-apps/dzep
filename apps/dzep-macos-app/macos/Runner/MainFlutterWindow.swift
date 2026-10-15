@@ -237,6 +237,19 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     case "quit":
       NSApp.terminate(nil)
       result(nil)
+    case "pickFolders":
+      // Settings → Project folders → Add folder…; a sheet on this (the main) window.
+      let panel = NSOpenPanel()
+      panel.canChooseDirectories = true
+      panel.canChooseFiles = false
+      panel.allowsMultipleSelection = true
+      panel.canCreateDirectories = true
+      panel.message = "Folders that hold your projects"
+      panel.prompt = "Add"
+      panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+      panel.beginSheetModal(for: self) { response in
+        result(response == .OK ? panel.urls.map { $0.path } : [])
+      }
     default:
       result(FlutterMethodNotImplemented)
     }

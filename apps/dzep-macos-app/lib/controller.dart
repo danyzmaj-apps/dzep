@@ -121,6 +121,17 @@ class AppController extends Session {
     notifyListeners();
   }
 
+  static const _projectRootsKey = 'project_roots';
+
+  /// Folders holding the user's projects (Settings → Project folders): the
+  /// phone lists the git repositories under them and makes new projects there.
+  List<String> get projectRoots => _prefs.getStringList(_projectRootsKey) ?? const [];
+
+  Future<void> setProjectRoots(List<String> roots) async {
+    await _prefs.setStringList(_projectRootsKey, roots);
+    notifyListeners();
+  }
+
   static const _agentKey = 'coding_agent';
 
   /// The coding agent a new session from the phone starts.
@@ -160,7 +171,15 @@ class AppController extends Session {
     await old?.stop();
     if (want != null) {
       _bridgeUser = want;
-      await (_bridge = TerminalBridge(client, want, terminals, live, () => codingAgent, () => terminalApp)).start();
+      await (_bridge = TerminalBridge(
+        client,
+        want,
+        terminals,
+        live,
+        () => codingAgent,
+        () => terminalApp,
+        () => projectRoots,
+      )).start();
     }
   }
 

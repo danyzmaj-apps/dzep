@@ -20,9 +20,10 @@ import 'package:dzep_core/agent.dart';
 //
 //   phone → Mac   hello  {from, session?, window?}   every 4 s while the app is in front;
 //                        session: the live session it shows, window: the screen it shows
-//   Mac → phone   state  {windows, sessions, projects, home, agent, error?}   on every hello and on changes;
+//   Mac → phone   state  {windows, sessions, projects, roots, home, agent, error?}   on every hello and on changes;
 //                        sessions: LiveSummary.toJson, its slash commands as `cmds` [[name, description?]];
-//                        agent: what a new session starts (Agent.name, the Mac's setting)
+//                        agent: what a new session starts (Agent.name, the Mac's setting);
+//                        roots: the Mac's Project folders; projects: the git repositories under them
 //   phone → Mac   sync   {from, session, epoch?, since}   catch up after a gap or on opening
 //   Mac → phone   items  {to, session, epoch, seq, reset, items, last}   answer to sync, in chunks
 //   Mac → phone   live   {session, epoch, ops}   changes to watched sessions, batched

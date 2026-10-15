@@ -110,7 +110,7 @@ The phone's Terminal tab lists the Mac's coding sessions (omp and Claude Code) a
 
 - **A coding session** opens as a conversation laid out for the phone: your prompts, the agent's answers, tool calls as cards. Prompt it (with images), stop it, answer its questions, tool approvals and plan reviews. While omp works you can steer it or queue a prompt; Claude Code can't be steered, so a prompt waits for its run to end. Typing `/` suggests the agent's slash commands.
 - **Any window**, a shell included, also opens as its live screen you can type into.
-- **+** opens a new window in one of the Mac's projects, with a shell or your coding agent. It opens without taking the focus from what you're doing on the Mac.
+- **+** opens a new window in one of the Mac's projects (the git repositories in your **Project folders**, or any `~/path` you type), with a shell or your coding agent. **New project…** there makes a new folder in one of your Project folders and opens a window in it. It opens without taking the focus from what you're doing on the Mac.
 - When a run ends or the agent needs you while you're away from the Mac, a push takes you to that session. A session you follow shows as a **Live Activity** on the iPhone (Lock Screen, Dynamic Island) and as an **ongoing notification** on Android.
 
 What works in a window depends on its terminal: see the [table in the README](../README.md#terminal-from-the-phone). The phone shows only what works. With tmux installed (`brew install tmux`), sessions the phone starts in Terminal or Ghostty run inside tmux and get full control.
@@ -119,7 +119,7 @@ The Mac has to be awake, with Džep running and **Terminal from phone** on: the 
 
 ### Turning it on
 
-<p align="center"><img src="images/mac-settings-terminals.png" alt="Mac Settings: Terminal from phone, Coding agent, and each terminal Ready or Limited" width="400"></p>
+<p align="center"><img src="images/mac-settings-terminals.png" alt="Mac Settings: Terminal from phone, Coding agent, each terminal Ready or Limited, and Project folders" width="400"></p>
 
 1. On the Mac, turn on **Settings → Terminal from phone**. It's off by default.
 2. **Settings → Terminals** lists the terminals Džep found, each **Ready**, **Limited** (and why) or **Needs setup**.
@@ -127,7 +127,8 @@ The Mac has to be awake, with Džep running and **Terminal from phone** on: the 
    - **iTerm2, Terminal and Ghostty:** macOS asks once whether Džep may control them. If you said no, click **Allow…** there, or turn Džep on in System Settings → Privacy & Security → Automation.
    - **tmux and WezTerm** need nothing.
 3. **New sessions open in** picks the terminal a session from your phone opens in: **Auto** (the running terminal you used last, else the first that works) or a specific one.
-4. In **Settings → Coding agent**, pick omp or Claude Code: it's what a new session from your phone starts. The row under it, **Džep in …**, installs or updates Džep's integration for that agent. Restart running sessions afterwards.
+4. **Project folders** lists the folders that hold your projects: **Add folder…** picks one or more, **Remove** drops one. Your phone lists the git repositories in them (up to three levels deep) and makes new projects there. There are none until you add one; the phone can still open any path you type.
+5. In **Settings → Coding agent**, pick omp or Claude Code: it's what a new session from your phone starts. The row under it, **Džep in …**, installs or updates Džep's integration for that agent. Restart running sessions afterwards.
 
 Claude Code needs version 2.1.287 or later. If Settings says its mods are off, run `claude /login`, start `claude` once, then restart your sessions.
 

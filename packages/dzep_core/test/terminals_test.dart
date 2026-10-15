@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dzep_core/apple_terminal.dart';
 import 'package:dzep_core/ghostty.dart';
 import 'package:dzep_core/iterm.dart';
@@ -229,5 +231,63 @@ void main() {
     expect(withTmux.viaTmux(withTmux.iterm), isFalse);
     expect(withTmux.describe(withTmux.ghostty), 'Ghostty (in tmux)');
     expect(withTmux.describe(withTmux.kitty), 'kitty');
+  });
+
+  group('projects', () {
+    final terms = _terms();
+    late Directory dir;
+    late String root;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('dzep-projects');
+      root = dir.resolveSymbolicLinksSync();
+    });
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    void mk(String path) => Directory('$root/$path').createSync(recursive: true);
+
+    test('git repositories up to three levels under the given folders, not inside one another', () async {
+      mk('a/.git');
+      mk('a/sub/.git');
+      mk('org/b/.git');
+      mk('plain/x');
+      mk('.hidden/c/.git');
+      mk('1/2/3/.git');
+      mk('4/5/6/7/.git');
+      expect(await terms.projects([root, '$root/nonexistent']), ['$root/1/2/3', '$root/a', '$root/org/b']);
+      // Nested folders list a repository once.
+      expect(await terms.projects([root, '$root/org']), ['$root/1/2/3', '$root/a', '$root/org/b']);
+      expect(await terms.projects(const []), isEmpty);
+    });
+
+    test('createProject makes the folder under one of the project folders, once', () {
+      expect(terms.createProject(root, ' new ', roots: [root]), '$root/new');
+      expect(Directory('$root/new').existsSync(), isTrue);
+      expect(
+        () => terms.createProject(root, 'new', roots: [root]),
+        throwsA(isA<TerminalException>().having((e) => e.message, 'message', contains('already'))),
+      );
+      expect(() => terms.createProject(root, 'other', roots: const []), throwsA(isA<TerminalException>()));
+      for (final name in ['', '  ', 'a/b', '.x', '..', 'a\x00b', 'a\nb']) {
+        expect(() => terms.createProject(root, name, roots: [root]), throwsA(isA<TerminalException>()), reason: name);
+      }
+      // A Project folder deleted since it was added.
+      expect(
+        () => terms.createProject('$root/gone', 'x', roots: ['$root/gone']),
+        throwsA(isA<TerminalException>().having((e) => e.message, 'message', startsWith('No such folder'))),
+      );
+    });
+
+    test('launchNewProject takes the folder back when no window opens, so trying again works', () async {
+      // kitty isn't listening here: the launch fails.
+      Future<String> attempt() => terms.launchNewProject(root, 'demo', roots: [root], host: terms.kitty);
+      await expectLater(attempt(), throwsA(isA<TerminalException>()));
+      expect(Directory('$root/demo').existsSync(), isFalse);
+      // The same failure again, not "already something named demo there".
+      await expectLater(
+        attempt(),
+        throwsA(isA<TerminalException>().having((e) => e.message, 'message', isNot(contains('already')))),
+      );
+    });
   });
 }

@@ -807,6 +807,7 @@ class _TerminalPageState extends State<TerminalPage> {
 }
 
 /// A new terminal window in one of the Mac's projects (or any folder typed in),
+/// or in a new project folder made under one of the Mac's Project folders,
 /// starting the Mac's coding agent unless turned off. Pops the new window's
 /// key and whether the agent runs in it.
 class NewSessionSheet extends StatefulWidget {
@@ -822,19 +823,36 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
   bool _agent = true;
   String? _launching;
 
+  /// Making a new project: its [_name] and the Mac's root it goes in (the
+  /// first while none is picked or the picked one is gone).
+  bool _creating = false;
+  final _name = TextEditingController();
+  String? _rootPath;
+
   TerminalRemote get remote => widget.remote;
 
   @override
   void initState() {
     super.initState();
     _query.addListener(() => setState(() {}));
+    _name.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _query.dispose();
+    _name.dispose();
     super.dispose();
   }
+
+  InputDecoration _field(String hint, IconData icon) => InputDecoration(
+    hintText: hint,
+    prefixIcon: Icon(icon, size: 20, color: C.dim),
+    filled: true,
+    fillColor: C.field,
+    isDense: true,
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+  );
 
   /// `~/x` and `/x` typed in, as the Mac's path.
   String? get _typed {
@@ -858,17 +876,158 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
     }
   }
 
+  /// Makes [_name] under [root] on the Mac and opens a window there, as [_launch].
+  Future<void> _create(String root) async {
+    if (_launching != null) return;
+    setState(() => _launching = root);
+    try {
+      final agent = _agent;
+      final window = await remote.create(root, _name.text.trim(), startAgent: agent);
+      if (mounted) Navigator.of(context).pop((window: window, agent: agent));
+    } on Object catch (e) {
+      if (mounted) {
+        setState(() => _launching = null);
+        termToast(context, e);
+      }
+    }
+  }
+
+  /// Name the project and pick the folder it goes in.
+  List<Widget> _createForm(Widget? note) {
+    final roots = remote.roots ?? const <String>[];
+    final root = roots.contains(_rootPath) ? _rootPath : roots.firstOrNull;
+    final busy = _launching != null;
+    final ready = remote.online && _name.text.trim().isNotEmpty && !busy;
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: TextField(
+          key: const ValueKey('project-name'),
+          onTapOutside: dismissKeyboard,
+          controller: _name,
+          autofocus: true,
+          autocorrect: false,
+          style: const TextStyle(fontSize: 15),
+          decoration: _field('Project name', Icons.create_new_folder_outlined),
+        ),
+      ),
+      ?note,
+      Expanded(
+        child: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          children: [
+            const Text('In', style: TextStyle(fontSize: 12, color: C.dim)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final r in roots)
+                  ChoiceChip(
+                    label: Text(shortPath(remote, r)),
+                    selected: r == root,
+                    onSelected: (_) => setState(() => _rootPath = r),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                TextButton(onPressed: busy ? null : () => setState(() => _creating = false), child: const Text('Back')),
+                const Spacer(),
+                FilledButton(
+                  onPressed: root != null && ready ? () => unawaited(_create(root)) : null,
+                  child: busy
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Create and open'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// Find a project (or type a path) and open a window there; or start a
+  /// new project.
+  List<Widget> _pickList(Widget? note) {
+    final words = _query.text.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
+    final open = {for (final w in remote.windows) w.cwd};
+    final places = [
+      ...open.where((p) => p.isNotEmpty && p != remote.home),
+      ...remote.projects.where((p) => !open.contains(p)),
+    ].where((p) => words.every(shortPath(remote, p).toLowerCase().contains)).toList();
+    final typed = _typed;
+    // null: a Mac that predates Project folders, and can't make a project.
+    final roots = remote.roots;
+    final noRoots = roots != null && roots.isEmpty;
+    final noRootsHint = remote.online && noRoots && places.isEmpty && typed == null;
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: TextField(
+          key: const ValueKey('session-folder'),
+          onTapOutside: dismissKeyboard,
+          controller: _query,
+          autocorrect: false,
+          style: const TextStyle(fontSize: 15),
+          decoration: _field('Find a project, or type ~/path', Icons.folder_outlined),
+        ),
+      ),
+      ?note,
+      if (noRootsHint)
+        const Padding(
+          key: ValueKey('no-roots'),
+          padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Text(
+            'No project folders yet. On your Mac, open Džep → Settings → Project folders and add '
+            'the folders that hold your projects. You can still type a ~/path above.',
+            style: TextStyle(fontSize: 13, color: C.dim, height: 1.4),
+          ),
+        ),
+      Expanded(
+        child: ListView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          children: [
+            if (_query.text.isEmpty && roots != null)
+              ListTile(
+                key: const ValueKey('new-project'),
+                dense: true,
+                enabled: remote.online && roots.isNotEmpty && _launching == null,
+                onTap: () => setState(() => _creating = true),
+                leading: const Icon(Icons.create_new_folder_outlined, size: 18, color: C.dim2),
+                title: const Text('New project…', style: TextStyle(fontSize: 14)),
+                // The hint above says it already.
+                subtitle: noRoots && !noRootsHint
+                    ? const Text(
+                        'Add a project folder in Džep on your Mac: Settings → Project folders',
+                        style: TextStyle(fontSize: 12, color: C.dim),
+                      )
+                    : null,
+              ),
+            for (final p in [?typed, ...places])
+              ListTile(
+                dense: true,
+                enabled: remote.online,
+                onTap: () => unawaited(_launch(p)),
+                leading: Icon(open.contains(p) ? Icons.terminal : Icons.folder_outlined, size: 18, color: C.dim2),
+                title: Text(shortPath(remote, p), style: const TextStyle(fontSize: 14)),
+                trailing: _launching == p
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : null,
+              ),
+          ],
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: remote,
     builder: (context, _) {
-      final words = _query.text.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
-      final open = {for (final w in remote.windows) w.cwd};
-      final places = [
-        ...open.where((p) => p.isNotEmpty && p != remote.home),
-        ...remote.projects.where((p) => !open.contains(p)),
-      ].where((p) => words.every(shortPath(remote, p).toLowerCase().contains)).toList();
-      final typed = _typed;
       final note = linkNote(remote);
       return Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -887,7 +1046,10 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
               children: [
                 Padding(
                   padding: EdgeInsets.fromLTRB(20, 18, 20, remote.opensIn == null ? 4 : 0),
-                  child: const Text('New session', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    _creating ? 'New project' : 'New session',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
                 ),
                 if (remote.opensIn case final opensIn?)
                   Padding(
@@ -902,47 +1064,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   title: Text('Start ${remote.agent.label}', style: const TextStyle(fontSize: 15)),
                   subtitle: const Text('Off: just a shell', style: TextStyle(fontSize: 12, color: C.dim)),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: TextField(
-                    key: const ValueKey('session-folder'),
-                    onTapOutside: dismissKeyboard,
-                    controller: _query,
-                    autocorrect: false,
-                    style: const TextStyle(fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: 'Find a project, or type ~/path',
-                      prefixIcon: const Icon(Icons.folder_outlined, size: 20, color: C.dim),
-                      filled: true,
-                      fillColor: C.field,
-                      isDense: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                    ),
-                  ),
-                ),
-                ?note,
-                Expanded(
-                  child: ListView(
-                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                    children: [
-                      for (final p in [?typed, ...places])
-                        ListTile(
-                          dense: true,
-                          enabled: remote.online,
-                          onTap: () => unawaited(_launch(p)),
-                          leading: Icon(
-                            open.contains(p) ? Icons.terminal : Icons.folder_outlined,
-                            size: 18,
-                            color: C.dim2,
-                          ),
-                          title: Text(shortPath(remote, p), style: const TextStyle(fontSize: 14)),
-                          trailing: _launching == p
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                              : null,
-                        ),
-                    ],
-                  ),
-                ),
+                if (_creating) ..._createForm(note) else ..._pickList(note),
               ],
             ),
           ),

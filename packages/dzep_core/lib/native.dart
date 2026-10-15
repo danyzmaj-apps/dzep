@@ -52,6 +52,10 @@ class Native {
   /// Mac: seconds since the last keyboard or mouse input.
   static Future<double> idleSeconds() async => await _channel.invokeMethod<double>('idleSeconds') ?? 0;
 
+  /// Mac: a folder picker (sheet on the main window); the folders chosen,
+  /// none if cancelled.
+  static Future<List<String>> pickFolders() async => await _channel.invokeListMethod<String>('pickFolders') ?? const [];
+
   // Mac and phone: todo reminders, as local notifications.
   /// Replaces every pending reminder with [reminders] (lib/remind.dart picks
   /// them); the first non-empty set asks for permission.

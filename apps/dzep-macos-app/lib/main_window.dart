@@ -1560,6 +1560,66 @@ class _SettingsSheetState extends State<SettingsSheet> {
     );
   }
 
+  /// Settings → Project folders → Add folder…: the picked folders join the
+  /// list, each once.
+  Future<void> _addFolders() async {
+    final picked = await Native.pickFolders();
+    if (picked.isEmpty) return;
+    await app.setProjectRoots({...app.projectRoots, ...picked}.toList());
+  }
+
+  /// [p] with the home folder as `~`.
+  String _tilde(String p) {
+    final home = app.terminals.home;
+    if (p == home) return '~';
+    return p.startsWith('$home/') ? '~${p.substring(home.length)}' : p;
+  }
+
+  /// Settings → Terminals → Project folders.
+  Widget _projectFolders() {
+    final roots = app.projectRoots;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Project folders', style: TextStyle(fontSize: 13)),
+          const Text(
+            'Your phone lists the git repositories in these (up to three levels deep) and makes new projects here',
+            style: TextStyle(fontSize: 11, color: C.dim),
+          ),
+          const SizedBox(height: 8),
+          if (roots.isEmpty)
+            const Text(
+              'None yet · your phone can still open any path you type',
+              style: TextStyle(fontSize: 11, color: C.dim),
+            ),
+          for (final root in roots)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(child: Text(_tilde(root), style: const TextStyle(fontSize: 12))),
+                  _button(
+                    'Remove',
+                    () => unawaited(
+                      app.setProjectRoots([
+                        for (final r in app.projectRoots)
+                          if (r != root) r,
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 8),
+          _button('Add folder…', () => unawaited(_addFolders())),
+        ],
+      ),
+    );
+  }
+
   Future<void> _checkIntegration() async {
     final agent = app.codingAgent;
     IntegrationState r;
@@ -1874,6 +1934,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                             ],
                           ),
                         ),
+                        _projectFolders(),
                       ]),
                       const SizedBox(height: 18),
                       Row(
