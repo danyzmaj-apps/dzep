@@ -179,6 +179,78 @@ void main() {
       expect(status, 403);
       expect(hub.sessions, isEmpty);
     });
+
+    test('every route but the nonce ping wants the token; it listens on loopback only', () async {
+      expect(api.port, isNotNull);
+      Future<int> status(String method, String path, {String? auth, String? body}) async {
+        final client = HttpClient();
+        try {
+          final req = await client.open(method, '127.0.0.1', api.port!, path);
+          if (auth != null) req.headers.set('authorization', 'Bearer $auth');
+          if (path == '/v1/live') {
+            req.headers
+              ..set('connection', 'Upgrade')
+              ..set('upgrade', 'websocket')
+              ..set('sec-websocket-version', '13')
+              ..set('sec-websocket-key', 'dGhlIHNhbXBsZSBub25jZQ==');
+          }
+          if (body != null) req.write(body);
+          final res = await req.close();
+          await res.drain<void>();
+          return res.statusCode;
+        } finally {
+          client.close(force: true);
+        }
+      }
+
+      for (final (method, path) in [
+        ('GET', '/v1/ping'),
+        ('GET', '/v1/ideas?kind=todo'),
+        ('GET', '/v1/ideas?project=x'),
+        ('POST', '/v1/ideas'),
+        ('PATCH', '/v1/ideas/x'),
+        ('GET', '/v1/live'),
+        ('POST', '/v1/live/http'),
+      ]) {
+        for (final auth in [null, 'wrong']) {
+          expect(
+            await status(method, path, auth: auth, body: method == 'GET' ? null : '{"title":"x"}'),
+            403,
+            reason: '$method $path with ${auth ?? 'no'} token',
+          );
+        }
+      }
+      expect(await status('GET', '/v1/ping?nonce=0123456789abcdef'), 200);
+
+      // Nothing listens on this Mac's other addresses.
+      final others = [
+        for (final i in await NetworkInterface.list())
+          for (final a in i.addresses)
+            if (!a.isLoopback && a.type == InternetAddressType.IPv4) a,
+      ];
+      for (final a in others) {
+        await expectLater(
+          Socket.connect(a, api.port!, timeout: const Duration(seconds: 1)),
+          throwsA(isA<SocketException>()),
+          reason: a.address,
+        );
+      }
+    });
+
+    test('a request whose body never comes holds up nobody else', () async {
+      // Headers promise a body that never arrives.
+      final stuck = await Socket.connect(InternetAddress.loopbackIPv4, api.port!);
+      addTearDown(stuck.destroy);
+      stuck.write(
+        'POST /v1/live/http HTTP/1.1\r\nhost: 127.0.0.1\r\nauthorization: Bearer $token\r\n'
+        'content-type: application/json\r\ncontent-length: 1000000\r\n\r\n{"frames":',
+      );
+      await stuck.flush();
+      final (status, _) = await post({
+        'frames': [hello()],
+      }).timeout(const Duration(seconds: 5));
+      expect(status, 200);
+    });
   });
 }
 
