@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dzep_core/backend.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -54,5 +56,18 @@ void main() {
     expect(Backend.pairingCode(Uri.parse('dzep://todos?code=K7QM')), isNull);
     // A link with a code but no usable server is no link at all.
     expect(Backend.pairingCode(Uri.parse('dzep://setup?url=ftp://x&key=k&code=K7QM')), isNull);
+  });
+
+  test('a server that drops the connection mid-answer is a message, not a throw', () async {
+    // Answers half a status line, then hangs up: HttpException, not SocketException.
+    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+    server.listen((socket) async {
+      socket.write('HTTP/1.1 200');
+      await socket.flush();
+      await socket.close();
+    });
+    final problem = await Backend(url: 'http://127.0.0.1:${server.port}', key: 'k').check();
+    expect(problem, contains("Couldn't reach"));
   });
 }

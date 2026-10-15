@@ -268,6 +268,8 @@ class Session extends ChangeNotifier {
     if (_backend == null) return;
     await _auth?.cancel();
     _auth = null;
+    _reviewerTimer?.cancel();
+    _reviewerTimer = null;
     await Supabase.instance.dispose();
   }
 
@@ -331,6 +333,10 @@ class Session extends ChangeNotifier {
     _store = null;
     _chats = null;
     _user = user;
+    _reviewerTimer?.cancel();
+    _reviewerTimer = user?.appMetadata['dzep_demo'] == true
+        ? Timer.periodic(reviewerCheck, (_) => unawaited(checkReviewerAccess()))
+        : null;
     if (user != null) {
       // Both open before either is published: screens read the chats
       // whenever the store is there.
@@ -391,6 +397,29 @@ class Session extends ChangeNotifier {
       }
     }
     _sendingReminders = false;
+  }
+
+  /// How often the reviewer demo account's device asks whether its session
+  /// still exists.
+  static const reviewerCheck = Duration(seconds: 30);
+  Timer? _reviewerTimer;
+
+  /// The server ends the demo account's sessions the moment its last
+  /// reviewer code stops working (public.end_idle_demo_sessions), but the
+  /// access token it already holds would keep it signed in here until it
+  /// expires, up to an hour. Signs out here once the server no longer knows
+  /// the session; no answer (offline) proves nothing.
+  @visibleForTesting
+  Future<void> checkReviewerAccess() async {
+    try {
+      await client.auth.getUser();
+    } on AuthException catch (e) {
+      if (e.statusCode != '401' && e.statusCode != '403') return;
+      _leaving ??= "This reviewer access has ended. Ask the server's owner for a new reviewer code.";
+      await client.auth.signOut();
+    } on Object catch (e) {
+      debugPrint('Džep: reviewer access not checked: $e');
+    }
   }
 
   Future<void> signIn() async {
