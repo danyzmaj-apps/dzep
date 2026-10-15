@@ -95,7 +95,7 @@ A code works **once**, for **10 minutes**, and anyone who scans it gets into you
 
 A small streamed chat with the AI you connected: any OpenAI-compatible provider (OpenAI, OpenRouter, Groq, DeepSeek, a local Ollama, …). Paste or attach up to 4 images per question. Chats sync: start on one device, continue on another.
 
-No AI yet? Connect one from the Mac: **Settings → AI → Connect…** (or **Connect an AI…** in Ask). The key stays on your server; the apps never see it. To switch providers from a terminal, see [AI provider](SELF_HOSTING.md#ai-provider).
+No AI yet? Connect one from the Mac: **Settings → AI → Connect…** (or **Connect an AI…** in Ask); once one is connected, the same button reads **Change…**. The key stays on your server; the apps never see it. To switch providers from a terminal, see [AI provider](SELF_HOSTING.md#ai-provider).
 
 ## Terminal from the phone
 
@@ -123,7 +123,7 @@ The Mac has to be awake, with Džep running and **Terminal from phone** on: the 
 
 1. On the Mac, turn on **Settings → Terminal from phone**. It's off by default.
 2. **Settings → Terminals** lists the terminals Džep found, each **Ready**, **Limited** (and why) or **Needs setup**.
-   - **kitty:** click **Set up…**, then restart kitty. It backs up `kitty.conf` (`.dzep-backup`) and appends `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty`. Only kitty windows of your own macOS account show up.
+   - **kitty:** click **Set up**, then restart kitty. It backs up `kitty.conf` (`.dzep-backup`) and appends `allow_remote_control socket-only` and `listen_on unix:/tmp/kitty`. Only kitty windows of your own macOS account show up.
    - **iTerm2, Terminal and Ghostty:** macOS asks once whether Džep may control them. If you said no, click **Allow…** there, or turn Džep on in System Settings → Privacy & Security → Automation.
    - **tmux and WezTerm** need nothing.
 3. **New sessions open in** picks the terminal a session from your phone opens in: **Auto** (the running terminal you used last, else the first that works) or a specific one.

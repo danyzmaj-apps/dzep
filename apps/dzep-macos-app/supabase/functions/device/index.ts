@@ -1,5 +1,5 @@
-// What the phones and the Mac widget do without a Supabase session (the
-// interactive Todos widgets, notification Done actions), authorised by a device token
+// What the phones' widgets and notification Done actions do without a Supabase session (the
+// interactive Todos widgets on iPhone and Android), authorised by a device token
 // (see device_tokens) in the x-dzep-token header. Deployed --no-verify-jwt.
 //
 //   POST /functions/v1/device  {"action": "done", "id"}   → marks a todo done
@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
   if (!device) return json(401, { error: "Unknown device token" });
   await admin.from("device_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", device.id);
 
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) ?? {};
 
   if (body.action === "done") {
     if (typeof body.id !== "string") return json(400, { error: "id is required" });

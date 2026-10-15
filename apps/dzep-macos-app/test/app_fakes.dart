@@ -114,6 +114,9 @@ class FakeStore extends ChangeNotifier implements IdeaStore {
   Future<void> syncNow() async {}
 
   @override
+  void receive(Map<String, dynamic> row) {}
+
+  @override
   Future<void> close() async {}
 }
 
@@ -220,6 +223,9 @@ class FakeApp extends AppController {
 
   /// What Dart asked the native side, in order.
   final calls = <String>[];
+
+  /// What runs when the user goes without [signOut] here.
+  Future<void> signedOutByServer() => onSignedOut();
 
   @override
   Backend get backend => const Backend(url: 'https://example.supabase.co', key: 'test');

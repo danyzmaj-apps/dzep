@@ -224,7 +224,10 @@ class SyncDot extends StatelessWidget {
     final (color, label) = switch (state) {
       SyncState.synced => (C.ok, 'Synced'),
       SyncState.syncing => (C.warn, 'Syncing…'),
-      SyncState.offline => (C.warn, 'Offline · saved on this Mac'),
+      SyncState.offline => (
+        C.warn,
+        'Offline · saved on this ${Theme.of(context).platform == TargetPlatform.macOS ? 'Mac' : 'phone'}',
+      ),
       null => (const Color(0xFF6B7280), 'Signed out'),
     };
     return Row(

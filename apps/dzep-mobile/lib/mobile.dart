@@ -111,17 +111,11 @@ class MobileSession extends Session {
   Future<void> onSigningOut({required bool accountDeleted}) async {
     final token = _prefs.getString(_tokenKey);
     final pushToken = _prefs.getString(_pushTokenKey);
-    await _prefs.remove(_tokenKey);
-    await _prefs.remove(_tokenUserKey);
-    await _prefs.remove(_pushTokenKey);
-    await _prefs.remove(_pushUserKey);
-    remindersByPush = false;
-    await Native.setSharedToken(null);
-    // The followed sessions are this account's: they go from the Lock
-    // Screen now, and the server stops updating them (iOS gives each its
-    // own token, which 'unregister' below doesn't know).
-    for (final a in await Native.liveActivities()) {
-      await Native.endActivity(a.key, immediate: true);
+    final activities = await _forgetHere();
+    // The followed sessions are this account's: the server stops updating
+    // them too (iOS gives each its own token, which 'unregister' below
+    // doesn't know).
+    for (final a in activities) {
       if (a.token case final activityToken? when !accountDeleted) {
         await _tryServer(
           'activity end',
@@ -145,6 +139,32 @@ class MobileSession extends Session {
     }
   }
 
+  /// However the account went, also without [signOut] here (the server
+  /// refused a refresh, the account was deleted on another device, the
+  /// reviewer access ended): its widget token and followed sessions leave
+  /// this phone.
+  @override
+  Future<void> onSignedOut() async {
+    await _forgetHere();
+  }
+
+  /// Drops what this phone keeps for the account: the widget's device token
+  /// (which also empties the widgets), the push registration's record, and
+  /// the followed sessions, ended at once. Returns those sessions.
+  Future<List<({String key, String? token})>> _forgetHere() async {
+    await _prefs.remove(_tokenKey);
+    await _prefs.remove(_tokenUserKey);
+    await _prefs.remove(_pushTokenKey);
+    await _prefs.remove(_pushUserKey);
+    remindersByPush = false;
+    await Native.setSharedToken(null);
+    final activities = await Native.liveActivities();
+    for (final a in activities) {
+      await Native.endActivity(a.key, immediate: true);
+    }
+    return activities;
+  }
+
   /// One server call of the sign-out; a failed one (offline) doesn't stop
   /// the rest.
   Future<void> _tryServer(String what, Future<Object?> Function() call) async {
@@ -155,6 +175,15 @@ class MobileSession extends Session {
     }
   }
 }
+
+/// A toast saying [text] with Undo. Flutter keeps a SnackBar with an action
+/// up until it's dismissed unless told otherwise; this one goes on its own,
+/// like the Mac's.
+SnackBar undoSnackBar(String text, VoidCallback undo) => SnackBar(
+  content: Text(text),
+  persist: false,
+  action: SnackBarAction(label: 'Undo', onPressed: undo),
+);
 
 class MobileApp extends StatelessWidget {
   const MobileApp({required this.session, super.key});
@@ -406,15 +435,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     unawaited(HapticFeedback.lightImpact());
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(todo.done ? 'Done ✓' : 'Reopened'),
-          action: SnackBarAction(
-            label: 'Undo',
-            onPressed: () => store.update(todo, done: !todo.done),
-          ),
-        ),
-      );
+      ..showSnackBar(undoSnackBar(todo.done ? 'Done ✓' : 'Reopened', () => store.update(todo, done: !todo.done)));
   }
 
   bool _matches(Idea i) {
@@ -427,14 +448,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(switch (i.kind) {
-            Kind.todo => 'Todo deleted',
-            Kind.note => 'Note deleted',
-            Kind.idea => 'Idea deleted',
-          }),
-          action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(i)),
-        ),
+        undoSnackBar(switch (i.kind) {
+          Kind.todo => 'Todo deleted',
+          Kind.note => 'Note deleted',
+          Kind.idea => 'Idea deleted',
+        }, () => store.restore(i)),
       );
   }
 
@@ -1181,12 +1199,7 @@ class _DetailPageState extends State<DetailPage> {
           onPressed: () {
             widget.store.delete(idea);
             Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Idea deleted'),
-                action: SnackBarAction(label: 'Undo', onPressed: () => widget.store.restore(idea)),
-              ),
-            );
+            ScaffoldMessenger.of(context).showSnackBar(undoSnackBar('Idea deleted', () => widget.store.restore(idea)));
           },
         ),
       ],
@@ -1607,12 +1620,7 @@ class _NotePageState extends State<NotePage> {
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context)
                   ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    SnackBar(
-                      content: const Text('Note deleted'),
-                      action: SnackBarAction(label: 'Undo', onPressed: () => store.restore(note)),
-                    ),
-                  );
+                  ..showSnackBar(undoSnackBar('Note deleted', () => store.restore(note)));
               },
             ),
           ],
