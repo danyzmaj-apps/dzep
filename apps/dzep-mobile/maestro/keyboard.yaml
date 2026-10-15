@@ -5,9 +5,9 @@ appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Pocket"
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
     timeout: 15000
-- tapOn: "Pocket"
+- tapOn: "(\\d+\n)?Pocket(\nTab.*)?"
 - waitForAnimationToEnd
 # 1. Tap on empty space (the header) closes the keyboard.
 - tapOn: "Search"
@@ -25,8 +25,8 @@ appId: com.danyzmaj.dzep
 - eraseText: 5
 - tapOn: {point: "35%, 11%"}
 # 3. Chat: Send keeps the keyboard; a tap on the transcript closes it.
-- tapOn: "Ask"
-- tapOn: "New"
+- tapOn: "Ask(\nTab.*)?"
+- tapOn: "New chat"
 - inputText: "Reply with exactly KB-OK"
 - extendedWaitUntil: {visible: "Next keyboard", timeout: 4000}
 - tapOn: "Send"

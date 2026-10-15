@@ -5,12 +5,12 @@ appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Pocket"
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
     timeout: 15000
-- tapOn: "Pocket"
+- tapOn: "(\\d+\n)?Pocket(\nTab.*)?"
 - waitForAnimationToEnd
 - tapOn: "Notes"
-- tapOn: "New"
+- tapOn: "New note"
 - inputText: "Maestro note ${TS}\nsecond line"
 - tapOn: "Back"
 # A row reads as one label: title, preview, time.

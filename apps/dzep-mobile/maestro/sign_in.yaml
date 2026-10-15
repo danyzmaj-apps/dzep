@@ -8,7 +8,7 @@ appId: com.danyzmaj.dzep
 - launchApp
 # A signed-in app shows its tabs once its store is read.
 - extendedWaitUntil:
-    visible: "Pocket"
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
     timeout: 5000
     optional: true
 - runFlow:
@@ -20,5 +20,5 @@ appId: com.danyzmaj.dzep
       - inputText: ${SETUP_LINK}
       - tapOn: "Sign in"
 - extendedWaitUntil:
-    visible: "Pocket"
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
     timeout: 20000

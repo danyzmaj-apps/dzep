@@ -7,7 +7,7 @@ appId: com.danyzmaj.dzep
     optional: true
 - launchApp
 - extendedWaitUntil:
-    visible: "Pocket"
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
     timeout: 15000
 - openLink: "dzep://add?kind=todo"
 - tapOn:

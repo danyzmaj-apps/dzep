@@ -1,9 +1,8 @@
-// The phone screenshots in the docs: the real screens on made-up data, 393×852 points at 2×.
+// The phone screenshots in the docs: the real screens on made-up data, as an iPhone (393×852 at 2×) and, for the
+// Android look, an Android phone of the same size.
 // Run from apps/dzep-mobile: `fvm flutter test --tags screenshots --run-skipped` (dart_test.yaml skips them otherwise).
-// They land in the repo's docs/images/phone-*.png. The home page renders here in its Android look only: on an
-// iPhone its tab bar, search and kind picker are UIKit views, which a test can't draw, so phone-pocket.png and the
-// hero's phone are taken on the iOS simulator (docs/BUILDING.md). hero.png is that capture in a phone's frame next
-// to the Mac's popup, which apps/dzep-macos-app's screenshots render first (build/screenshots/hero-popup.png).
+// They land in the repo's docs/images/phone-*.png, with hero.png: the Pocket tab's todos in a phone's frame next to
+// the Mac's popup, which apps/dzep-macos-app's screenshots render first (build/screenshots/hero-popup.png).
 @Tags(['screenshots'])
 library;
 
@@ -28,7 +27,6 @@ import 'fonts.dart';
 
 final _out = Directory('../../docs/images');
 final _heroPopup = File('../dzep-macos-app/build/screenshots/hero-popup.png');
-final _heroPhone = File('build/screenshots/hero-phone.png');
 final _ios = TargetPlatformVariant.only(TargetPlatform.iOS);
 final _android = TargetPlatformVariant.only(TargetPlatform.android);
 
@@ -430,34 +428,43 @@ void main() {
     return missingFont != null;
   }
 
-  testWidgets('hero', (tester) async {
+  testWidgets('hero', variant: _ios, (tester) async {
     if (skipped()) return;
     if (!_heroPopup.existsSync()) {
       return markTestSkipped('No ${_heroPopup.path}: run the Mac screenshots first.');
     }
-    if (!_heroPhone.existsSync()) {
-      return markTestSkipped('No ${_heroPhone.path}: take it on the iOS simulator first (docs/BUILDING.md).');
-    }
-    final (popup, screen) = (await tester.runAsync(() async {
-      Future<ui.Image> decode(File f) async =>
-          (await (await ui.instantiateImageCodec(f.readAsBytesSync())).getNextFrame()).image;
-      return (await decode(_heroPopup), await decode(_heroPhone));
+    final popup = (await tester.runAsync(() async {
+      final codec = await ui.instantiateImageCodec(_heroPopup.readAsBytesSync());
+      return (await codec.getNextFrame()).image;
     }))!;
     addTearDown(popup.dispose);
-    addTearDown(screen.dispose);
     final canvas = _Hero.canvas(popup);
     tester.view
       ..physicalSize = canvas * 2
       ..devicePixelRatio = 2;
     addTearDown(tester.view.reset);
     debugDisableShadows = false;
+    final session = await FakeSession.create(_store(), _chats());
     await tester.pumpWidget(
       RepaintBoundary(
         key: shot,
-        child: _Hero(popup: popup, screen: screen),
+        child: _Hero(
+          popup: popup,
+          phone: MobileApp(session: session),
+        ),
       ),
     );
+    await tester.pump();
+    // The phone on its todos, as the popup next to it.
+    await tap(tester, find.descendant(of: find.byType(AppTabBar), matching: find.text('Pocket')));
+    await tap(tester, find.byKey(const ValueKey('show-todos')));
     await save(tester, 'hero.png');
+  });
+
+  testWidgets('pocket', variant: _ios, (tester) async {
+    if (skipped()) return;
+    await pocket(tester, 'All');
+    await save(tester, 'phone-pocket.png');
   });
 
   testWidgets('pocket on Android', variant: _android, (tester) async {
@@ -472,6 +479,14 @@ void main() {
     await tester.tap(find.textContaining('Cold frame or greenhouse'));
     await tester.pumpAndSettle();
     await save(tester, 'phone-ask.png');
+  });
+
+  testWidgets('terminal', variant: _ios, (tester) async {
+    if (skipped()) return;
+    final r = remote();
+    await app(tester, terminal: r);
+    await save(tester, 'phone-terminal.png');
+    r.flush();
   });
 
   testWidgets('terminal on Android', variant: _android, (tester) async {
@@ -497,16 +512,14 @@ void main() {
 }
 
 /// The README's hero on a transparent canvas: the Mac's [popup] (a 2× PNG
-/// with its shadow) next to the iPhone's [screen] (a 3× capture from the
-/// simulator, status bar and Dynamic Island included) in an iPhone's frame,
-/// both at their real size in points.
+/// with its shadow) next to [phone] in an iPhone's frame, both at their
+/// real size in points.
 class _Hero extends StatelessWidget {
-  const _Hero({required this.popup, required this.screen});
+  const _Hero({required this.popup, required this.phone});
   final ui.Image popup;
-  final ui.Image screen;
+  final Widget phone;
 
-  /// An iPhone 17 Pro's screen, in points.
-  static const _screen = Size(402, 874);
+  static const _screen = Size(393, 852);
   static const _bezel = 12.0;
   static const _radius = 55.0;
 
@@ -519,30 +532,73 @@ class _Hero extends StatelessWidget {
       Size(popup.width / 2 + _margin.horizontal + _frame().width, _margin.vertical + _frame().height);
 
   @override
-  Widget build(BuildContext context) => Directionality(
-    textDirection: TextDirection.ltr,
-    child: Row(
-      children: [
-        RawImage(image: popup, scale: 2),
-        Padding(
-          padding: _margin,
-          child: Container(
-            width: _frame().width,
-            height: _frame().height,
-            padding: const EdgeInsets.all(_bezel),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A0A0C),
-              borderRadius: BorderRadius.circular(_radius + _bezel),
-              border: Border.all(color: const Color(0xFF45474D), width: 1.5),
-              boxShadow: const [BoxShadow(color: Color(0x4D000000), blurRadius: 36, offset: Offset(0, 14))],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(_radius),
-              child: RawImage(image: screen, width: _screen.width, height: _screen.height, fit: BoxFit.cover),
+  Widget build(BuildContext context) {
+    const white = Color(0xFFF2F3F5);
+    const status = TextStyle(
+      fontFamily: 'CupertinoSystemText',
+      fontSize: 17,
+      fontWeight: FontWeight.w600,
+      color: white,
+    );
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: Row(
+        children: [
+          RawImage(image: popup, scale: 2),
+          Padding(
+            padding: _margin,
+            child: Container(
+              width: _frame().width,
+              height: _frame().height,
+              padding: const EdgeInsets.all(_bezel),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0C),
+                borderRadius: BorderRadius.circular(_radius + _bezel),
+                border: Border.all(color: const Color(0xFF45474D), width: 1.5),
+                boxShadow: const [BoxShadow(color: Color(0x4D000000), blurRadius: 36, offset: Offset(0, 14))],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(_radius),
+                child: Stack(
+                  children: [
+                    MediaQuery(
+                      data: MediaQueryData.fromView(View.of(context)).copyWith(
+                        size: _screen,
+                        padding: const EdgeInsets.only(top: 59, bottom: 34),
+                        viewPadding: const EdgeInsets.only(top: 59, bottom: 34),
+                      ),
+                      child: phone,
+                    ),
+                    // The status bar and the Dynamic Island, which iOS draws over the app.
+                    const Positioned(left: 52, top: 18, child: Text('9:41', style: status)),
+                    const Positioned(
+                      right: 30,
+                      top: 19,
+                      child: Row(
+                        spacing: 5,
+                        children: [
+                          Icon(Icons.signal_cellular_alt, size: 18, color: white),
+                          Icon(Icons.wifi, size: 18, color: white),
+                          Icon(Icons.battery_full, size: 20, color: white),
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      top: 11,
+                      left: (_screen.width - 125) / 2,
+                      child: Container(
+                        width: 125,
+                        height: 37,
+                        decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(19)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
