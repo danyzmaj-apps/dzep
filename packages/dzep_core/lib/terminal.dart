@@ -723,27 +723,6 @@ class AutomationPending extends TerminalException {
   final String app;
 }
 
-/// AppleScript's string literal for [s].
-String appleScriptString(String s) => '"${s.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
-
-/// [text] as an AppleScript expression: literal runs joined with
-/// `(ASCII character n)` for control characters, which a literal can't hold.
-String appleScriptText(String text) {
-  final parts = <String>[];
-  final run = StringBuffer();
-  for (final c in text.runes) {
-    if (c < 0x20 || c == 0x7f) {
-      if (run.isNotEmpty) parts.add(appleScriptString('$run'));
-      run.clear();
-      parts.add('(ASCII character $c)');
-    } else {
-      run.writeCharCode(c);
-    }
-  }
-  if (run.isNotEmpty || parts.isEmpty) parts.add(appleScriptString('$run'));
-  return parts.join(' & ');
-}
-
 /// xterm's color [i] of 256 as 0xRRGGBB: 16 basic, a 6×6×6 cube, 24 greys.
 int xtermRgb(int i) {
   const basic = [
