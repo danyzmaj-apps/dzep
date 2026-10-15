@@ -5,10 +5,10 @@ appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Todos.*"
+    visible: "Pocket"
     timeout: 15000
-- tapOn: "Ask\nTab.*"
-- tapOn: "New chat"
+- tapOn: "Ask"
+- tapOn: "New"
 # The field (its hint), not the "Ask a quick question below." empty state.
 - tapOn: "Ask a quick question…"
 - inputText: "Reply with exactly the word PONG${TS} and nothing else"

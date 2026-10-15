@@ -1,14 +1,16 @@
-# Notes tab: write a note (the first line becomes its title), find it in the
-# list with its second line as the preview, reopen and edit it, delete it with
-# a swipe. Needs a signed-in session.
+# Pocket tab, Notes: write a note (the first line becomes its title), find it
+# in the list with its second line as the preview, reopen and edit it, delete
+# it with a swipe. Needs a signed-in session.
 appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Todos.*"
+    visible: "Pocket"
     timeout: 15000
-- tapOn: "Notes.*"
-- tapOn: "New note"
+- tapOn: "Pocket"
+- waitForAnimationToEnd
+- tapOn: "Notes"
+- tapOn: "New"
 - inputText: "Maestro note ${TS}\nsecond line"
 - tapOn: "Back"
 # A row reads as one label: title, preview, time.
@@ -23,10 +25,11 @@ appId: com.danyzmaj.dzep
 - tapOn: "Maestro note ${TS}.*"
 - assertVisible: ".*third line.*"
 - tapOn: "Back"
-# Swipe left deletes, with Undo. The newest note is the top row.
+# Swipe left deletes, with Undo. The newest note is the top row, under the
+# search and the pills.
 - swipe:
-    start: 90%, 25%
-    end: 5%, 25%
+    start: 90%, 30%
+    end: 5%, 30%
     duration: 400
 - extendedWaitUntil:
     visible: "Note deleted"

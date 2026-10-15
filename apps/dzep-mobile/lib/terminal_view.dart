@@ -8,6 +8,7 @@ import 'package:dzep_core/native.dart';
 import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:dzep_core/ui.dart';
+import 'package:dzep_mobile/chrome.dart';
 import 'package:dzep_mobile/session_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -123,8 +124,9 @@ Future<bool> closeWindow(BuildContext context, TerminalRemote remote, TermWindow
 }
 
 /// What's wrong with the link, if anything, as one line for the top of a
-/// screen; with how old the shown state is when it isn't live.
-Widget? linkNote(TerminalRemote r) {
+/// screen (on [color]: a bar by default); with how old the shown state is when
+/// it isn't live.
+Widget? linkNote(TerminalRemote r, {Color color = C.bar}) {
   final at = r.stateAt;
   final (text, busy) = switch (r.link) {
     TerminalLink.connecting => ('connecting…', true),
@@ -143,7 +145,7 @@ Widget? linkNote(TerminalRemote r) {
       ? 'Updated ${ago(at)} · $text'
       : '${text[0].toUpperCase()}${text.substring(1)}';
   return Container(
-    color: C.bar,
+    color: color,
     padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
     child: Row(
       children: [
@@ -218,14 +220,6 @@ Color sessionColor(LiveSummary s) => s.ask != null ? C.warn : (s.busy ? C.accent
 class TerminalList extends StatelessWidget {
   const TerminalList({required this.remote, super.key});
   final TerminalRemote remote;
-
-  Widget _header(String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
-    child: Text(
-      text,
-      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: C.dim2, letterSpacing: .4),
-    ),
-  );
 
   Widget _swipe(BuildContext context, String key, TermWindow? w, Widget child) {
     if (w == null || !w.can(TermCap.close)) return child;
@@ -367,15 +361,15 @@ class TerminalList extends StatelessWidget {
   Widget _list() => ListenableBuilder(
     listenable: remote,
     builder: (context, _) {
-      final note = linkNote(remote);
+      final note = linkNote(remote, color: Colors.transparent);
       final sessions = sortedSessions(remote.sessions);
       final claimed = {for (final s in sessions) ?s.window};
       final windows = remote.windows.where((w) => !claimed.contains(w.key)).toList();
-      const divider = Divider(height: 1, color: C.line, indent: 52);
+      // The sessions and windows, in each platform's grouped cards.
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ?note,
+          if (note != null) Panel(children: [note]),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
@@ -383,21 +377,19 @@ class TerminalList extends StatelessWidget {
                 await Future<void>.delayed(const Duration(milliseconds: 600));
               },
               child: ListView(
-                padding: const EdgeInsets.only(bottom: 96),
+                padding: const EdgeInsets.only(bottom: AppTabBar.contentInset),
                 children: [
                   if (sessions.isEmpty && windows.isEmpty) _empty(),
-                  if (sessions.isNotEmpty) ...[
-                    _header('SESSIONS'),
-                    for (final (i, s) in sessions.indexed) ...[if (i > 0) divider, _session(context, s)],
-                  ],
+                  if (sessions.isNotEmpty)
+                    Panel(title: 'SESSIONS', children: [for (final s in sessions) _session(context, s)]),
                   if (windows.isNotEmpty) ...[
-                    _header('WINDOWS'),
+                    const Panel(title: 'WINDOWS', children: []),
                     // An agent whose Džep integration doesn't report: out of date, or installed after it started.
                     for (final agent in Agent.values)
                       if (windows.any((w) => w.agent == agent))
                         Padding(
                           key: ValueKey('${agent.command}-screens-only'),
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
                           child: Text(switch (agent) {
                             Agent.omp =>
                               'These omp windows show only as screens: Džep’s omp extension isn’t reporting from '
@@ -411,7 +403,7 @@ class TerminalList extends StatelessWidget {
                                   'again (claude -c picks the conversation back up) to see it above, as a conversation.',
                           }, style: const TextStyle(fontSize: 12, color: C.dim2, height: 1.4)),
                         ),
-                    for (final (i, w) in windows.indexed) ...[if (i > 0) divider, _window(context, w)],
+                    Panel(children: [for (final w in windows) _window(context, w)]),
                   ],
                 ],
               ),

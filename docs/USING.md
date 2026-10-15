@@ -69,16 +69,17 @@ For example `call bank !15:00`. Phones get reminders by push, so one set on the 
 
 ## The phone apps
 
-The iPhone and Android apps do the same things.
+The iPhone and Android apps do the same things. On the iPhone the tab bar, its **+**, the search field and the kind picker are iOS's own controls, in Liquid Glass on iOS 26; the Android app follows Material 3.
 
-- **Tabs:** Todos, Ideas, Notes, Ask and Terminal. Swipe a row right to tick a todo off, left to delete.
+- **Tabs:** **Pocket**, **Terminal** (in the middle, where the app opens) and **Ask**.
+- **Pocket** holds your todos, ideas and notes in one list: open todos first, then ideas and notes, newest first, and ticked-off todos folded under **Done**. **Todos**, **Ideas** and **Notes** at the top narrow it to one kind, and with Ideas, the project pills to one project. One search finds all three. **+** adds what the list shows (a todo in **All**; the sheet switches to an idea or a note). Swipe a row right to tick a todo off, left to delete.
 - **Widgets:** **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
 - **Account:** the avatar at the top opens Sign out and Delete account.
 
 <table>
   <tr>
-    <td><img src="images/phone-ideas.png" alt="Phone: Ideas tab with project filters" width="250"></td>
-    <td><img src="images/phone-notes.png" alt="Phone: Notes tab" width="250"></td>
+    <td><img src="images/phone-pocket.png" alt="iPhone: the Pocket tab, open todos first, with iOS's Liquid Glass tab bar and + button" width="250"></td>
+    <td><img src="images/phone-pocket-android.png" alt="Android: the same Pocket tab in Material 3, with a navigation bar and a + button" width="250"></td>
     <td><img src="images/phone-ask.png" alt="Phone: an Ask chat" width="250"></td>
   </tr>
 </table>
@@ -99,11 +100,11 @@ No AI yet? Connect one from the Mac: **Settings → AI → Connect…** (or **Co
 
 ## Terminal from the phone
 
-The phone's Terminal tab lists the Mac's coding sessions (omp and Claude Code) and its other terminal windows.
+The phone's Terminal tab, where the app opens, lists the Mac's coding sessions (omp and Claude Code) and its other terminal windows.
 
 <table>
   <tr>
-    <td><img src="images/phone-terminal.png" alt="Phone: the Terminal tab listing the Mac's coding sessions and windows" width="260"></td>
+    <td><img src="images/phone-terminal-android.png" alt="Android: the Terminal tab listing the Mac's coding sessions and windows" width="260"></td>
     <td><img src="images/phone-session.png" alt="Phone: a coding session as a conversation, with tool-call cards" width="260"></td>
   </tr>
 </table>

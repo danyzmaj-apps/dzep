@@ -1,6 +1,6 @@
 # Džep for iPhone and Android
 
-The phone app: Todos, Ideas, Notes, Ask and Terminal, pairing with a server by scanning the Mac's code. Phones don't set up servers.
+The phone app: Pocket (todos, ideas and notes), Terminal and Ask, pairing with a server by scanning the Mac's code. Phones don't set up servers.
 
 | Path | What |
 | --- | --- |

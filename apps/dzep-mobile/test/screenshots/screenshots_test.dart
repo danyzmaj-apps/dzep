@@ -1,7 +1,9 @@
-// The phone screenshots in the docs: the real screens on made-up data, as an iPhone (393×852 at 2×).
+// The phone screenshots in the docs: the real screens on made-up data, 393×852 points at 2×.
 // Run from apps/dzep-mobile: `fvm flutter test --tags screenshots --run-skipped` (dart_test.yaml skips them otherwise).
-// They land in the repo's docs/images/phone-*.png, with hero.png: the Todos tab in a phone's frame next to the
-// Mac's popup, which apps/dzep-macos-app's screenshots render first (build/screenshots/hero-popup.png).
+// They land in the repo's docs/images/phone-*.png. The home page renders here in its Android look only: on an
+// iPhone its tab bar, search and kind picker are UIKit views, which a test can't draw, so phone-pocket.png and the
+// hero's phone are taken on the iOS simulator (docs/BUILDING.md). hero.png is that capture in a phone's frame next
+// to the Mac's popup, which apps/dzep-macos-app's screenshots render first (build/screenshots/hero-popup.png).
 @Tags(['screenshots'])
 library;
 
@@ -9,15 +11,12 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:dzep_core/account.dart' show Avatar;
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/idea.dart';
 import 'package:dzep_core/live.dart';
-import 'package:dzep_core/store.dart';
 import 'package:dzep_core/terminal_remote.dart';
-import 'package:dzep_core/ui.dart';
+import 'package:dzep_mobile/chrome.dart';
 import 'package:dzep_mobile/mobile.dart';
-import 'package:dzep_mobile/terminal_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -29,7 +28,9 @@ import 'fonts.dart';
 
 final _out = Directory('../../docs/images');
 final _heroPopup = File('../dzep-macos-app/build/screenshots/hero-popup.png');
+final _heroPhone = File('build/screenshots/hero-phone.png');
 final _ios = TargetPlatformVariant.only(TargetPlatform.iOS);
+final _android = TargetPlatformVariant.only(TargetPlatform.android);
 
 /// Today at [hour]:[minute], [days] from now (local time, as the rows read it).
 DateTime _day(int days, int hour, [int minute = 0]) {
@@ -383,37 +384,32 @@ void main() {
     debugDisableShadows = true;
   }
 
-  Future<void> app(WidgetTester tester, {String? tab}) async {
+  /// Taps [target] and lets what it animates (a pill, the tab bar) finish: the first frame starts it.
+  Future<void> tap(WidgetTester tester, Finder target) async {
+    await tester.tap(target);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+  }
+
+  /// The app, signed in, on [tab] (the Terminal tab it opens on, fed by [terminal]).
+  Future<void> app(WidgetTester tester, {String? tab, TerminalRemote? terminal}) async {
     phone(tester);
     final session = await FakeSession.create(_store(), _chats());
     await tester.pumpWidget(
       RepaintBoundary(
         key: shot,
-        child: MobileApp(session: session),
-      ),
-    );
-    await tester.pumpAndSettle();
-    if (tab != null) {
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)));
-      await tester.pumpAndSettle();
-    }
-  }
-
-  /// A page outside the home page, in the app's theme.
-  Future<void> page(WidgetTester tester, Widget home) async {
-    phone(tester);
-    await tester.pumpWidget(
-      RepaintBoundary(
-        key: shot,
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: appTheme().copyWith(scaffoldBackgroundColor: C.win),
-          home: home,
-        ),
+        child: MobileApp(session: session, terminal: terminal),
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+    if (tab != null) await tap(tester, find.descendant(of: find.byType(AppTabBar), matching: find.text(tab)));
+  }
+
+  /// The Pocket tab, on [show] (a pill's label).
+  Future<void> pocket(WidgetTester tester, String show) async {
+    await app(tester, tab: 'Pocket');
+    await tap(tester, find.text(show).first);
   }
 
   /// The Mac, answering: its state and the finished session's transcript.
@@ -434,46 +430,40 @@ void main() {
     return missingFont != null;
   }
 
-  testWidgets('hero', variant: _ios, (tester) async {
+  testWidgets('hero', (tester) async {
     if (skipped()) return;
     if (!_heroPopup.existsSync()) {
       return markTestSkipped('No ${_heroPopup.path}: run the Mac screenshots first.');
     }
-    final popup = (await tester.runAsync(() async {
-      final codec = await ui.instantiateImageCodec(_heroPopup.readAsBytesSync());
-      return (await codec.getNextFrame()).image;
+    if (!_heroPhone.existsSync()) {
+      return markTestSkipped('No ${_heroPhone.path}: take it on the iOS simulator first (docs/BUILDING.md).');
+    }
+    final (popup, screen) = (await tester.runAsync(() async {
+      Future<ui.Image> decode(File f) async =>
+          (await (await ui.instantiateImageCodec(f.readAsBytesSync())).getNextFrame()).image;
+      return (await decode(_heroPopup), await decode(_heroPhone));
     }))!;
     addTearDown(popup.dispose);
+    addTearDown(screen.dispose);
     final canvas = _Hero.canvas(popup);
     tester.view
       ..physicalSize = canvas * 2
       ..devicePixelRatio = 2;
     addTearDown(tester.view.reset);
     debugDisableShadows = false;
-    final session = await FakeSession.create(_store(), _chats());
     await tester.pumpWidget(
       RepaintBoundary(
         key: shot,
-        child: _Hero(
-          popup: popup,
-          phone: MobileApp(session: session),
-        ),
+        child: _Hero(popup: popup, screen: screen),
       ),
     );
-    await tester.pumpAndSettle();
     await save(tester, 'hero.png');
   });
 
-  testWidgets('ideas', variant: _ios, (tester) async {
+  testWidgets('pocket on Android', variant: _android, (tester) async {
     if (skipped()) return;
-    await app(tester, tab: 'Ideas');
-    await save(tester, 'phone-ideas.png');
-  });
-
-  testWidgets('notes', variant: _ios, (tester) async {
-    if (skipped()) return;
-    await app(tester, tab: 'Notes');
-    await save(tester, 'phone-notes.png');
+    await pocket(tester, 'All');
+    await save(tester, 'phone-pocket-android.png');
   });
 
   testWidgets('ask', variant: _ios, (tester) async {
@@ -484,18 +474,18 @@ void main() {
     await save(tester, 'phone-ask.png');
   });
 
-  testWidgets('terminal', variant: _ios, (tester) async {
+  testWidgets('terminal on Android', variant: _android, (tester) async {
     if (skipped()) return;
     final r = remote();
-    await page(tester, _TerminalTab(remote: r, todos: _store().openTodos.length));
-    await save(tester, 'phone-terminal.png');
+    await app(tester, terminal: r);
+    await save(tester, 'phone-terminal-android.png');
     r.flush();
   });
 
   testWidgets('session', variant: _ios, (tester) async {
     if (skipped()) return;
     final r = remote();
-    await page(tester, _TerminalTab(remote: r, todos: _store().openTodos.length));
+    await app(tester, terminal: r);
     await tester.tap(find.text('Add a soil moisture endpoint'));
     await tester.pumpAndSettle();
     // The test run's card open, its output showing.
@@ -506,74 +496,17 @@ void main() {
   });
 }
 
-/// The home page on its Terminal tab, around the real [TerminalList]. The
-/// home page builds its own remote on the Mac's realtime channel, so this
-/// shot repeats its header, + button and tab bar around one fed by hand.
-class _TerminalTab extends StatelessWidget {
-  const _TerminalTab({required this.remote, required this.todos});
-  final TerminalRemote remote;
-  final int todos;
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    floatingActionButton: FloatingActionButton(
-      onPressed: () {},
-      backgroundColor: C.accent,
-      foregroundColor: const Color(0xFF0E0F12),
-      child: const Icon(Icons.add, size: 28),
-    ),
-    bottomNavigationBar: NavigationBar(
-      selectedIndex: 4,
-      backgroundColor: C.bar,
-      indicatorColor: C.sel,
-      height: 64,
-      destinations: [
-        NavigationDestination(
-          icon: Badge(label: Text('$todos'), child: const Icon(Icons.check_circle_outline)),
-          label: 'Todos',
-        ),
-        const NavigationDestination(icon: Icon(Icons.lightbulb_outline), label: 'Ideas'),
-        const NavigationDestination(icon: Icon(Icons.sticky_note_2_outlined), label: 'Notes'),
-        const NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), label: 'Ask'),
-        const NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
-      ],
-    ),
-    body: SafeArea(
-      bottom: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
-            child: Row(
-              children: [
-                const Text('Terminal', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
-                const Spacer(),
-                const SyncDot(SyncState.synced),
-                IconButton(
-                  onPressed: () {},
-                  icon: const Avatar(url: null, name: 'ana', size: 28),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: C.line),
-          Expanded(child: TerminalList(remote: remote)),
-        ],
-      ),
-    ),
-  );
-}
-
 /// The README's hero on a transparent canvas: the Mac's [popup] (a 2× PNG
-/// with its shadow) next to [phone] in an iPhone's frame, both at their
-/// real size in points.
+/// with its shadow) next to the iPhone's [screen] (a 3× capture from the
+/// simulator, status bar and Dynamic Island included) in an iPhone's frame,
+/// both at their real size in points.
 class _Hero extends StatelessWidget {
-  const _Hero({required this.popup, required this.phone});
+  const _Hero({required this.popup, required this.screen});
   final ui.Image popup;
-  final Widget phone;
+  final ui.Image screen;
 
-  static const _screen = Size(393, 852);
+  /// An iPhone 17 Pro's screen, in points.
+  static const _screen = Size(402, 874);
   static const _bezel = 12.0;
   static const _radius = 55.0;
 
@@ -591,67 +524,25 @@ class _Hero extends StatelessWidget {
     child: Row(
       children: [
         RawImage(image: popup, scale: 2),
-        Padding(padding: _margin, child: _phone(context)),
+        Padding(
+          padding: _margin,
+          child: Container(
+            width: _frame().width,
+            height: _frame().height,
+            padding: const EdgeInsets.all(_bezel),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A0A0C),
+              borderRadius: BorderRadius.circular(_radius + _bezel),
+              border: Border.all(color: const Color(0xFF45474D), width: 1.5),
+              boxShadow: const [BoxShadow(color: Color(0x4D000000), blurRadius: 36, offset: Offset(0, 14))],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(_radius),
+              child: RawImage(image: screen, width: _screen.width, height: _screen.height, fit: BoxFit.cover),
+            ),
+          ),
+        ),
       ],
     ),
   );
-
-  Widget _phone(BuildContext context) {
-    const white = Color(0xFFF2F3F5);
-    const status = TextStyle(
-      fontFamily: 'CupertinoSystemText',
-      fontSize: 17,
-      fontWeight: FontWeight.w600,
-      color: white,
-    );
-    return Container(
-      width: _frame().width,
-      height: _frame().height,
-      padding: const EdgeInsets.all(_bezel),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0A0A0C),
-        borderRadius: BorderRadius.circular(_radius + _bezel),
-        border: Border.all(color: const Color(0xFF45474D), width: 1.5),
-        boxShadow: const [BoxShadow(color: Color(0x4D000000), blurRadius: 36, offset: Offset(0, 14))],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(_radius),
-        child: Stack(
-          children: [
-            MediaQuery(
-              data: MediaQueryData.fromView(View.of(context)).copyWith(
-                size: _screen,
-                padding: const EdgeInsets.only(top: 59, bottom: 34),
-                viewPadding: const EdgeInsets.only(top: 59, bottom: 34),
-              ),
-              child: phone,
-            ),
-            // The status bar and the Dynamic Island, which iOS draws over the app.
-            const Positioned(left: 52, top: 18, child: Text('9:41', style: status)),
-            const Positioned(
-              right: 30,
-              top: 19,
-              child: Row(
-                spacing: 5,
-                children: [
-                  Icon(Icons.signal_cellular_alt, size: 18, color: white),
-                  Icon(Icons.wifi, size: 18, color: white),
-                  Icon(Icons.battery_full, size: 20, color: white),
-                ],
-              ),
-            ),
-            Positioned(
-              top: 11,
-              left: (_screen.width - 125) / 2,
-              child: Container(
-                width: 125,
-                height: 37,
-                decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(19)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

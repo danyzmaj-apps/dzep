@@ -17,11 +17,14 @@ import 'package:dzep_core/session.dart';
 import 'package:dzep_core/store.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:dzep_core/ui.dart';
+import 'package:dzep_mobile/chrome.dart';
+import 'package:dzep_mobile/pocket.dart';
 import 'package:dzep_mobile/setup_page.dart';
 import 'package:dzep_mobile/terminal_view.dart';
 import 'package:flutter/cupertino.dart' show CupertinoDatePicker;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:native_liquid_glass/native_liquid_glass.dart' show LiquidGlassNavigatorObserver;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -186,15 +189,20 @@ SnackBar undoSnackBar(String text, VoidCallback undo) => SnackBar(
 );
 
 class MobileApp extends StatelessWidget {
-  const MobileApp({required this.session, super.key});
+  const MobileApp({required this.session, @visibleForTesting this.terminal, super.key});
   final MobileSession session;
+
+  /// See [HomePage.terminal].
+  final TerminalRemote? terminal;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Džep',
     debugShowCheckedModeBanner: false,
+    // The native glass views hide under sheets, dialogs and pushed pages.
+    navigatorObservers: [LiquidGlassNavigatorObserver()],
     theme: appTheme().copyWith(
-      scaffoldBackgroundColor: C.win,
+      scaffoldBackgroundColor: screenColor,
       snackBarTheme: const SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: Color(0xFF1F2A22),
@@ -212,7 +220,7 @@ class MobileApp extends StatelessWidget {
             body: SafeArea(child: SetupPage(session: session)),
           );
         }
-        return HomePage(session: session, store: store);
+        return HomePage(session: session, store: store, terminal: terminal);
       },
     ),
   );
@@ -220,24 +228,26 @@ class MobileApp extends StatelessWidget {
 
 // ==================================================================== home
 
-typedef _Filter = ({bool project, String id});
+/// The home page's tabs, left to right: Terminal in the middle, and first.
+enum HomeTab { pocket, terminal, ask }
 
 class HomePage extends StatefulWidget {
-  const HomePage({required this.session, required this.store, super.key});
+  const HomePage({required this.session, required this.store, @visibleForTesting this.terminal, super.key});
   final MobileSession session;
   final IdeaStore store;
+
+  /// A remote fed by hand (tests, screenshots); otherwise the home page
+  /// joins the Mac over the session's server.
+  final TerminalRemote? terminal;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
-  /// 0: Todos (the app opens here), 1: Ideas, 2: Notes, 3: Ask, 4: Terminal.
-  int _tab = 0;
-  bool _showDone = false;
-  _Filter _filter = (project: false, id: 'all');
-  String _query = '';
-  final _search = TextEditingController();
+  HomeTab _tab = HomeTab.terminal;
+  PocketShow _show = PocketShow.all;
+  final _pocket = GlobalKey<PocketViewState>();
   StreamSubscription<Uri>? _links;
 
   IdeaStore get store => widget.store;
@@ -281,7 +291,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   void _attachTerminal({required bool attach}) {
     final t = _terminal;
-    if (t == null || attach == _terminalAttached) return;
+    if (t == null || attach == _terminalAttached || widget.terminal != null) return;
     _terminalAttached = attach;
     attach ? t.attach() : t.detach();
   }
@@ -289,7 +299,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The Terminal tab, on coding session [key] (from a tapped push or Live
   /// Activity).
   void _openSession(String key) {
-    setState(() => _tab = 4);
+    setState(() => _tab = HomeTab.terminal);
     final t = _terminal;
     if (t == null) {
       _sessionToOpen = key;
@@ -320,16 +330,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       unawaited(_openTapped());
       unawaited(_openTappedSession());
     });
-    unawaited(_startTerminal());
+    if (widget.terminal case final t?) {
+      _terminal = t;
+    } else {
+      unawaited(_startTerminal());
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_links?.cancel());
-    _search.dispose();
-    _terminal?.activities?.dispose();
-    _terminal?.dispose();
+    if (widget.terminal == null) {
+      _terminal?.activities?.dispose();
+      _terminal?.dispose();
+    }
     super.dispose();
   }
 
@@ -361,7 +376,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case 'openTodo':
         unawaited(_openTapped());
       case 'openTerminal':
-        setState(() => _tab = 4);
+        setState(() => _tab = HomeTab.terminal);
         // The session comes through takeTappedSession, once, whichever of
         // this and the resume asks first.
         unawaited(_openTappedSession());
@@ -380,7 +395,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!mounted) return;
     final todo = id == null ? null : store.byId(id);
     if (todo == null) return;
-    setState(() => _tab = 0);
+    _showPocket(PocketShow.todos);
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => DetailPage(idea: todo, store: store),
@@ -388,22 +403,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  void _showPocket(PocketShow show) => setState(() {
+    _tab = HomeTab.pocket;
+    _show = show;
+  });
+
   void _onLink(Uri? uri) {
     if (uri == null || uri.scheme != 'dzep' || !mounted) return;
     if (uri.host == 'todos') {
-      setState(() => _tab = 0);
+      _showPocket(PocketShow.todos);
     } else if (uri.host == 'session') {
       final key = uri.queryParameters['key'];
       if (key != null && key.isNotEmpty) _openSession(key);
     } else if (uri.host == 'add') {
       final kind = Kind.parse(uri.queryParameters['kind']);
-      setState(
-        () => _tab = switch (kind) {
-          Kind.todo => 0,
-          Kind.idea => 1,
-          Kind.note => 2,
-        },
-      );
+      _showPocket(switch (kind) {
+        Kind.todo => PocketShow.todos,
+        Kind.idea => PocketShow.ideas,
+        Kind.note => PocketShow.notes,
+      });
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => kind == Kind.note ? _openNote(null) : unawaited(_openAdd(kind)),
       );
@@ -418,506 +436,185 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: C.bar,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => AddSheet(store: store, kind: kind, defaultProject: _filter.project ? _filter.id : ''),
+      backgroundColor: nativeIos ? S.cell : M.containerHigh,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (_) =>
+          AddSheet(store: store, kind: kind, defaultProject: _pocket.currentState?.project ?? '', onNote: _openNote),
     );
     _addOpen = false;
   }
 
-  bool _searchHit(Idea i) {
-    final hay = '${i.title} ${i.notes} @${i.project}'.toLowerCase();
-    return _query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).every(hay.contains);
-  }
-
-  void _toggleDone(Idea todo) {
-    store.update(todo, done: !todo.done);
-    unawaited(HapticFeedback.lightImpact());
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(undoSnackBar(todo.done ? 'Done ✓' : 'Reopened', () => store.update(todo, done: !todo.done)));
-  }
-
-  bool _matches(Idea i) {
-    if (_filter.project && i.project != _filter.id) return false;
-    return _searchHit(i);
-  }
-
-  void _delete(Idea i) {
-    store.delete(i);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        undoSnackBar(switch (i.kind) {
-          Kind.todo => 'Todo deleted',
-          Kind.note => 'Note deleted',
-          Kind.idea => 'Idea deleted',
-        }, () => store.restore(i)),
-      );
-  }
+  /// The + of each tab: what it makes, and how.
+  ({String tooltip, IconData icon, VoidCallback? onPressed}) get _add => switch (_tab) {
+    HomeTab.terminal => (
+      tooltip: 'New session',
+      icon: Icons.add,
+      onPressed: _terminal == null ? null : () => unawaited(openNewSession(context, _terminal!)),
+    ),
+    HomeTab.ask => (tooltip: 'New chat', icon: Icons.edit_outlined, onPressed: () => _openChat(null)),
+    HomeTab.pocket => switch (_show) {
+      PocketShow.notes => (tooltip: 'New note', icon: Icons.edit_outlined, onPressed: () => _openNote(null)),
+      PocketShow.ideas => (tooltip: 'New idea', icon: Icons.add, onPressed: () => unawaited(_openAdd(Kind.idea))),
+      PocketShow.todos => (tooltip: 'New todo', icon: Icons.add, onPressed: () => unawaited(_openAdd(Kind.todo))),
+      PocketShow.all => (tooltip: 'New', icon: Icons.add, onPressed: () => unawaited(_openAdd(Kind.todo))),
+    },
+  };
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([store, chats]),
-    builder: (context, _) => Scaffold(
-      floatingActionButton: FloatingActionButton(
-        key: const ValueKey('add'),
-        tooltip: switch (_tab) {
-          0 => 'New todo',
-          1 => 'New idea',
-          2 => 'New note',
-          3 => 'New chat',
-          _ => 'New session',
-        },
-        backgroundColor: C.accent,
-        foregroundColor: const Color(0xFF0E0F12),
-        onPressed: () => switch (_tab) {
-          2 => _openNote(null),
-          3 => _openChat(null),
-          4 => _terminal == null ? null : unawaited(openNewSession(context, _terminal!)),
-          _ => unawaited(_openAdd(_tab == 0 ? Kind.todo : Kind.idea)),
-        },
-        child: Icon(_tab == 2 || _tab == 3 ? Icons.edit_outlined : Icons.add, size: 28),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        backgroundColor: C.bar,
-        indicatorColor: C.sel,
-        height: 64,
-        onDestinationSelected: (t) => setState(() => _tab = t),
-        destinations: [
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: store.openTodos.isNotEmpty,
-              label: Text('${store.openTodos.length}'),
-              child: const Icon(Icons.check_circle_outline),
+    builder: (context, _) {
+      final add = _add;
+      return Scaffold(
+        backgroundColor: screenColor,
+        // The lists scroll under the iPhone's tab bar.
+        extendBody: nativeIos,
+        floatingActionButton: nativeIos
+            ? null
+            : AddButton(tooltip: add.tooltip, icon: add.icon, onPressed: add.onPressed),
+        bottomNavigationBar: AppTabBar(
+          index: _tab.index,
+          onSelect: (i) => setState(() => _tab = HomeTab.values[i]),
+          onAdd: add.onPressed,
+          tabs: [
+            (
+              icon: Icons.inbox_outlined,
+              selectedIcon: Icons.inbox,
+              symbol: 'tray.full',
+              label: 'Pocket',
+              badge: store.openTodos.length,
             ),
-            label: 'Todos',
-          ),
-          const NavigationDestination(icon: Icon(Icons.lightbulb_outline), label: 'Ideas'),
-          const NavigationDestination(icon: Icon(Icons.sticky_note_2_outlined), label: 'Notes'),
-          const NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), label: 'Ask'),
-          const NavigationDestination(icon: Icon(Icons.terminal), label: 'Terminal'),
-        ],
-      ),
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
-              child: Row(
-                children: [
-                  Text(switch (_tab) {
-                    0 => 'Todos',
-                    1 => 'Ideas',
-                    2 => 'Notes',
-                    3 => 'Ask',
-                    _ => 'Terminal',
-                  }, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
-                  const Spacer(),
+            (icon: Icons.terminal, selectedIcon: Icons.terminal, symbol: 'apple.terminal', label: 'Terminal', badge: 0),
+            (
+              icon: Icons.auto_awesome_outlined,
+              selectedIcon: Icons.auto_awesome,
+              symbol: 'sparkles',
+              label: 'Ask',
+              badge: 0,
+            ),
+          ],
+        ),
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PageTitle(
+                switch (_tab) {
+                  HomeTab.pocket => 'Pocket',
+                  HomeTab.terminal => 'Terminal',
+                  HomeTab.ask => 'Ask',
+                },
+                trailing: [
                   SyncDot(store.syncState),
                   IconButton(
                     tooltip: 'Account',
                     onPressed: () => unawaited(_openAccount()),
-                    icon: Avatar(url: widget.session.avatarUrl, name: widget.session.userName, size: 28),
+                    icon: Avatar(url: widget.session.avatarUrl, name: widget.session.userName, size: 30),
                   ),
                 ],
               ),
-            ),
-            if (_tab < 3)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-                child: TextField(
-                  onTapOutside: dismissKeyboard,
-                  controller: _search,
-                  onChanged: (q) => setState(() => _query = q),
-                  style: const TextStyle(fontSize: 15),
-                  decoration: InputDecoration(
-                    hintText: 'Search',
-                    hintStyle: const TextStyle(color: C.dim2),
-                    prefixIcon: const Icon(Icons.search, color: C.dim, size: 20),
-                    filled: true,
-                    fillColor: C.field,
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              Expanded(
+                child: switch (_tab) {
+                  HomeTab.pocket => PocketView(
+                    key: _pocket,
+                    store: store,
+                    show: _show,
+                    onShow: (s) => setState(() => _show = s),
                   ),
-                ),
-              ),
-            if (_tab == 1) SizedBox(height: 38, child: _filters()),
-            const Divider(height: 1, color: C.line),
-            Expanded(
-              child: switch (_tab) {
-                4 => _terminal == null ? const SizedBox.shrink() : TerminalList(remote: _terminal!),
-                3 => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (chats.aiMissing) ...const [
-                      Padding(padding: EdgeInsets.fromLTRB(20, 14, 20, 14), child: NoAiNotice()),
-                      Divider(height: 1, color: C.line),
-                    ],
-                    Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: () => Future.wait([chats.syncNow(), chats.checkAi()]),
-                        child: _chatsList(),
-                      ),
+                  HomeTab.terminal => switch (_terminal) {
+                    final t? => TerminalList(remote: t),
+                    null => const Center(
+                      child: Text('Reaching your Mac…', style: TextStyle(color: C.dim)),
                     ),
-                  ],
-                ),
-                2 => RefreshIndicator(onRefresh: store.syncNow, child: _notesList()),
-                _ => RefreshIndicator(onRefresh: store.syncNow, child: _tab == 0 ? _todosList() : _ideasList()),
-              },
-            ),
-          ],
+                  },
+                  HomeTab.ask => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (chats.aiMissing)
+                        const Padding(padding: EdgeInsets.fromLTRB(20, 8, 20, 8), child: NoAiNotice()),
+                      Expanded(
+                        child: RefreshIndicator(
+                          onRefresh: () => Future.wait([chats.syncNow(), chats.checkAi()]),
+                          child: _chatsList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                },
+              ),
+            ],
+          ),
         ),
-      ),
-    ),
-  );
-
-  Widget _empty(String text) => ListView(
-    children: [
-      Padding(
-        padding: const EdgeInsets.all(40),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: C.dim, height: 1.5),
-        ),
-      ),
-    ],
+      );
+    },
   );
 
   Widget _chatsList() {
     final list = chats.conversations;
-    if (list.isEmpty) return _empty(chats.aiMissing ? 'No chats yet.' : 'No chats yet. Tap ✎ to ask a quick question.');
-    return ListView.separated(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.only(bottom: 96),
-      itemCount: list.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, color: C.line, indent: 52),
-      itemBuilder: (context, i) {
-        final c = list[i];
-        return Dismissible(
-          key: ValueKey('chat-${c.id}'),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            color: const Color(0xFF7F1D1D),
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 24),
-            child: const Icon(Icons.delete_outline, color: Colors.white),
-          ),
-          onDismissed: (_) {
-            chats.delete(c);
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(const SnackBar(content: Text('Chat deleted')));
-          },
-          child: ListTile(
-            onTap: () => _openChat(c),
-            leading: Icon(Icons.auto_awesome, size: 18, color: chats.streaming == c ? C.accent : C.dim2),
-            title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15)),
-            subtitle: Text(
-              (c.lastAnswer ?? '').replaceAll('\n', ' '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, color: C.dim),
-            ),
-            trailing: Text(stamp(c.updatedAt), style: const TextStyle(fontSize: 11, color: C.dim)),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _ideasList() {
-    final ideas = store.ideas.where(_matches).toList();
-    if (ideas.isEmpty) {
-      return _empty(
-        _query.isNotEmpty
-            ? 'No matches.'
-            : !_filter.project
-            ? 'No ideas yet.\nTap + to add one.'
-            : 'Nothing here yet.',
-      );
-    }
-    return ListView.builder(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      // Room to scroll the last rows clear of the + button and a snackbar.
-      padding: const EdgeInsets.only(bottom: 170),
-      itemCount: ideas.length,
-      itemBuilder: (context, k) => _row(ideas[k]),
-    );
-  }
-
-  Widget _notesList() {
-    final notes = store.notes.where(_searchHit).toList();
-    if (notes.isEmpty) {
-      return _empty(_query.isNotEmpty ? 'No matches.' : 'No notes yet.\nTap ✎ to write one.');
-    }
-    return ListView.builder(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.only(bottom: 170),
-      itemCount: notes.length,
-      itemBuilder: (context, k) {
-        final n = notes[k];
-        final preview = n.notes.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).skip(1).firstOrNull;
-        return Dismissible(
-          key: ValueKey(n.id),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            color: const Color(0xFF7F1D1D),
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 24),
-            child: const Icon(Icons.delete_outline, color: Colors.white),
-          ),
-          onDismissed: (_) => _delete(n),
-          child: InkWell(
-            onTap: () => _openNote(n),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: Color(0xFF1D1F25))),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text.rich(
-                          highlight(
-                            n.title.isEmpty ? 'Empty note' : n.title,
-                            _query,
-                            const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: C.text),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (preview != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              preview,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 13, color: C.dim, height: 1.35),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(stamp(n.updatedAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _todosList() {
-    final open = store.openTodos.where(_searchHit).toList();
-    final done = store.doneTodos.where(_searchHit).toList();
-    if (open.isEmpty && done.isEmpty) {
-      return _empty(_query.isNotEmpty ? 'No matches.' : 'All done 🎉\nTap + to add one.');
-    }
-    return ListView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.only(bottom: 170),
-      children: [
-        if (open.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(24),
+    if (list.isEmpty) {
+      return ListView(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(40),
             child: Text(
-              'All done 🎉',
+              chats.aiMissing ? 'No chats yet.' : 'No chats yet. Tap ✎ to ask a quick question.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: C.dim),
+              style: const TextStyle(color: C.dim, height: 1.5),
             ),
           ),
-        for (final t in open) _todoRow(t),
-        if (done.isNotEmpty)
-          InkWell(
-            onTap: () => setState(() => _showDone = !_showDone),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Row(
-                children: [
-                  Text('DONE · ${done.length}', style: const TextStyle(fontSize: 12, letterSpacing: .6, color: C.dim)),
-                  const Spacer(),
-                  Icon(_showDone ? Icons.expand_less : Icons.expand_more, color: C.dim, size: 20),
-                ],
-              ),
-            ),
-          ),
-        if (_showDone)
-          for (final t in done) _todoRow(t),
-      ],
-    );
-  }
-
-  Widget _todoRow(Idea t) => Dismissible(
-    key: ValueKey('todo-${t.id}-${t.done}'),
-    background: Container(
-      color: const Color(0xFF14532D),
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.only(left: 24),
-      child: Icon(t.done ? Icons.undo : Icons.check, color: Colors.white),
-    ),
-    secondaryBackground: Container(
-      color: const Color(0xFF7F1D1D),
-      alignment: Alignment.centerRight,
-      padding: const EdgeInsets.only(right: 24),
-      child: const Icon(Icons.delete_outline, color: Colors.white),
-    ),
-    onDismissed: (dir) => dir == DismissDirection.startToEnd ? _toggleDone(t) : _delete(t),
-    child: InkWell(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => DetailPage(idea: t, store: store),
-        ),
-      ),
-      onLongPress: t.done ? null : () => unawaited(_pickReminder(context, store, t)),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 4, 20, 4),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xFF1D1F25))),
-        ),
-        child: Row(
-          children: [
-            IconButton(
-              tooltip: t.done ? 'Reopen' : 'Done',
-              onPressed: () => _toggleDone(t),
-              icon: TodoCheck(done: t.done, size: 22),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    t.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: t.done ? C.dim : C.text,
-                      decoration: t.done ? TextDecoration.lineThrough : null,
-                      decorationColor: C.dim,
-                    ),
-                  ),
-                  if (t.remindAt case final at? when !t.done)
-                    Padding(padding: const EdgeInsets.only(top: 3), child: ReminderChip(at)),
-                ],
-              ),
-            ),
-            Text(stamp(t.createdAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  Widget _filters() {
-    Widget chip(_Filter f, String label, {Color? dot}) {
-      final on = _filter == f;
-      return Padding(
-        padding: const EdgeInsets.only(right: 6),
-        child: ChoiceChip(
-          selected: on,
-          showCheckmark: false,
-          onSelected: (_) => setState(() => _filter = f),
-          backgroundColor: C.field,
-          selectedColor: C.sel,
-          side: BorderSide(color: on ? C.accent : C.line2),
-          avatar: dot == null ? null : Dot(dot),
-          label: Text(label, style: TextStyle(fontSize: 13, color: on ? C.text : C.dim)),
-          visualDensity: VisualDensity.compact,
-        ),
+        ],
       );
     }
-
     return ListView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.only(bottom: AppTabBar.contentInset),
       children: [
-        chip((project: false, id: 'all'), 'All'),
-        for (final p in store.projects) chip((project: true, id: p), '@$p'),
-      ],
-    );
-  }
-
-  Widget _row(Idea i) {
-    final firstNote = i.notes.split('\n').first;
-    return Dismissible(
-      key: ValueKey(i.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        color: const Color(0xFF7F1D1D),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 24),
-        child: const Icon(Icons.delete_outline, color: Colors.white),
-      ),
-      onDismissed: (_) => _delete(i),
-      child: InkWell(
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => DetailPage(idea: i, store: store),
-          ),
-        ),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: Color(0xFF1D1F25))),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(padding: EdgeInsets.only(top: 6), child: Dot(C.dim)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text.rich(
-                      highlight(
-                        i.title.isEmpty ? 'Untitled' : i.title,
-                        _query,
-                        const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: C.text),
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (firstNote.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          firstNote,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 13, color: C.dim),
-                        ),
-                      ),
-                    if (i.project.isNotEmpty)
-                      Padding(padding: const EdgeInsets.only(top: 6), child: ProjectChip(i.project)),
-                  ],
+        Panel(
+          children: [
+            for (final c in list)
+              Dismissible(
+                key: ValueKey('chat-${c.id}'),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  color: const Color(0xFF7F1D1D),
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 24),
+                  child: const Icon(Icons.delete_outline, color: Colors.white),
+                ),
+                onDismissed: (_) {
+                  chats.delete(c);
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(const SnackBar(content: Text('Chat deleted')));
+                },
+                child: ListTile(
+                  onTap: () => _openChat(c),
+                  leading: Icon(Icons.auto_awesome, size: 18, color: chats.streaming == c ? C.accent : C.dim2),
+                  title: Text(
+                    c.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 15),
+                  ),
+                  subtitle: Text(
+                    (c.lastAnswer ?? '').replaceAll('\n', ' '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, color: C.dim),
+                  ),
+                  trailing: Text(stamp(c.updatedAt), style: const TextStyle(fontSize: 11, color: C.dim)),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(stamp(i.createdAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
-            ],
-          ),
+          ],
         ),
-      ),
+      ],
     );
   }
 
   Future<void> _openAccount() => showModalBottomSheet<void>(
     context: context,
-    backgroundColor: C.bar,
+    backgroundColor: nativeIos ? S.cell : M.containerHigh,
     builder: (sheet) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
@@ -987,10 +684,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 // ==================================================================== add
 
 class AddSheet extends StatefulWidget {
-  const AddSheet({required this.store, required this.kind, required this.defaultProject, super.key});
+  const AddSheet({
+    required this.store,
+    required this.kind,
+    required this.defaultProject,
+    required this.onNote,
+    super.key,
+  });
   final IdeaStore store;
   final Kind kind;
   final String defaultProject;
+
+  /// Note picked: the full-screen editor takes over, on what was typed so far (null: nothing yet).
+  final void Function(Idea? note) onNote;
 
   @override
   State<AddSheet> createState() => _AddSheetState();
@@ -1045,10 +751,17 @@ class _AddSheetState extends State<AddSheet> {
               segments: const [
                 ButtonSegment(value: Kind.todo, label: Text('Todo'), icon: Icon(Icons.check_circle_outline)),
                 ButtonSegment(value: Kind.idea, label: Text('Idea'), icon: Icon(Icons.lightbulb_outline)),
+                ButtonSegment(value: Kind.note, label: Text('Note'), icon: Icon(Icons.sticky_note_2_outlined)),
               ],
               selected: {_kind},
               showSelectedIcon: false,
-              onSelectionChanged: (s) => setState(() => _kind = s.first),
+              onSelectionChanged: (s) {
+                if (s.first != Kind.note) return setState(() => _kind = s.first);
+                // A note is written full screen.
+                final text = [_title.text.trim(), _notes.text.trim()].where((t) => t.isNotEmpty).join('\n');
+                Navigator.of(context).pop();
+                widget.onNote(text.isEmpty ? null : widget.store.addNote(text));
+              },
             ),
             const SizedBox(height: 14),
             TextField(
@@ -1174,7 +887,7 @@ class _DetailPageState extends State<DetailPage> {
     final at = idea.remindAt;
     final color = at == null ? C.dim : (at.isAfter(DateTime.now()) ? C.accent : C.warn);
     return InputChip(
-      onPressed: () => unawaited(_pickReminder(context, widget.store, idea)),
+      onPressed: () => unawaited(pickReminder(context, widget.store, idea)),
       onDeleted: at == null ? null : () => widget.store.update(idea, remind: (at: null)),
       deleteIconColor: C.dim,
       backgroundColor: C.field,
@@ -1285,7 +998,7 @@ class _DetailPageState extends State<DetailPage> {
 // ==================================================================== remind
 
 /// Sets a todo's reminder on a date-and-time wheel, or clears it.
-Future<void> _pickReminder(BuildContext context, IdeaStore store, Idea todo) async {
+Future<void> pickReminder(BuildContext context, IdeaStore store, Idea todo) async {
   final picked = await showModalBottomSheet<({DateTime? at})>(
     context: context,
     backgroundColor: C.bar,

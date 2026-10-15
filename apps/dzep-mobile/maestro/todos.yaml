@@ -1,12 +1,15 @@
-# Signed-in iPhone app opens on Todos: add one with +, tick it off with its
-# circle, find it under Done. Needs a signed-in session.
+# Pocket tab, Todos: add one with +, tick it off with its circle, find it
+# under Done. Needs a signed-in session.
 appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Todos.*"
+    visible: "Pocket"
     timeout: 15000
-- tapOn: "New todo"
+- tapOn: "Pocket"
+- waitForAnimationToEnd
+- tapOn: "Todos.*"
+- tapOn: "New"
 - tapOn: "Add a todo.*"
 - inputText: "Maestro todo ${TS}"
 - tapOn: "Save"
