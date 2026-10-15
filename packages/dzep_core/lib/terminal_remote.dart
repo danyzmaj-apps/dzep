@@ -102,6 +102,10 @@ class TerminalRemote extends ChangeNotifier {
   List<LiveSummary> sessions = const [];
   List<String> projects = const [];
 
+  /// The Mac's Project folders, where a new project can be made; null from
+  /// a Mac that predates them (and can't make one).
+  List<String>? roots;
+
   /// The Mac's home folder, shown as ~.
   String home = '';
 
@@ -305,6 +309,7 @@ class TerminalRemote extends ChangeNotifier {
     windows = [for (final w in p['windows'] as List? ?? const []) TermWindow.fromJson((w as Map).cast())];
     sessions = [for (final s in p['sessions'] as List? ?? const []) LiveSummary.fromJson((s as Map).cast())];
     projects = (p['projects'] as List?)?.cast<String>() ?? projects;
+    roots = (p['roots'] as List?)?.cast<String>();
     home = p['home'] as String? ?? home;
     agent = Agent.parse(p['agent']);
     opensIn = p['opensIn'] as String?;
@@ -467,12 +472,21 @@ class TerminalRemote extends ChangeNotifier {
   Future<void> close(String window) => _run({'op': 'close', 'window': window});
 
   /// A new terminal window in [cwd] (where [opensIn] says), running the Mac's coding [agent] if
-  /// [startAgent]; its window key. Starting a terminal app can take a while;
-  /// a window that opens after the phone stopped waiting is still taken as
-  /// new ([_fresh]).
-  Future<String> launch(String cwd, {required bool startAgent}) async {
+  /// [startAgent]; its window key.
+  Future<String> launch(String cwd, {required bool startAgent}) =>
+      _open({'op': 'launch', 'cwd': cwd, 'agent': startAgent});
+
+  /// A new folder [name] under [root] (one of [roots]) on the Mac, with a
+  /// window in it as [launch]; its window key.
+  Future<String> create(String root, String name, {required bool startAgent}) =>
+      _open({'op': 'create', 'root': root, 'name': name, 'agent': startAgent});
+
+  /// Runs [request], which opens a window; its key. Starting a terminal app
+  /// can take a while; a window that opens after the phone stopped waiting
+  /// is still taken as new ([_fresh]).
+  Future<String> _open(Map<String, dynamic> request) async {
     final reply = await _run(
-      {'op': 'launch', 'cwd': cwd, 'agent': startAgent},
+      request,
       wait: const Duration(seconds: 20),
       onLate: (r) {
         if (r['window'] case final String window) _fresh(window);
@@ -607,6 +621,7 @@ class TerminalRemote extends ChangeNotifier {
         'windows': [for (final w in windows) w.toJson()],
         'sessions': [for (final s in sessions) s.toJson()],
         'projects': projects,
+        'roots': ?roots,
         'home': home,
         'agent': agent.name,
         'opensIn': ?opensIn,

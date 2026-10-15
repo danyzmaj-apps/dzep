@@ -98,4 +98,22 @@ void main() {
     await settle(tester, 'Installed and up to date');
     expect(find.text('Installed and up to date'), findsOneWidget);
   });
+
+  testWidgets('project folders: added ones show with ~, Remove drops them', (tester) async {
+    await pumpSettings(tester);
+    expect(find.text('None yet · your phone can still open any path you type'), findsOneWidget);
+    final home = app.terminals.home;
+    await app.setProjectRoots(['$home/Code', '/opt/src', home]);
+    await tester.pumpAndSettle();
+    expect(find.text('~/Code'), findsOneWidget);
+    expect(find.text('/opt/src'), findsOneWidget);
+    expect(find.text('~'), findsOneWidget);
+
+    final remove = find.text('Remove').first;
+    await tester.ensureVisible(remove);
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(app.projectRoots, ['/opt/src', home]);
+    expect(find.text('~/Code'), findsNothing);
+  });
 }

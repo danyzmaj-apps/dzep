@@ -38,6 +38,7 @@ void main() {
       },
     ],
     'projects': ['/Users/me/x'],
+    'roots': ['/Users/me'],
     'home': '/Users/me',
   };
 
@@ -68,6 +69,8 @@ void main() {
     expect(b.fromCache, isTrue);
     expect(b.stateAt, isNotNull);
     expect(b.home, '/Users/me');
+    expect(b.projects, ['/Users/me/x']);
+    expect(b.roots, ['/Users/me']);
     expect(b.windows.single.key, 'kitty-1/1');
     expect(b.sessions.single.title, 'Fix it');
     final v = b.view('kitty-1/1')!;
@@ -80,7 +83,7 @@ void main() {
     expect(b.fromCache, isFalse);
   });
 
-  test("where sessions open and the Mac's terminals survive the cache; an older Mac has neither", () {
+  test("where sessions open, the Mac's terminals and Project folders survive the cache; an older Mac has none", () {
     final a = remote()
       ..handle('state', {
         ...state(),
@@ -104,9 +107,13 @@ void main() {
       ('tmux', 'tmux', TermState.ready),
     ]);
 
-    b.handle('state', state());
+    b.handle('state', {...state(), 'roots': <Object>[]});
+    expect(b.roots, isEmpty);
+    b.handle('state', state()..remove('roots'));
     expect(b.opensIn, isNull);
     expect(b.terminals, isEmpty);
+    // No Project folders at all, not none added: it can't make a project.
+    expect(b.roots, isNull);
   });
 
   test('watching asks for what the cached view misses', () {
@@ -247,5 +254,25 @@ void main() {
     expect(r.view('kitty-1/1'), isNull);
     r.flush();
     expect(remote().view('kitty-1/1'), isNull);
+  });
+
+  test('create sends root, name and agent, and takes the window', () async {
+    final r = remote()..handle('state', state());
+    expect(r.roots, ['/Users/me']);
+
+    final made = r.create('/Users/me', 'new', startAgent: false);
+    await Future<void>.delayed(Duration.zero);
+    final run = sent.lastWhere((s) => s.$1 == 'run').$2;
+    expect(
+      run,
+      allOf(
+        containsPair('op', 'create'),
+        containsPair('root', '/Users/me'),
+        containsPair('name', 'new'),
+        containsPair('agent', false),
+      ),
+    );
+    r.handle('ran', {'id': run['id'], 'window': 'kitty-1/2'});
+    expect(await made, 'kitty-1/2');
   });
 }

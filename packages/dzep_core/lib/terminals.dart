@@ -250,10 +250,11 @@ class Terminals {
     return key;
   }
 
-  /// Git repositories up to three levels under the usual code folders, for
-  /// the phone's New session list.
-  Future<List<String>> projects() async {
-    final found = <String>[];
+  /// Git repositories up to three levels under [roots] (the Mac's Project
+  /// folders setting), for the phone's New session list.
+  Future<List<String>> projects(List<String> roots) async {
+    // A set: two roots nested in each other would find a repository twice.
+    final found = <String>{};
     Future<void> walk(Directory dir, int depth) async {
       final List<FileSystemEntity> entries;
       try {
@@ -272,10 +273,56 @@ class Terminals {
       }
     }
 
-    for (final root in ['Dev', 'Developer', 'Projects', 'code', 'src']) {
-      final dir = Directory('$home/$root');
+    for (final root in roots) {
+      final dir = Directory(root);
       if (dir.existsSync()) await walk(dir, 3);
     }
-    return found..sort();
+    return found.toList()..sort();
+  }
+
+  /// A new project folder [name] under [root], which must be one of [roots]
+  /// (the Mac's Project folders setting); its path. Only the folder is made.
+  String createProject(String root, String name, {required List<String> roots}) {
+    if (!roots.contains(root)) throw TerminalException('Not one of your project folders: $root');
+    final n = name.trim();
+    if (n.isEmpty || n.contains('/') || n.startsWith('.') || n.codeUnits.any((c) => c < 0x20 || c == 0x7f)) {
+      throw const TerminalException(
+        'A project name can’t be empty, contain / or control characters, or start with a dot.',
+      );
+    }
+    if (!Directory(root).existsSync()) throw TerminalException('No such folder: $root');
+    final path = '$root/$n';
+    if (FileSystemEntity.typeSync(path) != FileSystemEntityType.notFound) {
+      throw TerminalException('There is already something named $n there.');
+    }
+    try {
+      Directory(path).createSync();
+    } on FileSystemException catch (e) {
+      throw TerminalException('Couldn’t create $path: ${e.osError?.message ?? e.message}');
+    }
+    return path;
+  }
+
+  /// The phone's New project: [createProject], then a window in it as
+  /// [launch]. Should no window open, the folder goes again (while still
+  /// empty), so trying again with the same name works.
+  Future<String> launchNewProject(
+    String root,
+    String name, {
+    required List<String> roots,
+    required TerminalHost host,
+    Agent? agent,
+  }) async {
+    final cwd = createProject(root, name, roots: roots);
+    try {
+      return await launch(cwd, host: host, agent: agent);
+    } on Object {
+      try {
+        Directory(cwd).deleteSync();
+      } on FileSystemException {
+        // Something was put in it meanwhile: it stays.
+      }
+      rethrow;
+    }
   }
 }

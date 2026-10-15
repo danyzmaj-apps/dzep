@@ -453,6 +453,8 @@ void main() {
       ..hotKeyRegistered = true;
     fill(app.fakeStore);
     await (await SharedPreferences.getInstance()).setBool('terminal_bridge', true);
+    // DemoTerminals' home, so it reads ~/Dev.
+    await app.setProjectRoots(['/nonexistent-dzep-demo/Dev']);
     // Two coding agents report to Džep.
     for (final (pid, title) in [(101, 'Retry queue'), (102, 'Dark mode')]) {
       final frames = StreamController<String>();
