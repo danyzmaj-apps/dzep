@@ -18,7 +18,7 @@ Džep is a Mac menu-bar app with an ⇧⌘Space popup, plus iPhone and Android a
 - **Capture anywhere:** the Mac popup, phone widgets, or `/idea`, `/do` and `/note` in your coding agent.
 - **Todos with reminders:** `call bank !15:00` reminds every device; tick it off on one and it's done on all.
 - **Notes and Ask:** free-text notes, and short streamed chats with any OpenAI-compatible AI.
-- **Phone apps with three tabs:** **Pocket** (todos, ideas and notes in one list), **Terminal** and **Ask**. iOS's own Liquid Glass controls on iPhone, Material 3 on Android.
+- **Phone apps with three tabs:** **Pocket** (todos, ideas and notes in one list), **Terminal** and **Ask**. iOS's look on iPhone, Material 3 on Android.
 - **Terminal from the phone:** your Mac's [omp](https://github.com/can1357/oh-my-pi) and [Claude Code](https://github.com/anthropics/claude-code) sessions as a conversation, with a push when the agent finishes or needs you.
 - **Private by design:** your data stays in your Supabase project, and pushes reach your phones encrypted.
 
@@ -57,7 +57,7 @@ The phone's Terminal tab shows the Mac's omp and Claude Code sessions as convers
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/images/phone-pocket.png" alt="iPhone: the Pocket tab with iOS's own Liquid Glass tab bar, + button, search field and kind picker" width="260"></td>
+    <td width="33%"><img src="docs/images/phone-pocket.png" alt="iPhone: the Pocket tab, open todos first, then ideas and notes" width="260"></td>
     <td width="33%"><img src="docs/images/phone-session.png" alt="Phone: a coding session as a conversation, with tool-call cards" width="260"></td>
     <td width="33%"><img src="docs/images/phone-terminal-android.png" alt="Android: the Terminal tab in Material 3, listing the Mac's coding sessions and windows" width="260"></td>
   </tr>

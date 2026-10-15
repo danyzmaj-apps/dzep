@@ -4,12 +4,12 @@ appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Pocket"
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
     timeout: 15000
-- tapOn: "Pocket"
+- tapOn: "(\\d+\n)?Pocket(\nTab.*)?"
 - waitForAnimationToEnd
 - tapOn: "Todos.*"
-- tapOn: "New"
+- tapOn: "New todo"
 - tapOn: "Add a todo.*"
 - inputText: "Maestro todo ${TS}"
 - tapOn: "Save"

@@ -6,12 +6,12 @@ appId: com.danyzmaj.dzep
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "Pocket"
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
     timeout: 15000
-- tapOn: "Pocket"
+- tapOn: "(\\d+\n)?Pocket(\nTab.*)?"
 - waitForAnimationToEnd
 - tapOn: "Ideas"
-- tapOn: "New"
+- tapOn: "New idea"
 - tapOn: "Drop an idea.*"
 - inputText: "Maestro idea ${TS}"
 - tapOn: "Save"

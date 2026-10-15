@@ -1,18 +1,13 @@
-import 'dart:io' show Platform;
-
 import 'package:dzep_core/ui.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/cupertino.dart' show CupertinoTabBar;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:native_liquid_glass/native_liquid_glass.dart';
 
-/// The phone app's chrome in each platform's own idiom. On an iPhone the tab
-/// bar, its + and the Pocket tab's search and kind picker are UIKit's own
-/// controls (`native_liquid_glass` hosts them), so iOS 26 draws them in its
-/// Liquid Glass and older iOS in its standard look; the lists are iOS's inset
-/// grouped ones. Everywhere else, Android and widget tests (which can't host
-/// UIKit views) included, Material 3: tonal surfaces, the navigation bar with
-/// its pill, a rounded-square + button.
-final bool nativeIos = !kIsWeb && Platform.isIOS;
+/// The phone app's chrome in each platform's own idiom, all drawn by
+/// Flutter: on an iPhone iOS's look (opaque tab bar, inset grouped lists,
+/// capsule filters, a round +), on Android Material 3 (tonal surfaces, the
+/// navigation bar with its pill, a rounded-square + button).
+bool get isIos => defaultTargetPlatform == TargetPlatform.iOS;
 
 /// iOS's dark system colours for inset grouped lists.
 abstract final class S {
@@ -31,7 +26,7 @@ abstract final class M {
 }
 
 /// What the screens sit on.
-Color get screenColor => nativeIos ? S.background : C.win;
+Color get screenColor => isIos ? S.background : C.win;
 
 /// A screen's big title, with what goes on its right.
 class PageTitle extends StatelessWidget {
@@ -50,7 +45,7 @@ class PageTitle extends StatelessWidget {
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: nativeIos
+            style: isIos
                 ? const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: .4)
                 : const TextStyle(fontSize: 28, fontWeight: FontWeight.w500),
           ),
@@ -85,9 +80,9 @@ class Panel extends StatelessWidget {
                     title!,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: nativeIos ? FontWeight.w400 : FontWeight.w600,
-                      letterSpacing: nativeIos ? .2 : .1,
-                      color: nativeIos ? S.secondaryLabel : C.accent,
+                      fontWeight: isIos ? FontWeight.w400 : FontWeight.w600,
+                      letterSpacing: isIos ? .2 : .1,
+                      color: isIos ? S.secondaryLabel : C.accent,
                     ),
                   ),
                   const Spacer(),
@@ -105,14 +100,14 @@ class Panel extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(16, title == null ? 8 : 0, 16, 0),
             // A Material, so the rows' ink and list tiles paint on it.
             child: Material(
-              color: nativeIos ? S.cell : M.container,
+              color: isIos ? S.cell : M.container,
               clipBehavior: Clip.antiAlias,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(nativeIos ? 22 : 24)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isIos ? 22 : 24)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (final (i, row) in children.indexed) ...[
-                    if (i > 0) Divider(height: 1, thickness: 0.5, indent: 52, color: nativeIos ? S.separator : C.line),
+                    if (i > 0) Divider(height: 1, thickness: 0.5, indent: 52, color: isIos ? S.separator : C.line),
                     row,
                   ],
                 ],
@@ -137,7 +132,7 @@ class Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tint = color ?? C.accent;
-    if (!nativeIos) {
+    if (!isIos) {
       return FilterChip(
         selected: selected,
         onSelected: (_) => onTap(),
@@ -176,7 +171,7 @@ class Pill extends StatelessWidget {
   }
 }
 
-/// The search field: UIKit's search field on iPhone, Material 3's search bar shape on Android.
+/// The search field: iOS's filled rounded field on iPhone, Material 3's search bar shape on Android.
 class SearchField extends StatelessWidget {
   const SearchField({required this.onChanged, super.key});
   final ValueChanged<String> onChanged;
@@ -184,28 +179,29 @@ class SearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-    child: nativeIos
-        ? LiquidGlassSearchBar(expandable: false, showCancelButton: false, onChanged: onChanged)
-        : TextField(
-            onTapOutside: dismissKeyboard,
-            onChanged: onChanged,
-            style: const TextStyle(fontSize: 15),
-            decoration: InputDecoration(
-              hintText: 'Search',
-              hintStyle: const TextStyle(color: C.dim2),
-              prefixIcon: const Icon(Icons.search, color: C.dim, size: 20),
-              filled: true,
-              fillColor: M.containerHigh,
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(vertical: 11),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
-            ),
-          ),
+    child: TextField(
+      onTapOutside: dismissKeyboard,
+      onChanged: onChanged,
+      style: TextStyle(fontSize: isIos ? 17 : 15),
+      decoration: InputDecoration(
+        hintText: 'Search',
+        hintStyle: TextStyle(color: isIos ? S.secondaryLabel : C.dim2),
+        prefixIcon: Icon(
+          isIos ? Icons.search_rounded : Icons.search,
+          color: isIos ? S.secondaryLabel : C.dim,
+          size: 20,
+        ),
+        filled: true,
+        fillColor: isIos ? S.fill : M.containerHigh,
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(vertical: isIos ? 9 : 11),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(isIos ? 10 : 28), borderSide: BorderSide.none),
+      ),
+    ),
   );
 }
 
-/// One choice out of a few: UIKit's segmented control on iPhone, Material 3
-/// filter chips in a row on Android. Each Android chip is keyed by [keys].
+/// One choice out of a few: a row of [Pill]s, each keyed by [keys].
 class Segments extends StatelessWidget {
   const Segments({required this.labels, required this.keys, required this.selected, required this.onSelect, super.key});
   final List<String> labels;
@@ -215,12 +211,6 @@ class Segments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (nativeIos) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-        child: LiquidGlassSegmentedControl(labels: labels, selectedIndex: selected, onValueChanged: onSelect),
-      );
-    }
     return SizedBox(
       height: 44,
       child: ListView(
@@ -240,52 +230,45 @@ class Segments extends StatelessWidget {
   }
 }
 
-/// One tab of [AppTabBar]: Material icons on Android, SF Symbols on iPhone.
-typedef TabSpec = ({IconData icon, IconData selectedIcon, String symbol, String label, int badge});
+/// One tab of [AppTabBar].
+typedef TabSpec = ({IconData icon, IconData selectedIcon, String label, int badge});
 
-/// The three tabs: on iPhone UIKit's tab bar, with the screen's + as its
-/// separate action button; on Android Material 3's navigation bar, where the
-/// + is a [AddButton] above it.
+/// The three tabs: iOS's opaque tab bar on iPhone, Material 3's navigation
+/// bar on Android. The + is an [AddButton] above it.
 class AppTabBar extends StatelessWidget {
-  const AppTabBar({required this.tabs, required this.index, required this.onSelect, required this.onAdd, super.key});
+  const AppTabBar({required this.tabs, required this.index, required this.onSelect, super.key});
   final List<TabSpec> tabs;
   final int index;
   final ValueChanged<int> onSelect;
 
-  /// The iPhone's +.
-  final VoidCallback? onAdd;
-
-  /// Room the lists leave at the bottom, clear of the bar and the +.
-  static const contentInset = 120.0;
+  /// Room the lists leave at the bottom, clear of the +.
+  static const contentInset = 96.0;
 
   @override
   Widget build(BuildContext context) {
-    if (nativeIos) {
-      return SafeArea(
-        top: false,
-        child: LiquidGlassTabBar(
-          currentIndex: index,
-          onTabSelected: onSelect,
-          selectedItemColor: C.accent,
-          items: [
-            for (final t in tabs)
-              LiquidGlassTabItem(
-                label: t.label,
-                icon: NativeLiquidGlassIcon.sfSymbol(t.symbol),
-                iosBadgeValue: t.badge > 0 ? '${t.badge}' : null,
-              ),
-          ],
-          // One + for every tab: changing it would rebuild the native bar.
-          iosActionButton: const LiquidGlassTabItem(label: 'New', icon: NativeLiquidGlassIcon.sfSymbol('plus')),
-          onActionButtonPressed: onAdd,
-        ),
-      );
-    }
     Widget icon(TabSpec t, {required bool on}) {
       final icon = Icon(on ? t.selectedIcon : t.icon);
       return t.badge > 0 ? Badge(label: Text('${t.badge}'), child: icon) : icon;
     }
 
+    if (isIos) {
+      return CupertinoTabBar(
+        currentIndex: index,
+        onTap: onSelect,
+        // Opaque: no blur behind it to redraw on every scrolled frame.
+        backgroundColor: S.cell,
+        activeColor: C.accent,
+        inactiveColor: S.secondaryLabel,
+        height: 54,
+        items: [
+          for (final (i, t) in tabs.indexed)
+            BottomNavigationBarItem(
+              icon: icon(t, on: i == index),
+              label: t.label,
+            ),
+        ],
+      );
+    }
     return NavigationBar(
       selectedIndex: index,
       onDestinationSelected: onSelect,
@@ -305,7 +288,7 @@ class AppTabBar extends StatelessWidget {
   }
 }
 
-/// Android's +: Material 3's rounded-square FAB. (The iPhone's is in [AppTabBar].)
+/// The +: a round accent button on iPhone, Material 3's rounded-square FAB on Android.
 class AddButton extends StatelessWidget {
   const AddButton({required this.tooltip, required this.onPressed, this.icon = Icons.add, super.key});
   final String tooltip;
@@ -319,6 +302,8 @@ class AddButton extends StatelessWidget {
     onPressed: onPressed,
     backgroundColor: C.accent,
     foregroundColor: const Color(0xFF0E0F12),
-    child: Icon(icon, size: 26),
+    shape: isIos ? const CircleBorder() : null,
+    elevation: isIos ? 2 : null,
+    child: Icon(isIos ? (icon == Icons.add ? Icons.add_rounded : icon) : icon, size: 26),
   );
 }

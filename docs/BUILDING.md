@@ -129,15 +129,13 @@ maestro test -e TS=$(date +%H%M%S) apps/dzep-mobile/maestro/
 
 The screenshots in the README and [USING.md](USING.md) (`docs/images/`) are the real screens rendered by a widget test, on made-up data: no window opens and no account, token or project is real. They need macOS's own fonts (SF Pro, Menlo) and are skipped by a plain `fvm flutter test`.
 
-Two are taken on the iOS simulator instead, because on an iPhone the phone's tab bar, its **+**, the search field and the kind picker are UIKit views, which a widget test can't draw: `docs/images/phone-pocket.png` (the Pocket tab on **All**) and the hero's phone (`apps/dzep-mobile/build/screenshots/hero-phone.png`, Pocket on **Todos**). Sign the simulator in to a server holding the generator's items (`_store()` in `apps/dzep-mobile/test/screenshots/screenshots_test.dart`), set `xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100`, and take each with `xcrun simctl io booted screenshot <file>`; scale `phone-pocket.png` to 804×1748.
-
 ```sh
 # in apps/dzep-macos-app: mac-*.png, wizard-*.png, and the hero's popup (build/screenshots/hero-popup.png)
 fvm flutter test --tags screenshots --run-skipped
-# then in apps/dzep-mobile: phone-*.png but phone-pocket.png, and hero.png (that popup next to the phone's capture, in a phone's frame)
+# then in apps/dzep-mobile: phone-*.png, and hero.png (that popup next to the phone, in a phone's frame)
 fvm flutter test --tags screenshots --run-skipped
 # at the repo root, to keep them small (brew install pngquant)
 pngquant --quality 80-98 --strip --skip-if-larger --force --ext .png docs/images/*.png
 ```
 
-Run the Mac's first and take the simulator's: the phone's `hero` test is skipped until the popup and the phone capture it composes exist. The generators are `test/screenshots/` in each app; the hero's popup shows the phone's todos (`phoneTodos` mirrors the phone generator's list), so change both together. Keep `docs/images/` under 1 MB in all.
+Run the Mac's first: the phone's `hero` test is skipped until the popup it composes exists. The generators are `test/screenshots/` in each app; the hero's popup shows the phone's todos (`phoneTodos` mirrors the phone generator's list), so change both together. Keep `docs/images/` under 1 MB in all.

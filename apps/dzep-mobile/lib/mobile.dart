@@ -24,7 +24,6 @@ import 'package:dzep_mobile/terminal_view.dart';
 import 'package:flutter/cupertino.dart' show CupertinoDatePicker;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:native_liquid_glass/native_liquid_glass.dart' show LiquidGlassNavigatorObserver;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -199,8 +198,6 @@ class MobileApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Džep',
     debugShowCheckedModeBanner: false,
-    // The native glass views hide under sheets, dialogs and pushed pages.
-    navigatorObservers: [LiquidGlassNavigatorObserver()],
     theme: appTheme().copyWith(
       scaffoldBackgroundColor: screenColor,
       snackBarTheme: const SnackBarThemeData(
@@ -436,7 +433,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: nativeIos ? S.cell : M.containerHigh,
+      backgroundColor: isIos ? S.cell : M.containerHigh,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (_) =>
           AddSheet(store: store, kind: kind, defaultProject: _pocket.currentState?.project ?? '', onNote: _openNote),
@@ -467,31 +464,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final add = _add;
       return Scaffold(
         backgroundColor: screenColor,
-        // The lists scroll under the iPhone's tab bar.
-        extendBody: nativeIos,
-        floatingActionButton: nativeIos
-            ? null
-            : AddButton(tooltip: add.tooltip, icon: add.icon, onPressed: add.onPressed),
+        floatingActionButton: AddButton(tooltip: add.tooltip, icon: add.icon, onPressed: add.onPressed),
         bottomNavigationBar: AppTabBar(
           index: _tab.index,
           onSelect: (i) => setState(() => _tab = HomeTab.values[i]),
-          onAdd: add.onPressed,
           tabs: [
             (
-              icon: Icons.inbox_outlined,
-              selectedIcon: Icons.inbox,
-              symbol: 'tray.full',
+              icon: isIos ? Icons.inventory_2_outlined : Icons.inbox_outlined,
+              selectedIcon: isIos ? Icons.inventory_2_rounded : Icons.inbox,
               label: 'Pocket',
               badge: store.openTodos.length,
             ),
-            (icon: Icons.terminal, selectedIcon: Icons.terminal, symbol: 'apple.terminal', label: 'Terminal', badge: 0),
-            (
-              icon: Icons.auto_awesome_outlined,
-              selectedIcon: Icons.auto_awesome,
-              symbol: 'sparkles',
-              label: 'Ask',
-              badge: 0,
-            ),
+            (icon: Icons.terminal_rounded, selectedIcon: Icons.terminal_rounded, label: 'Terminal', badge: 0),
+            (icon: Icons.auto_awesome_outlined, selectedIcon: Icons.auto_awesome, label: 'Ask', badge: 0),
           ],
         ),
         body: SafeArea(
@@ -614,7 +599,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _openAccount() => showModalBottomSheet<void>(
     context: context,
-    backgroundColor: nativeIos ? S.cell : M.containerHigh,
+    backgroundColor: isIos ? S.cell : M.containerHigh,
     builder: (sheet) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
