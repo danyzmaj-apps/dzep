@@ -23,6 +23,7 @@
 - Sync: a device coming back online no longer misses what other devices changed while it was away. The realtime echo of its own push could move the sync cursor past those rows before the pull ran, so they never arrived, and its stale copies could later overwrite them.
 - Connecting to a server whose connection drops mid-answer (a captive portal, a proxy) now says it couldn't reach the server instead of leaving the phone's setup screen or the Mac's connect form spinning until the app is restarted.
 - When the server ends a session (the account deleted on another device, a refresh refused, reviewer access ended), the Mac's desktop widget and Dock count and the phone's widgets and followed sessions now let go of that account's todos, as an ordinary sign-out does; before, they kept showing them, and a phone's widget could still tick them.
+- Android: Džep's data stays out of a device-to-device transfer to a new phone too (Android 12+ copied it on some phones despite backups being off), so a new phone never inherits the old one's sign-in, push key or widget token; it pairs with a code of its own.
 
 ## 0.3.0
 

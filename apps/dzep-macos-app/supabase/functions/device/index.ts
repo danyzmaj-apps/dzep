@@ -1,5 +1,5 @@
-// What the phones and the Mac widget do without a Supabase session (the
-// interactive Todos widgets, notification Done actions), authorised by a device token
+// What the phones' widgets and notification Done actions do without a Supabase session (the
+// interactive Todos widgets on iPhone and Android), authorised by a device token
 // (see device_tokens) in the x-dzep-token header. Deployed --no-verify-jwt.
 //
 //   POST /functions/v1/device  {"action": "done", "id"}   → marks a todo done

@@ -86,7 +86,7 @@ flowchart LR
   subgraph yours ["Your Supabase project"]
     direction TB
     db[("Your data<br/>row-level security")]
-    fn["Functions<br/>ask · pair · push"]
+    fn["Functions<br/>ask · device · pair · push"]
   end
   phones["Your phones<br/>iPhone · Android"]
   ai["AI provider<br/>(your key)"]
