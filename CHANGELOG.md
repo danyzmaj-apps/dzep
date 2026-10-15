@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 **Backend:** update your server: re-run `apps/dzep-macos-app/tool/setup-backend.sh`, or the Mac's setup wizard on the same project (new migration `20261017090000_reviewer_access.sql`; `ask`, `pair`, `push` and `device` changed; `supabase config push` turns email sign-up off). The publisher redeploys the relay (`tool/deploy-relay.sh`).
 
