@@ -55,6 +55,12 @@ class _SessionPageState extends State<SessionPage> {
   bool _followUp = false;
   bool _loadingOlder = false;
 
+  /// The close button was tapped: the page asks above the composer.
+  bool _closing = false;
+
+  /// A close was sent, and the Mac hasn't answered yet.
+  bool _closeSent = false;
+
   /// Tool items showing their output.
   final _expanded = <String>{};
 
@@ -108,12 +114,18 @@ class _SessionPageState extends State<SessionPage> {
     final text = typed.trim();
     if ((text.isEmpty && _attachments.isEmpty) || _sending) return;
     final images = List.of(_attachments.images);
+    // A slash command is typed into the agent's window, where its editor
+    // reads it; sent as a prompt, the agent would take it for chat.
+    final command = text.startsWith('/');
+    if (command && images.isNotEmpty) return termToast(context, "Slash commands can't take images.");
+    if (command && !_can(_windowKey(remote.session(key)), TermCap.line)) {
+      return termToast(context, _noCommands(_agent(remote.session(key))));
+    }
     setState(() => _sending = true);
     try {
       final queue = busy && (_followUp || !_agent(remote.session(key)).steers);
       await remote.prompt(key, text, images: [for (final i in images) i.bytes], followUp: queue);
       final s = remote.session(key);
-      final command = text.startsWith('/') && images.isEmpty;
       final window = s?.window;
       if (command && window != null) unawaited(_menuOrScreen(window));
       // Followed from here on (Lock Screen, Android's notifications), as working.
@@ -131,6 +143,19 @@ class _SessionPageState extends State<SessionPage> {
       if (mounted) termToast(context, e);
     }
     if (mounted) setState(() => _sending = false);
+  }
+
+  /// Why [agent]'s slash commands can't be sent from here.
+  static String _noCommands(Agent agent) =>
+      'Slash commands are typed into ${agent.label}’s terminal window, and Džep can’t reach this one: it isn’t in '
+      'kitty, tmux, WezTerm, iTerm2, Terminal or Ghostty. Run them on the Mac.';
+
+  Future<void> _close(TermWindow w) async {
+    setState(() => _closeSent = true);
+    final closed = await closeWindow(context, remote, w);
+    if (!mounted) return;
+    setState(() => _closing = _closeSent = false);
+    if (closed) await Navigator.of(context).maybePop();
   }
 
   /// A command's picker (/resume, /model, /tree …) shows here as a menu once
@@ -166,10 +191,7 @@ class _SessionPageState extends State<SessionPage> {
       return Padding(
         key: const ValueKey('commands-need-window'),
         padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-        child: Text(
-          'Slash commands run in ${agent.label}’s terminal window, and this session has none.',
-          style: const TextStyle(color: C.dim, fontSize: 12),
-        ),
+        child: Text(_noCommands(agent), style: const TextStyle(color: C.dim, fontSize: 12)),
       );
     }
     if (matches.isEmpty) return null;
@@ -625,11 +647,7 @@ class _SessionPageState extends State<SessionPage> {
               IconButton(
                 key: const ValueKey('close-window'),
                 tooltip: 'Close window',
-                onPressed: () => unawaited(
-                  closeWindow(context, remote, window).then((closed) {
-                    if (closed && context.mounted) Navigator.of(context).maybePop();
-                  }),
-                ),
+                onPressed: _closeSent ? null : () => setState(() => _closing = true),
                 icon: const Icon(Icons.close, color: C.dim),
               ),
           ],
@@ -639,6 +657,14 @@ class _SessionPageState extends State<SessionPage> {
           children: [
             ?note,
             Expanded(child: _transcript(v, s, ended: ended)),
+            if (_closing && window != null && online && !ended)
+              CloseConfirm(
+                remote: remote,
+                window: window,
+                onCancel: () => setState(() => _closing = false),
+                onClose: () => unawaited(_close(window)),
+                closing: _closeSent,
+              ),
             if (ended)
               _banner(
                 'This session has ended.',

@@ -56,4 +56,17 @@ void main() {
     expect(terminalsError([setup, limited], nothingShown: true), isNull);
     expect(terminalsError([idle], nothingShown: true), isNull);
   });
+
+  test("a slash command for a session in no terminal Džep drives (IntelliJ's) is refused, not sent as chat", () {
+    final terms = _terms();
+    for (final key in [
+      'kitty-1/2',
+      'tmux:default/0',
+      'terminal:ttys009',
+      'ghostty:CB2035E7-67BF-48C7-8D0A-83F3FA5B8074',
+    ]) {
+      expect(cantCommand(terms, key), isNull, reason: key);
+    }
+    expect(cantCommand(terms, null), startsWith("Slash commands are typed into the agent's terminal window"));
+  });
 }

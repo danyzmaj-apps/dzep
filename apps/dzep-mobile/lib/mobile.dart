@@ -46,6 +46,13 @@ class MobileSession extends Session {
 
   static String _hash(String token) => sha256.convert(utf8.encode(token)).toString();
 
+  static const _foldedKey = 'dzep_terminal_folded';
+
+  /// The Terminal tab's projects (folders) showing only their heading.
+  Set<String> get collapsedProjects => {...?_prefs.getStringList(_foldedKey)};
+
+  Future<void> setCollapsedProjects(Set<String> cwds) => _prefs.setStringList(_foldedKey, [...cwds]);
+
   @override
   Future<void> onSignedIn(IdeaStore store) async {
     void shareTodos() {
@@ -508,7 +515,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     onShow: (s) => setState(() => _show = s),
                   ),
                   HomeTab.terminal => switch (_terminal) {
-                    final t? => TerminalList(remote: t),
+                    final t? => TerminalList(
+                      remote: t,
+                      folded: widget.session.collapsedProjects,
+                      onFolded: (f) => unawaited(widget.session.setCollapsedProjects(f)),
+                    ),
                     null => const Center(
                       child: Text('Reaching your Mac…', style: TextStyle(color: C.dim)),
                     ),
