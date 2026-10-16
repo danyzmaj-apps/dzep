@@ -100,7 +100,7 @@ No AI yet? Connect one from the Mac: **Settings → AI → Connect…** (or **Co
 
 ## Terminal from the phone
 
-The phone's Terminal tab, where the app opens, lists the Mac's coding sessions (omp and Claude Code) and its other terminal windows.
+The phone's Terminal tab, where the app opens, lists the Mac's coding sessions (omp and Claude Code) under a heading for each project (its folder's name and how many run there), the project with a session needing you first, and below them the Mac's other terminal windows.
 
 <table>
   <tr>
@@ -112,7 +112,9 @@ The phone's Terminal tab, where the app opens, lists the Mac's coding sessions (
 
 - **A coding session** opens as a conversation laid out for the phone: your prompts, the agent's answers, tool calls as cards. Prompt it (with images), stop it, answer its questions, tool approvals and plan reviews. While omp works you can steer it or queue a prompt; Claude Code can't be steered, so a prompt waits for its run to end. Typing `/` suggests the agent's slash commands.
 - **Any window**, a shell included, also opens as its live screen you can type into.
-- **+** opens a new window in one of the Mac's projects (the git repositories in your **Project folders**, or any `~/path` you type), with a shell or your coding agent. **New project…** there makes a new folder in one of your Project folders and opens a window in it. It opens without taking the focus from what you're doing on the Mac.
+- **A project heading's +** starts your coding agent in a new window in that folder and opens it. Tap a heading to fold the project to just its heading; it stays folded next time, and shows a yellow dot when a session in it needs you.
+- **Swipe a row left** to close its window on the Mac: the row asks **Keep** / **Close** in its place, and goes back by itself after a few seconds. The close button on a session or screen asks the same above the composer.
+- **+** at the bottom opens a new window in one of the Mac's projects (the git repositories in your **Project folders**, or any `~/path` you type), with a shell or your coding agent. **New project…** there makes a new folder in one of your Project folders and opens a window in it. It opens without taking the focus from what you're doing on the Mac.
 - When a run ends or the agent needs you while you're away from the Mac, a push takes you to that session. A session you follow shows as a **Live Activity** on the iPhone (Lock Screen, Dynamic Island) and as an **ongoing notification** on Android.
 
 What works in a window depends on its terminal: see the [table in the README](../README.md#terminal-from-the-phone). The phone shows only what works. With tmux installed (`brew install tmux`), sessions the phone starts in Terminal or Ghostty run inside tmux and get full control.

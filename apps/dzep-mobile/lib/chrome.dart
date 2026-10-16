@@ -60,14 +60,24 @@ class PageTitle extends StatelessWidget {
 /// Material 3 tonal surface) with thin separators, under an optional small
 /// heading.
 class Panel extends StatelessWidget {
-  const Panel({required this.children, this.title, this.onTitleTap, this.titleTrailing, super.key});
+  const Panel({required this.children, this.title, this.count, this.onTitleTap, this.titleTrailing, super.key});
   final List<Widget> children;
   final String? title;
+
+  /// How many there are, after the title as " · n": a long title gives way
+  /// before it does.
+  final int? count;
   final VoidCallback? onTitleTap;
   final Widget? titleTrailing;
 
   @override
   Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: 13,
+      fontWeight: isIos ? FontWeight.w400 : FontWeight.w600,
+      letterSpacing: isIos ? .2 : .1,
+      color: isIos ? S.secondaryLabel : C.accent,
+    );
     final heading = title == null
         ? null
         : InkWell(
@@ -76,16 +86,18 @@ class Panel extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(32, 18, 24, 7),
               child: Row(
                 children: [
-                  Text(
-                    title!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: isIos ? FontWeight.w400 : FontWeight.w600,
-                      letterSpacing: isIos ? .2 : .1,
-                      color: isIos ? S.secondaryLabel : C.accent,
+                  // A long title (a project folder's name) gives way to what
+                  // trails it.
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(title!, maxLines: 1, overflow: TextOverflow.ellipsis, style: style),
+                        ),
+                        if (count != null) Text(' · $count', style: style),
+                      ],
                     ),
                   ),
-                  const Spacer(),
                   ?titleTrailing,
                 ],
               ),

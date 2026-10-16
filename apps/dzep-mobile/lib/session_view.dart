@@ -55,6 +55,12 @@ class _SessionPageState extends State<SessionPage> {
   bool _followUp = false;
   bool _loadingOlder = false;
 
+  /// The close button was tapped: the page asks above the composer.
+  bool _closing = false;
+
+  /// A close was sent, and the Mac hasn't answered yet.
+  bool _closeSent = false;
+
   /// Tool items showing their output.
   final _expanded = <String>{};
 
@@ -131,6 +137,14 @@ class _SessionPageState extends State<SessionPage> {
       if (mounted) termToast(context, e);
     }
     if (mounted) setState(() => _sending = false);
+  }
+
+  Future<void> _close(TermWindow w) async {
+    setState(() => _closeSent = true);
+    final closed = await closeWindow(context, remote, w);
+    if (!mounted) return;
+    setState(() => _closing = _closeSent = false);
+    if (closed) await Navigator.of(context).maybePop();
   }
 
   /// A command's picker (/resume, /model, /tree …) shows here as a menu once
@@ -625,11 +639,7 @@ class _SessionPageState extends State<SessionPage> {
               IconButton(
                 key: const ValueKey('close-window'),
                 tooltip: 'Close window',
-                onPressed: () => unawaited(
-                  closeWindow(context, remote, window).then((closed) {
-                    if (closed && context.mounted) Navigator.of(context).maybePop();
-                  }),
-                ),
+                onPressed: _closeSent ? null : () => setState(() => _closing = true),
                 icon: const Icon(Icons.close, color: C.dim),
               ),
           ],
@@ -639,6 +649,14 @@ class _SessionPageState extends State<SessionPage> {
           children: [
             ?note,
             Expanded(child: _transcript(v, s, ended: ended)),
+            if (_closing && window != null && online && !ended)
+              CloseConfirm(
+                remote: remote,
+                window: window,
+                onKeep: () => setState(() => _closing = false),
+                onClose: () => unawaited(_close(window)),
+                closing: _closeSent,
+              ),
             if (ended)
               _banner(
                 'This session has ended.',

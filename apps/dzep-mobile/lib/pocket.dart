@@ -173,7 +173,8 @@ class PocketViewState extends State<PocketView> {
           ),
         if (open.isNotEmpty)
           Panel(
-            title: show == PocketShow.all ? 'TO DO · ${open.length}' : null,
+            title: show == PocketShow.all ? 'TO DO' : null,
+            count: open.length,
             children: [for (final t in open) _todoRow(t)],
           ),
         if (others.isNotEmpty)
@@ -186,7 +187,8 @@ class PocketViewState extends State<PocketView> {
           ),
         if (done.isNotEmpty)
           Panel(
-            title: 'DONE · ${done.length}',
+            title: 'DONE',
+            count: done.length,
             onTitleTap: () => setState(() => _showDone = !_showDone),
             titleTrailing: Icon(_showDone ? Icons.expand_less : Icons.expand_more, color: C.dim, size: 20),
             children: [

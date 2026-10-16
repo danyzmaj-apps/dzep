@@ -91,35 +91,88 @@ Widget _badged(TermWindow? w, Widget line) => w == null
         ],
       );
 
-/// Asks, then closes [w] on the Mac; true once it's closed.
+/// Closes [w] on the Mac (callers ask first: [CloseConfirm]); true once it's
+/// closed.
 Future<bool> closeWindow(BuildContext context, TerminalRemote remote, TermWindow w) async {
-  final agent = w.agent;
-  final what = agent != null ? 'the ${agent.label} session' : (w.program.isEmpty ? 'what runs in it' : w.program);
-  final sure = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Close this window?'),
-      content: Text(
-        'It closes on the Mac, and $what in ${shortPath(remote, w.cwd)} ends with it.',
-        style: const TextStyle(color: C.dim, height: 1.4),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
-        TextButton(
-          key: const ValueKey('close-confirm'),
-          onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Close', style: TextStyle(color: Color(0xFFFCA5A5))),
-        ),
-      ],
-    ),
-  );
-  if (sure != true) return false;
   try {
     await remote.close(w.key);
     return true;
   } on Object catch (e) {
     if (context.mounted) termToast(context, e);
     return false;
+  }
+}
+
+/// Asks in place, before [window] closes: it closes on the Mac, and what runs
+/// in it ends with it; [closing]: the close went, and the Mac hasn't answered.
+class CloseConfirm extends StatelessWidget {
+  const CloseConfirm({
+    required this.remote,
+    required this.window,
+    required this.onKeep,
+    required this.onClose,
+    this.closing = false,
+    super.key,
+  });
+  final TerminalRemote remote;
+  final TermWindow window;
+  final VoidCallback onKeep;
+  final VoidCallback onClose;
+  final bool closing;
+
+  @override
+  Widget build(BuildContext context) {
+    final agent = window.agent;
+    final what = agent != null
+        ? 'The ${agent.label} session'
+        : (window.program.isEmpty ? 'What runs in it' : window.program);
+    final where = window.cwd.isEmpty ? '' : ' in ${shortPath(remote, window.cwd)}';
+    return Container(
+      key: ValueKey('confirm-close-${window.key}'),
+      color: const Color(0x557F1D1D),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Close this window on the Mac?',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 15),
+                ),
+                Text(
+                  '$what$where ends with it.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, color: C.dim, height: 1.3),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('close-keep'),
+            onPressed: closing ? null : onKeep,
+            child: Text('Keep', style: TextStyle(color: closing ? C.dim2 : C.dim)),
+          ),
+          if (closing)
+            const Padding(
+              key: ValueKey('close-sent'),
+              padding: EdgeInsets.symmetric(horizontal: 22),
+              child: SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            TextButton(
+              key: const ValueKey('close-confirm'),
+              onPressed: onClose,
+              child: const Text('Close', style: TextStyle(color: Color(0xFFFCA5A5))),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -206,6 +259,19 @@ List<LiveSummary> sortedSessions(List<LiveSummary> sessions) {
   });
 }
 
+/// The sessions in one project folder.
+typedef SessionGroup = ({String cwd, List<LiveSummary> sessions});
+
+/// Sessions by project folder: each group's in [sortedSessions] order, and a
+/// group ranks where its first (most urgent) session does.
+List<SessionGroup> groupedSessions(List<LiveSummary> sessions) {
+  final groups = <String, List<LiveSummary>>{};
+  for (final s in sortedSessions(sessions)) {
+    (groups[s.cwd] ??= []).add(s);
+  }
+  return [for (final MapEntry(:key, :value) in groups.entries) (cwd: key, sessions: value)];
+}
+
 /// "Needs you", "Working…" or how long it has been idle.
 String sessionState(LiveSummary s) => s.ask != null
     ? 'Needs you'
@@ -215,14 +281,96 @@ String sessionState(LiveSummary s) => s.ask != null
 
 Color sessionColor(LiveSummary s) => s.ask != null ? C.warn : (s.busy ? C.accent : C.dim2);
 
-/// The Terminal tab's body: the Mac's coding sessions, and its other terminal
-/// windows.
-class TerminalList extends StatelessWidget {
-  const TerminalList({required this.remote, super.key});
+/// The Terminal tab's body: the Mac's coding sessions by project, each with
+/// its + for a new one there, and its other terminal windows.
+class TerminalList extends StatefulWidget {
+  const TerminalList({required this.remote, required this.folded, required this.onFolded, super.key});
   final TerminalRemote remote;
 
-  Widget _swipe(BuildContext context, String key, TermWindow? w, Widget child) {
+  /// Projects (folders) showing only their heading, as kept; [onFolded]
+  /// keeps them when they change.
+  final Set<String> folded;
+  final ValueChanged<Set<String>> onFolded;
+
+  @override
+  State<TerminalList> createState() => _TerminalListState();
+}
+
+class _TerminalListState extends State<TerminalList> {
+  TerminalRemote get remote => widget.remote;
+
+  late final Set<String> _folded = {...widget.folded};
+
+  /// The project a new session is starting in.
+  String? _launching;
+
+  /// The window whose row asks whether to close it; it stops asking after a
+  /// while.
+  String? _confirming;
+  Timer? _confirmTimer;
+
+  /// The windows a close went for, until the Mac answers: they can't be
+  /// closed again meanwhile.
+  final _closing = <String>{};
+
+  @override
+  void dispose() {
+    _confirmTimer?.cancel();
+    super.dispose();
+  }
+
+  void _fold(String cwd) {
+    setState(() {
+      if (!_folded.remove(cwd)) _folded.add(cwd);
+    });
+    widget.onFolded({..._folded});
+  }
+
+  /// Starts the agent in a new window in [cwd], and opens its session.
+  Future<void> _launchHere(String cwd) async {
+    if (_launching != null) return;
+    setState(() => _launching = cwd);
+    // The app's navigator, which outlives this tab if it's left meanwhile:
+    // the session still opens, or what went wrong still shows.
+    final nav = Navigator.of(context);
+    try {
+      final window = await remote.launch(cwd, startAgent: true);
+      // An agent the phone started: its session's key is its window's.
+      if (nav.mounted) openSession(nav.context, remote, window, starting: true);
+    } on Object catch (e) {
+      if (nav.mounted) termToast(nav.context, e);
+    } finally {
+      if (mounted) setState(() => _launching = null);
+    }
+  }
+
+  void _confirm(String window) {
+    _confirmTimer?.cancel();
+    _confirmTimer = Timer(const Duration(seconds: 5), _keep);
+    setState(() => _confirming = window);
+  }
+
+  void _keep() {
+    _confirmTimer?.cancel();
+    if (mounted) setState(() => _confirming = null);
+  }
+
+  Future<void> _close(TermWindow w) async {
+    _keep();
+    setState(() => _closing.add(w.key));
+    await closeWindow(context, remote, w);
+    if (mounted) setState(() => _closing.remove(w.key));
+  }
+
+  /// [child], closing [w] when swiped left: after asking, in its place.
+  Widget _swipe(String key, TermWindow? w, Widget child) {
     if (w == null || !w.can(TermCap.close)) return child;
+    if (_closing.contains(w.key)) {
+      return CloseConfirm(remote: remote, window: w, onKeep: _keep, onClose: () {}, closing: true);
+    }
+    if (_confirming == w.key && remote.online) {
+      return CloseConfirm(remote: remote, window: w, onKeep: _keep, onClose: () => unawaited(_close(w)));
+    }
     return Dismissible(
       key: ValueKey('swipe-$key'),
       direction: remote.online ? DismissDirection.endToStart : DismissDirection.none,
@@ -232,16 +380,20 @@ class TerminalList extends StatelessWidget {
         padding: const EdgeInsets.only(right: 24),
         child: const Icon(Icons.close, color: Colors.white),
       ),
-      confirmDismiss: (_) => closeWindow(context, remote, w),
+      // The row stays: it asks in place.
+      confirmDismiss: (_) async {
+        _confirm(w.key);
+        return false;
+      },
       child: child,
     );
   }
 
-  Widget _session(BuildContext context, LiveSummary s) {
-    final title = s.title.isNotEmpty ? s.title : baseName(s.cwd);
+  /// A session's row; its project is the heading above it.
+  Widget _session(LiveSummary s) {
+    final title = s.title.isNotEmpty ? s.title : s.agent.label;
     final w = s.window == null ? null : remote.window(s.window!);
     return _swipe(
-      context,
       s.key,
       w,
       ListTile(
@@ -254,19 +406,11 @@ class TerminalList extends StatelessWidget {
           children: [
             _badged(
               w,
-              Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(text: '${baseName(s.cwd)} · '),
-                    TextSpan(
-                      text: sessionState(s),
-                      style: TextStyle(color: s.ask != null || s.busy ? sessionColor(s) : null),
-                    ),
-                  ],
-                ),
+              Text(
+                sessionState(s),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13, color: C.dim),
+                style: TextStyle(fontSize: 13, color: s.ask != null || s.busy ? sessionColor(s) : C.dim),
               ),
             ),
             if (s.preview.isNotEmpty)
@@ -282,8 +426,60 @@ class TerminalList extends StatelessWidget {
     );
   }
 
-  Widget _window(BuildContext context, TermWindow w) => _swipe(
-    context,
+  /// A project's sessions under its heading: folds on tap, and its + starts
+  /// the agent there.
+  Widget _project(SessionGroup g) {
+    final folded = _folded.contains(g.cwd);
+    return Panel(
+      key: ValueKey('project-${g.cwd}'),
+      title: (g.cwd.isEmpty ? 'Somewhere' : baseName(g.cwd)).toUpperCase(),
+      count: g.sessions.length,
+      onTitleTap: () => _fold(g.cwd),
+      titleTrailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Folded, a session needing you would go unseen.
+          if (folded && g.sessions.any((s) => s.ask != null))
+            Padding(
+              key: ValueKey('project-needs-you-${g.cwd}'),
+              padding: const EdgeInsets.only(right: 6),
+              child: const Icon(Icons.circle, size: 8, color: C.warn),
+            ),
+          // Somewhere unknown has nowhere to start one.
+          if (g.cwd.isNotEmpty)
+            // Its own taps, also while it's off or starting: they never fold
+            // the project.
+            GestureDetector(
+              key: ValueKey('project-new-${g.cwd}'),
+              behavior: HitTestBehavior.opaque,
+              onTap: () {},
+              child: SizedBox(
+                width: 44,
+                height: 32,
+                child: _launching == g.cwd
+                    ? const Center(
+                        child: SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      )
+                    : IconButton(
+                        key: ValueKey('new-in-${g.cwd}'),
+                        padding: EdgeInsets.zero,
+                        iconSize: 22,
+                        tooltip: 'New ${remote.agent.label} session here',
+                        onPressed: remote.online && _launching == null ? () => unawaited(_launchHere(g.cwd)) : null,
+                        icon: Icon(isIos ? Icons.add_rounded : Icons.add),
+                        color: C.accent,
+                      ),
+              ),
+            ),
+          // As Pocket's Done: down while folded.
+          Icon(folded ? Icons.expand_more : Icons.expand_less, color: C.dim, size: 20),
+        ],
+      ),
+      children: folded ? const [] : [for (final s in g.sessions) _session(s)],
+    );
+  }
+
+  Widget _window(TermWindow w) => _swipe(
     w.key,
     w,
     ListTile(
@@ -362,8 +558,8 @@ class TerminalList extends StatelessWidget {
     listenable: remote,
     builder: (context, _) {
       final note = linkNote(remote, color: Colors.transparent);
-      final sessions = sortedSessions(remote.sessions);
-      final claimed = {for (final s in sessions) ?s.window};
+      final groups = groupedSessions(remote.sessions);
+      final claimed = {for (final s in remote.sessions) ?s.window};
       final windows = remote.windows.where((w) => !claimed.contains(w.key)).toList();
       // The sessions and windows, in each platform's grouped cards.
       return Column(
@@ -379,11 +575,10 @@ class TerminalList extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: AppTabBar.contentInset),
                 children: [
-                  if (sessions.isEmpty && windows.isEmpty) _empty(),
-                  if (sessions.isNotEmpty)
-                    Panel(title: 'SESSIONS', children: [for (final s in sessions) _session(context, s)]),
+                  if (groups.isEmpty && windows.isEmpty) _empty(),
+                  for (final g in groups) _project(g),
                   if (windows.isNotEmpty) ...[
-                    const Panel(title: 'WINDOWS', children: []),
+                    Panel(title: groups.isEmpty ? 'WINDOWS' : 'OTHER WINDOWS', children: const []),
                     // An agent whose Džep integration doesn't report: out of date, or installed after it started.
                     for (final agent in Agent.values)
                       if (windows.any((w) => w.agent == agent))
@@ -403,7 +598,7 @@ class TerminalList extends StatelessWidget {
                                   'again (claude -c picks the conversation back up) to see it above, as a conversation.',
                           }, style: const TextStyle(fontSize: 12, color: C.dim2, height: 1.4)),
                         ),
-                    Panel(children: [for (final w in windows) _window(context, w)]),
+                    Panel(children: [for (final w in windows) _window(w)]),
                   ],
                 ],
               ),
@@ -464,6 +659,12 @@ class _TerminalPageState extends State<TerminalPage> {
   late bool _wrap = remote.window(widget.window)?.agent == null;
   bool _sending = false;
 
+  /// The close button was tapped: the page asks above its bar.
+  bool _closing = false;
+
+  /// A close was sent, and the Mac hasn't answered yet.
+  bool _closeSent = false;
+
   /// Lines numbered from the first one the phone saw: the ones from
   /// [_anchor] on go below the scroll view's center, so lines arriving
   /// there never move what's above.
@@ -506,6 +707,14 @@ class _TerminalPageState extends State<TerminalPage> {
       if (mounted) termToast(context, e);
     }
     if (mounted) setState(() => _sending = false);
+  }
+
+  Future<void> _close(TermWindow w) async {
+    setState(() => _closeSent = true);
+    final closed = await closeWindow(context, remote, w);
+    if (!mounted) return;
+    setState(() => _closing = _closeSent = false);
+    if (closed) await Navigator.of(context).maybePop();
   }
 
   Future<void> _press(String key) async {
@@ -756,11 +965,7 @@ class _TerminalPageState extends State<TerminalPage> {
               IconButton(
                 key: const ValueKey('close-window'),
                 tooltip: 'Close window',
-                onPressed: () => unawaited(
-                  closeWindow(context, remote, w).then((closed) {
-                    if (closed && context.mounted) Navigator.of(context).maybePop();
-                  }),
-                ),
+                onPressed: _closeSent ? null : () => setState(() => _closing = true),
                 icon: const Icon(Icons.close, color: C.dim),
               ),
             if (readable)
@@ -790,6 +995,14 @@ class _TerminalPageState extends State<TerminalPage> {
                     )
                   : _screen(screen, palette),
             ),
+            if (_closing && w != null && online && !gone)
+              CloseConfirm(
+                remote: remote,
+                window: w,
+                onKeep: () => setState(() => _closing = false),
+                onClose: () => unawaited(_close(w)),
+                closing: _closeSent,
+              ),
             if (keys || compose) _bar(enabled: online && !gone, keys: keys, compose: compose, canSend: canSend),
           ],
         ),
