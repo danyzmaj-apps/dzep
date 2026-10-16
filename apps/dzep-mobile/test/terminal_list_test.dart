@@ -263,7 +263,7 @@ void main() {
     remote.flush();
   });
 
-  testWidgets('swiping a row asks in its place, not in a dialog; Keep or waiting leaves the window open', (
+  testWidgets('swiping a row asks in its place, not in a dialog; Cancel or waiting leaves the window open', (
     tester,
   ) async {
     macState();
@@ -288,7 +288,7 @@ void main() {
     expect(find.text('The omp session in ~/b ends with it.'), findsOneWidget);
     expect(session('kitty-1/3'), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('close-keep')));
+    await tester.tap(find.byKey(const ValueKey('close-cancel')));
     await tester.pump();
     expect(session('kitty-1/3'), findsOneWidget);
 
@@ -383,7 +383,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('close-window')));
     await tester.pump();
     expect(find.text('zsh in ~ ends with it.'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('close-keep')));
+    await tester.tap(find.byKey(const ValueKey('close-cancel')));
     await tester.pump();
     expect(find.text('zsh in ~ ends with it.'), findsNothing);
     expect(runs('close'), isEmpty);

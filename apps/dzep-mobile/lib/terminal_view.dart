@@ -109,14 +109,14 @@ class CloseConfirm extends StatelessWidget {
   const CloseConfirm({
     required this.remote,
     required this.window,
-    required this.onKeep,
+    required this.onCancel,
     required this.onClose,
     this.closing = false,
     super.key,
   });
   final TerminalRemote remote;
   final TermWindow window;
-  final VoidCallback onKeep;
+  final VoidCallback onCancel;
   final VoidCallback onClose;
   final bool closing;
 
@@ -154,9 +154,9 @@ class CloseConfirm extends StatelessWidget {
             ),
           ),
           TextButton(
-            key: const ValueKey('close-keep'),
-            onPressed: closing ? null : onKeep,
-            child: Text('Keep', style: TextStyle(color: closing ? C.dim2 : C.dim)),
+            key: const ValueKey('close-cancel'),
+            onPressed: closing ? null : onCancel,
+            child: Text('Cancel', style: TextStyle(color: closing ? C.dim2 : C.dim)),
           ),
           if (closing)
             const Padding(
@@ -346,17 +346,17 @@ class _TerminalListState extends State<TerminalList> {
 
   void _confirm(String window) {
     _confirmTimer?.cancel();
-    _confirmTimer = Timer(const Duration(seconds: 5), _keep);
+    _confirmTimer = Timer(const Duration(seconds: 5), _cancel);
     setState(() => _confirming = window);
   }
 
-  void _keep() {
+  void _cancel() {
     _confirmTimer?.cancel();
     if (mounted) setState(() => _confirming = null);
   }
 
   Future<void> _close(TermWindow w) async {
-    _keep();
+    _cancel();
     setState(() => _closing.add(w.key));
     await closeWindow(context, remote, w);
     if (mounted) setState(() => _closing.remove(w.key));
@@ -366,10 +366,10 @@ class _TerminalListState extends State<TerminalList> {
   Widget _swipe(String key, TermWindow? w, Widget child) {
     if (w == null || !w.can(TermCap.close)) return child;
     if (_closing.contains(w.key)) {
-      return CloseConfirm(remote: remote, window: w, onKeep: _keep, onClose: () {}, closing: true);
+      return CloseConfirm(remote: remote, window: w, onCancel: _cancel, onClose: () {}, closing: true);
     }
     if (_confirming == w.key && remote.online) {
-      return CloseConfirm(remote: remote, window: w, onKeep: _keep, onClose: () => unawaited(_close(w)));
+      return CloseConfirm(remote: remote, window: w, onCancel: _cancel, onClose: () => unawaited(_close(w)));
     }
     return Dismissible(
       key: ValueKey('swipe-$key'),
@@ -999,7 +999,7 @@ class _TerminalPageState extends State<TerminalPage> {
               CloseConfirm(
                 remote: remote,
                 window: w,
-                onKeep: () => setState(() => _closing = false),
+                onCancel: () => setState(() => _closing = false),
                 onClose: () => unawaited(_close(w)),
                 closing: _closeSent,
               ),

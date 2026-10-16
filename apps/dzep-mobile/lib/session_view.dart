@@ -661,7 +661,7 @@ class _SessionPageState extends State<SessionPage> {
               CloseConfirm(
                 remote: remote,
                 window: window,
-                onKeep: () => setState(() => _closing = false),
+                onCancel: () => setState(() => _closing = false),
                 onClose: () => unawaited(_close(window)),
                 closing: _closeSent,
               ),
