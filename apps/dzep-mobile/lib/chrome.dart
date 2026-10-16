@@ -9,13 +9,14 @@ import 'package:flutter/material.dart';
 /// navigation bar with its pill, a rounded-square + button).
 bool get isIos => defaultTargetPlatform == TargetPlatform.iOS;
 
-/// iOS's dark system colours for inset grouped lists.
+/// The iPhone's surfaces: the app's own dark palette, as on Android (not
+/// iOS's pure black).
 abstract final class S {
-  static const background = Color(0xFF000000);
-  static const cell = Color(0xFF1C1C1E);
-  static const fill = Color(0xFF2C2C2E);
-  static const separator = Color(0xFF38383A);
-  static const secondaryLabel = Color(0xFF8E8E93);
+  static const Color background = C.win;
+  static const Color cell = M.container;
+  static const Color fill = M.containerHigh;
+  static const Color separator = C.line;
+  static const Color secondaryLabel = C.dim;
 }
 
 /// Android's tonal surfaces (Material 3 surface containers, in the app's dark palette).
