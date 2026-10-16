@@ -110,7 +110,7 @@ The phone's Terminal tab, where the app opens, lists the Mac's coding sessions (
   </tr>
 </table>
 
-- **A coding session** opens as a conversation laid out for the phone: your prompts, the agent's answers, tool calls as cards. Prompt it (with images), stop it, answer its questions, tool approvals and plan reviews. While omp works you can steer it or queue a prompt; Claude Code can't be steered, so a prompt waits for its run to end. Typing `/` suggests the agent's slash commands.
+- **A coding session** opens as a conversation laid out for the phone: your prompts, the agent's answers, tool calls as cards. Prompt it (with images), stop it, answer its questions, tool approvals and plan reviews. While omp works you can steer it or queue a prompt; Claude Code can't be steered, so a prompt waits for its run to end. Typing `/` suggests the agent's slash commands. They're typed into the agent's terminal window, so they run only for a session in kitty, tmux, WezTerm, iTerm2, Terminal or Ghostty; one in another terminal (IntelliJ's, VS Code's) says so.
 - **Any window**, a shell included, also opens as its live screen you can type into.
 - **A project heading's +** starts your coding agent in a new window in that folder and opens it. Tap a heading to fold the project to just its heading; it stays folded next time, and shows a yellow dot when a session in it needs you.
 - **Swipe a row left** to close its window on the Mac: the row asks **Keep** / **Close** in its place, and goes back by itself after a few seconds. The close button on a session or screen asks the same above the composer.

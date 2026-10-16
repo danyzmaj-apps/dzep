@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **Terminal tab by project**: the phone lists coding sessions under a heading for each project (its folder's name and how many run there), the project with a session needing you first. A heading's **+** starts your coding agent in a new window in that folder and opens the session, without the project picker; tap a heading to fold it, and folded projects stay folded, with a dot when a session in one needs you. Closing a window (swipe a row left, or the close button on a session or screen) asks in place with **Keep** / **Close** instead of a dialog, and shows the close going until the Mac answers.
+- Fixed: a slash command (`/new`, `/clear` …) sent from the phone to a session in a terminal Džep can't type into (IntelliJ's, VS Code's) went to the agent as a chat message, which it answered instead of running the command. The phone now says it can't run there and keeps what you typed; the Mac refuses one sent anyway.
 
 ## 0.4.0
 

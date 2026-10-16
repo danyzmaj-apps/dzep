@@ -483,11 +483,10 @@ class TerminalBridge {
     final text = (p['text'] as String? ?? '').trim();
     final key = p['session'] as String;
     final window = _hub[key]?.window;
-    if (text.startsWith('/') &&
-        window != null &&
-        _terms.can(window, TermCap.line) &&
-        (p['images'] as List? ?? const []).isEmpty) {
-      await _terms.send(window, text, enter: true);
+    if (text.startsWith('/') && (p['images'] as List? ?? const []).isEmpty) {
+      // Sent as a prompt instead, the agent would take it for chat.
+      if (cantCommand(_terms, window) case final why?) throw LiveException(why);
+      await _terms.send(window!, text, enter: true);
       unawaited(_followMenus(key));
       return;
     }
@@ -825,6 +824,18 @@ String? cantAnswer(Terminals terms, String window) {
   final label = terms.hostOf(window)?.label ?? 'This terminal';
   return "$label can't ${read ? 'press keys' : 'show its screen'}, so answer this on the Mac. "
       '${terms.tmux.installed ? 'Sessions you start from the phone run in tmux there, which can.' : 'With tmux (brew install tmux), sessions you start from the phone can.'}';
+}
+
+/// Why a slash command for the session in [window] can't be run from the
+/// phone (null: it can): the agent's editor reads commands, so they're typed
+/// into its terminal window.
+String? cantCommand(Terminals terms, String? window) {
+  if (window == null) {
+    return "Slash commands are typed into the agent's terminal window, and Džep can't reach this one: it isn't in "
+        'kitty, tmux, WezTerm, iTerm2, Terminal or Ghostty. Run it on the Mac.';
+  }
+  if (terms.can(window, TermCap.line)) return null;
+  return "${terms.hostOf(window)?.label ?? 'This terminal'} can't take a typed line, so run the command on the Mac.";
 }
 
 /// One session's screen followed for pickers: when it was last told to look

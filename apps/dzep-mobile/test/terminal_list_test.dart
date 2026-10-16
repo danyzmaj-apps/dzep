@@ -401,4 +401,23 @@ void main() {
     expect(find.byType(TerminalPage), findsNothing);
     remote.flush();
   });
+
+  testWidgets("a slash command for a session in a terminal Džep can't type into isn't sent as chat", (tester) async {
+    macState();
+    await pumpList(tester);
+    await tester.tap(session('pid:9'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.enterText(find.byKey(const ValueKey('session-input')), '/new');
+    await tester.pump();
+    expect(find.byKey(const ValueKey('commands-need-window')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('session-send')));
+    await tester.pump();
+
+    expect(runs('prompt'), isEmpty);
+    expect(find.textContaining('Run them on the Mac.'), findsWidgets);
+    expect(find.text('/new'), findsOneWidget, reason: 'what was typed stays');
+    remote.flush();
+  });
 }

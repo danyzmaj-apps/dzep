@@ -114,12 +114,18 @@ class _SessionPageState extends State<SessionPage> {
     final text = typed.trim();
     if ((text.isEmpty && _attachments.isEmpty) || _sending) return;
     final images = List.of(_attachments.images);
+    // A slash command is typed into the agent's window, where its editor
+    // reads it; sent as a prompt, the agent would take it for chat.
+    final command = text.startsWith('/');
+    if (command && images.isNotEmpty) return termToast(context, "Slash commands can't take images.");
+    if (command && !_can(_windowKey(remote.session(key)), TermCap.line)) {
+      return termToast(context, _noCommands(_agent(remote.session(key))));
+    }
     setState(() => _sending = true);
     try {
       final queue = busy && (_followUp || !_agent(remote.session(key)).steers);
       await remote.prompt(key, text, images: [for (final i in images) i.bytes], followUp: queue);
       final s = remote.session(key);
-      final command = text.startsWith('/') && images.isEmpty;
       final window = s?.window;
       if (command && window != null) unawaited(_menuOrScreen(window));
       // Followed from here on (Lock Screen, Android's notifications), as working.
@@ -138,6 +144,11 @@ class _SessionPageState extends State<SessionPage> {
     }
     if (mounted) setState(() => _sending = false);
   }
+
+  /// Why [agent]'s slash commands can't be sent from here.
+  static String _noCommands(Agent agent) =>
+      'Slash commands are typed into ${agent.label}’s terminal window, and Džep can’t reach this one: it isn’t in '
+      'kitty, tmux, WezTerm, iTerm2, Terminal or Ghostty. Run them on the Mac.';
 
   Future<void> _close(TermWindow w) async {
     setState(() => _closeSent = true);
@@ -180,10 +191,7 @@ class _SessionPageState extends State<SessionPage> {
       return Padding(
         key: const ValueKey('commands-need-window'),
         padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-        child: Text(
-          'Slash commands run in ${agent.label}’s terminal window, and this session has none.',
-          style: const TextStyle(color: C.dim, fontSize: 12),
-        ),
+        child: Text(_noCommands(agent), style: const TextStyle(color: C.dim, fontSize: 12)),
       );
     }
     if (matches.isEmpty) return null;
