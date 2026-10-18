@@ -15,9 +15,27 @@ import 'package:flutter/services.dart';
 /// A popup text field and its focus.
 typedef _Field = ({TextEditingController text, FocusNode focus});
 
+/// How a popup mode shows, in the strip and in Settings.
+extension PopupModeLook on PopupMode {
+  IconData get icon => switch (this) {
+    PopupMode.idea => Icons.lightbulb_outline,
+    PopupMode.todo => Icons.check_circle_outline,
+    PopupMode.note => Icons.sticky_note_2_outlined,
+    PopupMode.ask => Icons.auto_awesome,
+  };
+
+  String get label => switch (this) {
+    PopupMode.idea => 'Idea',
+    PopupMode.todo => 'Todo',
+    PopupMode.note => 'Note',
+    PopupMode.ask => 'Ask',
+  };
+}
+
 /// The ⇧⌘Space panel. It opens straight into the mode it was last used in,
-/// field focused: an idea, a todo, a note or a quick question (⌘1–⌘4 or the
-/// strip at the top switch; ⌘5 opens the app). ↵ saves and gets out of the
+/// field focused: an idea, a todo, a note or a quick question (⌘1–⌘4 in the
+/// strip's order, Settings → Popup tabs, or the strip at the top switch; ⌘5
+/// always opens the app). ↵ saves and gets out of the
 /// way; in Note mode ⌘P puts the note in its own window.
 class Popup extends StatefulWidget {
   const Popup({required this.app, super.key});
@@ -116,10 +134,19 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
   void _onApp() {
     if (_open && !app.popupOpen) _letGoOfFocus();
     _open = app.popupOpen;
-    if (_session == app.popupSession) return;
+    if (_session == app.popupSession) {
+      // Settings hid the mode the popup is in: go to the first showing one.
+      if (!app.popupTabs.shows(_mode)) {
+        _mode = app.popupMode;
+        _sel = -1;
+        _showDraftOf(_mode);
+        if (mounted) setState(() {});
+      }
+      return;
+    }
     _session = app.popupSession;
     _sel = -1;
-    _mode = app.askNext ? PopupMode.ask : app.popupMode;
+    _mode = app.askNext && app.popupTabs.shows(PopupMode.ask) ? PopupMode.ask : app.popupMode;
     app.askNext = false;
     _showDraftOf(_mode);
     _titleFocus.unfocus();
@@ -213,20 +240,23 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
   /// focus go into it.
   _Field? _awaiting;
 
-  static final Map<LogicalKeyboardKey, PopupMode> _modeKeys = {
-    LogicalKeyboardKey.digit1: PopupMode.idea,
-    LogicalKeyboardKey.digit2: PopupMode.todo,
-    LogicalKeyboardKey.digit3: PopupMode.note,
-    LogicalKeyboardKey.digit4: PopupMode.ask,
-  };
+  /// ⌘1–⌘4: the n-th mode the strip shows.
+  static const List<LogicalKeyboardKey> _modeKeys = [
+    LogicalKeyboardKey.digit1,
+    LogicalKeyboardKey.digit2,
+    LogicalKeyboardKey.digit3,
+    LogicalKeyboardKey.digit4,
+  ];
 
   /// Sees every key, whatever has focus: the window can take keys a frame
   /// before Flutter has rebuilt it, and a click can leave no field focused.
   bool _onAnyKey(KeyEvent e) {
     if (!app.popupOpen || e is KeyUpEvent) return false;
     final k = e.logicalKey;
-    if (_cmd && !_shift && _modeKeys[k] != null) {
-      _setMode(_modeKeys[k]!);
+    final n = _modeKeys.indexOf(k);
+    if (_cmd && !_shift && n >= 0) {
+      final shown = app.popupTabs.visible;
+      if (n < shown.length) _setMode(shown[n]);
       return true;
     }
     if (_cmd && !_shift && k == LogicalKeyboardKey.digit5) {
@@ -652,9 +682,11 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
     ),
   );
 
-  /// The strip on top: which mode ↵ saves in (⌘1–⌘4), and the way to the app
-  /// (⌘5).
+  /// The strip on top: which mode ↵ saves in (⌘1–⌘4, in the order Settings
+  /// gives them), and the way to the app (⌘5, whatever shows). With one mode
+  /// showing there is nothing to switch, so only the way to the app shows.
   Widget _modes() {
+    final shown = app.popupTabs.visible;
     Widget button(IconData icon, String label, int n, {required bool on, required VoidCallback onTap}) => Hoverable(
       onTap: onTap,
       builder: (hover) => Container(
@@ -674,17 +706,15 @@ class _PopupState extends State<Popup> with WidgetsBindingObserver {
       ),
     );
 
-    Widget tab(PopupMode mode, IconData icon, String label, int n) =>
-        button(icon, label, n, on: _mode == mode, onTap: () => _setMode(mode));
+    Widget tab(PopupMode mode, int n) =>
+        button(mode.icon, mode.label, n, on: _mode == mode, onTap: () => _setMode(mode));
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
       child: Row(
         children: [
-          tab(PopupMode.idea, Icons.lightbulb_outline, 'Idea', 1),
-          tab(PopupMode.todo, Icons.check_circle_outline, 'Todo', 2),
-          tab(PopupMode.note, Icons.sticky_note_2_outlined, 'Note', 3),
-          tab(PopupMode.ask, Icons.auto_awesome, 'Ask', 4),
+          if (shown.length > 1)
+            for (final (i, mode) in shown.indexed) tab(mode, i + 1),
           const Spacer(),
           button(Icons.open_in_new, 'Open app', 5, on: false, onTap: () => unawaited(app.openMain())),
         ],

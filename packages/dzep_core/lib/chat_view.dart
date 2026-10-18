@@ -157,13 +157,21 @@ class _Answer extends StatelessWidget {
 
 /// The main window's middle pane in Chats: every saved conversation.
 class ChatList extends StatelessWidget {
-  const ChatList({required this.chat, required this.selected, required this.onSelect, required this.hotKey, super.key});
+  const ChatList({
+    required this.chat,
+    required this.selected,
+    required this.onSelect,
+    required this.askWith,
+    super.key,
+  });
 
   final ChatStore chat;
   final Conversation? selected;
 
-  /// The popup's shortcut as shown (⇧⌘Space unless changed in Settings).
-  final String hotKey;
+  /// The keys that ask from anywhere ('⇧⌘Space then ⌘4', the popup's
+  /// shortcut then Ask's place in its strip), or null when the popup has no
+  /// Ask.
+  final String? askWith;
 
   /// Null starts a new chat.
   final ValueChanged<Conversation?> onSelect;
@@ -208,7 +216,10 @@ class ChatList extends StatelessWidget {
       Expanded(
         child: chat.conversations.isEmpty
             ? Center(
-                child: Text('Ask something with $hotKey then ⌘4.', style: const TextStyle(color: C.dim)),
+                child: Text(
+                  askWith != null ? 'Ask something with $askWith.' : 'No chats yet.',
+                  style: const TextStyle(color: C.dim),
+                ),
               )
             : ListView(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -301,8 +312,8 @@ class ChatThread extends StatefulWidget {
     required this.chat,
     required this.conversation,
     required this.onSent,
-    required this.onContinue,
     required this.onConnectAi,
+    this.onContinue,
     super.key,
   });
 
@@ -312,8 +323,9 @@ class ChatThread extends StatefulWidget {
   /// After a send; a new chat now exists.
   final ValueChanged<Conversation> onSent;
 
-  /// Opens [conversation] in the ⇧⌘Space popup.
-  final ValueChanged<Conversation> onContinue;
+  /// Opens [conversation] in the ⇧⌘Space popup; null when the popup has no
+  /// Ask.
+  final ValueChanged<Conversation>? onContinue;
 
   /// Opens the sheet that connects an AI, while there is none.
   final VoidCallback onConnectAi;
@@ -401,7 +413,7 @@ class _ChatThreadState extends State<ChatThread> {
               ),
               if (c != null) ...[
                 action(Icons.content_copy, 'Copy last answer  ⇧⌘C', () => copyAnswer(context, c.lastAnswer)),
-                action(Icons.open_in_new, 'Continue in popup', () => widget.onContinue(c)),
+                if (widget.onContinue case final go?) action(Icons.open_in_new, 'Continue in popup', () => go(c)),
                 action(Icons.delete_outline, 'Delete', () => chat.delete(c)),
               ],
             ],

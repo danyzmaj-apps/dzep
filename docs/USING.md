@@ -12,7 +12,7 @@ Everything the apps do, in detail. For installing and setting up, see the [READM
 
 ## The popup (Mac)
 
-⇧⌘Space opens the popup, in the mode you used last, with its field focused. Change the shortcut in **Settings → Quick capture shortcut**. The menu-bar icon shows how many todos are open.
+⇧⌘Space opens the popup, in the mode you used last, with its field focused. Change the shortcut in **Settings → Quick capture shortcut**. **Settings → Popup tabs** picks which modes the strip shows and their order (drag the handle); ⌘1–⌘4 follow that order. With only one mode left, the strip shows no tabs. The menu-bar icon shows how many todos are open.
 
 <table>
   <tr>
@@ -27,8 +27,8 @@ Everything the apps do, in detail. For installing and setting up, see the [READM
 
 | Key | What it does |
 | --- | --- |
-| ⌘1 ⌘2 ⌘3 ⌘4 | **Idea**, **Todo**, **Note**, **Ask** (or click the strip on top) |
-| ⌘5 | Open the main window |
+| ⌘1 ⌘2 ⌘3 ⌘4 | The strip's tabs, left to right: **Idea**, **Todo**, **Note**, **Ask** unless you changed them (or click the strip on top) |
+| ⌘5 | Open the main window (always ⌘5) |
 | ↵ | Save (Idea, Todo); send the question (Ask) |
 | ⌘↵ | Save and stay for the next one (Idea, Todo); save the note (Note) |
 | ⇥ | Add a description, or complete an `@project` (Idea, Todo) |
@@ -71,10 +71,10 @@ For example `call bank !15:00`. Phones get reminders by push, so one set on the 
 
 The iPhone and Android apps do the same things, each in its platform's look: iOS's on the iPhone, Material 3 on Android.
 
-- **Tabs:** **Pocket**, **Terminal** (in the middle, where the app opens) and **Ask**.
+- **Tabs:** **Pocket**, **Terminal** (in the middle, where the app opens) and **Ask**. **Account → Tabs** picks which show and their order (drag a row by its handle), on this phone only. With Terminal off, the app opens on the first tab; with one tab left, there's no tab bar. A widget or notification for a tab that's off still opens what it points to (the todo, the add field, the session).
 - **Pocket** holds your todos, ideas and notes in one list: open todos first, then ideas and notes, newest first, and ticked-off todos folded under **Done**. **Todos**, **Ideas** and **Notes** at the top narrow it to one kind, and with Ideas, the project pills to one project. One search finds all three. **+** adds what the list shows (a todo in **All**; the sheet switches to an idea or a note). Swipe a row right to tick a todo off, left to delete.
 - **Widgets:** **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
-- **Account:** the avatar at the top opens Sign out and Delete account.
+- **Account:** the avatar at the top opens Tabs, Sign out and Delete account.
 
 <table>
   <tr>

@@ -19,7 +19,7 @@ void main() {
   /// this "Mac" unless [claude] is one.
   Future<void> pumpSettings(WidgetTester tester, {FakeClaude? claude}) async {
     tester.view
-      ..physicalSize = const Size(1000, 1200)
+      ..physicalSize = const Size(1000, 1400)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     app = await FakeApp.create();

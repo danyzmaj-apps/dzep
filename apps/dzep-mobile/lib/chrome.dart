@@ -344,8 +344,9 @@ class Segments extends StatelessWidget {
 /// One tab of [AppTabBar].
 typedef TabSpec = ({IconData icon, IconData selectedIcon, String label, int badge});
 
-/// The three tabs: iOS's opaque tab bar on iPhone, Material 3's navigation
-/// bar on Android. The + is an [AddButton] above it.
+/// The tabs showing (two or more; one gets no bar): iOS's opaque tab bar
+/// on iPhone, Material 3's navigation bar on Android. The + is an
+/// [AddButton] above it.
 class AppTabBar extends StatelessWidget {
   const AppTabBar({required this.tabs, required this.index, required this.onSelect, super.key});
   final List<TabSpec> tabs;

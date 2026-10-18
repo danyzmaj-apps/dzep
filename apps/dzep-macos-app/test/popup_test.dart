@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/chat_view.dart';
+import 'package:dzep_core/tabs.dart';
 import 'package:dzep_core/ui.dart';
+import 'package:dzep_macos/controller.dart';
 import 'package:dzep_macos/popup.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -14,12 +16,12 @@ import 'app_fakes.dart';
 final mac = TargetPlatformVariant.only(TargetPlatform.macOS);
 
 /// The popup as main.dart hosts it: mounted while hidden, shown while open.
-Future<FakeApp> pumpPopup(WidgetTester tester, {String? mode, bool open = true}) async {
+Future<FakeApp> pumpPopup(WidgetTester tester, {String? mode, TabChoice<PopupMode>? tabs, bool open = true}) async {
   tester.view
     ..physicalSize = const Size(720, 660)
     ..devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final app = await FakeApp.create(popupMode: mode);
+  final app = await FakeApp.create(popupMode: mode, tabs: tabs);
   await tester.pumpWidget(
     window(
       ListenableBuilder(
@@ -363,6 +365,52 @@ void main() {
       await tester.pumpAndSettle();
       expect(app.fakeChats.current, isNull);
       expect(find.text('RECENT CHATS'), findsNothing);
+    }, variant: mac);
+  });
+  group('popup tabs', () {
+    final standard = TabChoice.standard(PopupMode.values);
+
+    testWidgets('a hidden mode leaves the strip, and its ⌘ goes to the next one showing', (tester) async {
+      final app = await pumpPopup(tester, tabs: standard.toggled(PopupMode.todo));
+      expect(find.text('Todo'), findsNothing);
+      expect(find.text('⌘4'), findsNothing);
+
+      await cmd(tester, LogicalKeyboardKey.digit2);
+      await tester.pumpAndSettle();
+      expect(app.popupMode, PopupMode.note);
+
+      // Past the last one showing, nothing happens.
+      await cmd(tester, LogicalKeyboardKey.digit4);
+      await tester.pumpAndSettle();
+      expect(app.popupMode, PopupMode.note);
+    }, variant: mac);
+
+    testWidgets('the order chosen in Settings is the ⌘ order', (tester) async {
+      final app = await pumpPopup(tester, tabs: standard.moved(3, 0)); // ask, idea, todo, note
+      await cmd(tester, LogicalKeyboardKey.digit1);
+      await tester.pumpAndSettle();
+      expect(app.popupMode, PopupMode.ask);
+      expect(find.text('Ask a quick question…'), findsOneWidget);
+
+      await cmd(tester, LogicalKeyboardKey.digit4);
+      await tester.pumpAndSettle();
+      expect(app.popupMode, PopupMode.note);
+    }, variant: mac);
+
+    testWidgets('with one mode showing there are no mode tabs, only Open app', (tester) async {
+      var only = standard;
+      for (final m in [PopupMode.idea, PopupMode.todo, PopupMode.ask]) {
+        only = only.toggled(m);
+      }
+      await pumpPopup(tester, tabs: only);
+      expect(find.text('⌘1'), findsNothing);
+      expect(find.text('Open app'), findsOneWidget);
+    }, variant: mac);
+
+    testWidgets('a saved mode that is now hidden opens on the first one showing', (tester) async {
+      final app = await pumpPopup(tester, mode: 'note', tabs: standard.toggled(PopupMode.note).moved(1, 0));
+      expect(app.popupMode, PopupMode.todo);
+      expect(find.text('Add a todo…  !15:00'), findsOneWidget);
     }, variant: mac);
   });
 }

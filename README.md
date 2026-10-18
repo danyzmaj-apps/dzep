@@ -36,7 +36,7 @@ Until the phone links are up, you can [build the phone app from source](docs/BUI
 
 1. **Set up your server.** Open Džep on the Mac and click **Set up my server**. The wizard takes about five minutes and needs a free [Supabase](https://supabase.com) account (it hosts your server) and a [GitHub](https://github.com) account (you sign in with it). An AI key for Ask is optional. Would you rather use a script? See [SELF_HOSTING.md](docs/SELF_HOSTING.md).
 2. **Add your phone.** On the Mac, open **Settings → Set up phone…**, then tap **Scan the code from your Mac** in the phone app. The code works once, for 10 minutes.
-3. **Capture.** Press ⇧⌘Space anywhere on the Mac. ⌘1–⌘4 switch between **Idea**, **Todo**, **Note** and **Ask**. Every key and setting is in [USING.md](docs/USING.md).
+3. **Capture.** Press ⇧⌘Space anywhere on the Mac. ⌘1–⌘4 switch between **Idea**, **Todo**, **Note** and **Ask**, in the strip's order (**Settings → Popup tabs** hides or reorders them). Every key and setting is in [USING.md](docs/USING.md).
 
 <table>
   <tr>

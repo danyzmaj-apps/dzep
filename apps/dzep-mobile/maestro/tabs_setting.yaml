@@ -1,0 +1,38 @@
+# Account → Tabs: switching a tab off takes it off the bar at once, and
+# with one tab left there is no bar at all. Switches both back on, so it
+# ends as it began. Needs a signed-in session with all three tabs showing.
+appId: com.danyzmaj.dzep
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
+    timeout: 15000
+- tapOn: "(.*\n)?Account"
+- tapOn: "Tabs"
+# Each row reads as its tab's name, with the switch's state.
+- tapOn: "Ask"
+# Above the sheet: tapping there closes it.
+- tapOn:
+    point: "50%,10%"
+- waitForAnimationToEnd
+- assertNotVisible: "Ask(\nTab.*)?"
+- assertVisible: "Terminal(\nTab.*)?"
+- tapOn: "(.*\n)?Account"
+- tapOn: "Tabs"
+- tapOn: "Terminal"
+- tapOn:
+    point: "50%,10%"
+- waitForAnimationToEnd
+# Only Pocket left: no bar, Pocket on screen (its title).
+- assertNotVisible: "Terminal(\nTab.*)?"
+- assertVisible: "Pocket"
+- tapOn: "(.*\n)?Account"
+- tapOn: "Tabs"
+- tapOn: "Terminal"
+- tapOn: "Ask"
+- tapOn:
+    point: "50%,10%"
+- waitForAnimationToEnd
+- assertVisible: "(\\d+\n)?Pocket(\nTab.*)?"
+- assertVisible: "Terminal(\nTab.*)?"
+- assertVisible: "Ask(\nTab.*)?"

@@ -15,6 +15,7 @@ import 'package:dzep_core/native.dart';
 import 'package:dzep_core/remind.dart';
 import 'package:dzep_core/session.dart';
 import 'package:dzep_core/store.dart';
+import 'package:dzep_core/tabs.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_mobile/chrome.dart';
@@ -52,6 +53,22 @@ class MobileSession extends Session {
   Set<String> get collapsedProjects => {...?_prefs.getStringList(_foldedKey)};
 
   Future<void> setCollapsedProjects(Set<String> cwds) => _prefs.setStringList(_foldedKey, [...cwds]);
+
+  static const _tabsKey = 'dzep_tabs';
+
+  /// Which tabs the bottom bar shows, in what order: this phone's own
+  /// choice, kept across sign-outs.
+  TabChoice<HomeTab> get tabs => TabChoice.parse(
+    HomeTab.values,
+    order: _prefs.getStringList('${_tabsKey}_order'),
+    hidden: _prefs.getStringList('${_tabsKey}_hidden'),
+  );
+
+  Future<void> setTabs(TabChoice<HomeTab> tabs) async {
+    await _prefs.setStringList('${_tabsKey}_order', tabs.orderNames);
+    await _prefs.setStringList('${_tabsKey}_hidden', tabs.hiddenNames);
+    notifyListeners();
+  }
 
   @override
   Future<void> onSignedIn(IdeaStore store) async {
@@ -248,8 +265,29 @@ class MobileApp extends StatelessWidget {
 
 // ==================================================================== home
 
-/// The home page's tabs, left to right: Terminal in the middle, and first.
-enum HomeTab { pocket, terminal, ask }
+/// The home page's tabs, in the bar's standard order: Terminal in the
+/// middle, and first. Each phone picks which show and their order
+/// ([MobileSession.tabs]).
+enum HomeTab {
+  pocket('Pocket'),
+  terminal('Terminal'),
+  ask('Ask');
+
+  const HomeTab(this.label);
+  final String label;
+
+  IconData get icon => switch (this) {
+    pocket => isIos ? Icons.inventory_2_outlined : Icons.inbox_outlined,
+    terminal => Icons.terminal_rounded,
+    ask => Icons.auto_awesome_outlined,
+  };
+
+  IconData get selectedIcon => switch (this) {
+    pocket => isIos ? Icons.inventory_2_rounded : Icons.inbox,
+    terminal => Icons.terminal_rounded,
+    ask => Icons.auto_awesome,
+  };
+}
 
 class HomePage extends StatefulWidget {
   const HomePage({required this.session, required this.store, @visibleForTesting this.terminal, super.key});
@@ -265,13 +303,15 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  /// The tab on screen: Terminal at first, or the first one showing when
+  /// Terminal doesn't (see [_visibleTabs]).
   HomeTab _tab = HomeTab.terminal;
   PocketShow _show = PocketShow.all;
   final _pocket = GlobalKey<PocketViewState>();
 
-  /// The hidden tabs' scroll views, kept off the Scaffold's primary
-  /// controller: it takes one at a time, and a status-bar tap scrolls the
-  /// tab on screen.
+  /// The tabs' scroll views while off screen, kept off the Scaffold's
+  /// primary controller: it takes one at a time, and a status-bar tap
+  /// scrolls the tab on screen.
   final Map<HomeTab, ScrollController> _hiddenScroll = {for (final tab in HomeTab.values) tab: ScrollController()};
   StreamSubscription<Uri>? _links;
 
@@ -279,6 +319,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Open whenever the idea store is (see Session).
   ChatStore get chats => widget.session.chats!;
+
+  /// The tabs showing, in their order. The tab on screen moves to the
+  /// first of them when its own isn't one (just switched off).
+  List<HomeTab> _visibleTabs() {
+    final visible = widget.session.tabs.visible;
+    if (!visible.contains(_tab)) _tab = visible.first;
+    return visible;
+  }
+
+  /// Puts [tab] on screen, unless it's switched off: then the tab stays,
+  /// and what asked for it (a session, a todo) still opens on top.
+  void _goTo(HomeTab tab) {
+    if (widget.session.tabs.shows(tab)) setState(() => _tab = tab);
+  }
 
   /// The Mac's coding sessions and terminal windows, through Džep on the Mac; live
   /// while the app is in front. Null until its cache folder is known.
@@ -321,10 +375,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     attach ? t.attach() : t.detach();
   }
 
-  /// The Terminal tab, on coding session [key] (from a tapped push or Live
-  /// Activity).
+  /// Coding session [key] (from a tapped push or Live Activity), over the
+  /// Terminal tab when that shows.
   void _openSession(String key) {
-    setState(() => _tab = HomeTab.terminal);
+    _goTo(HomeTab.terminal);
     final t = _terminal;
     if (t == null) {
       _sessionToOpen = key;
@@ -404,7 +458,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case 'openTodo':
         unawaited(_openTapped());
       case 'openTerminal':
-        setState(() => _tab = HomeTab.terminal);
+        _goTo(HomeTab.terminal);
         // The session comes through takeTappedSession, once, whichever of
         // this and the resume asks first.
         unawaited(_openTappedSession());
@@ -432,7 +486,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _showPocket(PocketShow show) => setState(() {
-    _tab = HomeTab.pocket;
+    if (widget.session.tabs.shows(HomeTab.pocket)) _tab = HomeTab.pocket;
     _show = show;
   });
 
@@ -464,6 +518,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await showAppSheet<void>(
       context,
       isScrollControlled: true,
+      // Pocket's project, or none when Pocket isn't built (switched off).
       builder: (_) =>
           AddSheet(store: store, kind: kind, defaultProject: _pocket.currentState?.project ?? '', onNote: _openNote),
     );
@@ -490,35 +545,37 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([store, chats]),
     builder: (context, _) {
+      final visible = _visibleTabs();
       final add = _add;
+      // One tab needs no bar: the + and the lists sit at the home indicator.
+      final bar = visible.length > 1;
       return Scaffold(
         backgroundColor: screenColor,
         floatingActionButton: AddButton(tooltip: add.tooltip, icon: add.icon, onPressed: add.onPressed),
-        bottomNavigationBar: AppTabBar(
-          index: _tab.index,
-          onSelect: (i) => setState(() => _tab = HomeTab.values[i]),
-          tabs: [
-            (
-              icon: isIos ? Icons.inventory_2_outlined : Icons.inbox_outlined,
-              selectedIcon: isIos ? Icons.inventory_2_rounded : Icons.inbox,
-              label: 'Pocket',
-              badge: store.openTodos.length,
-            ),
-            (icon: Icons.terminal_rounded, selectedIcon: Icons.terminal_rounded, label: 'Terminal', badge: 0),
-            (icon: Icons.auto_awesome_outlined, selectedIcon: Icons.auto_awesome, label: 'Ask', badge: 0),
-          ],
-        ),
+        bottomNavigationBar: bar
+            ? AppTabBar(
+                index: visible.indexOf(_tab),
+                onSelect: (i) => setState(() => _tab = visible[i]),
+                tabs: [
+                  for (final tab in visible)
+                    (
+                      icon: tab.icon,
+                      selectedIcon: tab.selectedIcon,
+                      label: tab.label,
+                      badge: tab == HomeTab.pocket ? store.openTodos.length : 0,
+                    ),
+                ],
+              )
+            : null,
         body: SafeArea(
-          bottom: false,
+          // Without a bar, the lists end above the home indicator, so their
+          // AppTabBar.contentInset still clears the +.
+          bottom: !bar,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               PageTitle(
-                switch (_tab) {
-                  HomeTab.pocket => 'Pocket',
-                  HomeTab.terminal => 'Terminal',
-                  HomeTab.ask => 'Ask',
-                },
+                _tab.label,
                 trailing: [
                   SyncDot(store.syncState),
                   IconButton(
@@ -528,18 +585,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ),
                 ],
               ),
-              // Every tab stays built, so search, filters and scroll survive
-              // a trip to another tab. iOS swaps tabs at once, as its own
-              // tab bars do; Material 3 fades the one shown in.
+              // Every tab showing stays built, so search, filters and scroll
+              // survive a trip to another tab (keyed: also a reorder). iOS
+              // swaps tabs at once, as its own tab bars do; Material 3 fades
+              // the one shown in.
               Expanded(
                 child: Builder(
                   builder: (context) {
                     final primary = PrimaryScrollController.maybeOf(context);
                     return IndexedStack(
-                      index: _tab.index,
+                      index: visible.indexOf(_tab),
                       children: [
-                        for (final tab in HomeTab.values)
+                        for (final tab in visible)
                           PrimaryScrollController(
+                            key: ValueKey(tab),
                             controller: tab == _tab && primary != null ? primary : _hiddenScroll[tab]!,
                             child: AnimatedOpacity(
                               opacity: tab == _tab ? 1 : 0,
@@ -696,6 +755,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               '• Widgets: “Todos” ticks todos off from the home screen; “New idea” opens the add field.',
               style: TextStyle(color: C.dim, height: 1.6),
             ),
+            const SizedBox(height: 8),
+            ListTile(
+              key: const ValueKey('tabs'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Tabs', style: TextStyle(fontWeight: FontWeight.w600)),
+              trailing: const Icon(Icons.chevron_right, color: C.dim),
+              onTap: () {
+                Navigator.of(sheet).pop();
+                unawaited(_openTabs());
+              },
+            ),
             const SizedBox(height: 18),
             OutlinedButton(
               onPressed: () {
@@ -726,6 +796,82 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ],
         ),
       ),
+    ),
+  );
+
+  /// Which tabs the bar shows and in what order: drag a row by its handle,
+  /// switch a tab off or on. The bar follows at once; the last tab showing
+  /// can't be switched off.
+  Future<void> _openTabs() => showAppSheet<void>(
+    context,
+    builder: (_) => ListenableBuilder(
+      listenable: widget.session,
+      builder: (context, _) {
+        final tabs = widget.session.tabs;
+        final last = tabs.visible.length == 1;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 18, 20, 2),
+                child: Text('Tabs', style: sheetTitleStyle),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 6),
+                child: Text(
+                  'Drag to reorder. With one tab left, the bar goes away.',
+                  style: TextStyle(fontSize: 13, color: C.dim),
+                ),
+              ),
+              ReorderableListView(
+                shrinkWrap: true,
+                buildDefaultDragHandles: false,
+                padding: const EdgeInsets.only(bottom: 12),
+                // [to] here already leaves the moved row out; moved() counts it.
+                onReorderItem: (from, to) =>
+                    unawaited(widget.session.setTabs(tabs.moved(from, to > from ? to + 1 : to))),
+                // The lifted row on the sheet's own surface, not Material's default.
+                proxyDecorator: (child, _, _) => Material(
+                  color: isIos ? S.fill : M.container,
+                  elevation: 6,
+                  borderRadius: BorderRadius.circular(12),
+                  child: child,
+                ),
+                children: [
+                  for (final (i, tab) in tabs.order.indexed)
+                    // iOS's own switch on iPhone; the last one showing stays
+                    // on but can't be switched off.
+                    SwitchListTile.adaptive(
+                      key: ValueKey('tab-${tab.name}'),
+                      contentPadding: const EdgeInsets.only(left: 8, right: 20),
+                      value: tabs.shows(tab),
+                      activeTrackColor: C.accent,
+                      onChanged: last && tabs.shows(tab)
+                          ? null
+                          : (_) => unawaited(widget.session.setTabs(tabs.toggled(tab))),
+                      secondary: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.drag_handle, color: C.dim2),
+                            ),
+                          ),
+                          Icon(tab.icon, color: C.dim),
+                        ],
+                      ),
+                      title: Text(tab.label, style: const TextStyle(fontSize: 15)),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     ),
   );
 }

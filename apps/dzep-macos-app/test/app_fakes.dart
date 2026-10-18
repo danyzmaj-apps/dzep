@@ -11,6 +11,7 @@ import 'package:dzep_core/iterm.dart';
 import 'package:dzep_core/kitty.dart';
 import 'package:dzep_core/session.dart';
 import 'package:dzep_core/store.dart';
+import 'package:dzep_core/tabs.dart';
 import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/terminals.dart';
 import 'package:dzep_core/tmux.dart';
@@ -201,9 +202,14 @@ class FakeChats extends ChangeNotifier implements ChatStore {
 class FakeApp extends AppController {
   FakeApp._(SharedPreferences prefs, this._givenTerminals) : super(prefs, 'Mac');
 
-  /// [terminals] stand in for the Mac's; none found by default.
-  static Future<FakeApp> create({String? popupMode, Terminals? terminals}) async {
-    SharedPreferences.setMockInitialValues({'popup_mode': ?popupMode});
+  /// [terminals] stand in for the Mac's; none found by default. [tabs] is
+  /// the saved popup strip (all four in order by default).
+  static Future<FakeApp> create({String? popupMode, TabChoice<PopupMode>? tabs, Terminals? terminals}) async {
+    SharedPreferences.setMockInitialValues({
+      'popup_mode': ?popupMode,
+      'popup_tabs_order': ?tabs?.orderNames,
+      'popup_tabs_hidden': ?tabs?.hiddenNames,
+    });
     final app = FakeApp._(await SharedPreferences.getInstance(), terminals);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('dzep/native'),

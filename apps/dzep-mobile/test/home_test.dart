@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dzep_core/idea.dart';
+import 'package:dzep_core/tabs.dart';
 import 'package:dzep_mobile/chrome.dart';
 import 'package:dzep_mobile/mobile.dart';
 import 'package:flutter/material.dart';
@@ -48,28 +49,112 @@ void main() {
       );
   });
 
-  Future<void> open(WidgetTester tester) async {
+  /// The home page, with the tab setting saved as [order] and [hidden].
+  Future<FakeSession> open(WidgetTester tester, {List<String>? order, List<String>? hidden}) async {
     tester.view
       ..physicalSize = const Size(786, 1704)
       ..devicePixelRatio = 2;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(MobileApp(session: await FakeSession.create(_store(), FakeChats())));
+    final session = await FakeSession.create(_store(), FakeChats());
+    if (order != null || hidden != null) {
+      await session.setTabs(TabChoice.parse(HomeTab.values, order: order, hidden: hidden));
+    }
+    await tester.pumpWidget(MobileApp(session: session));
     await tester.pump();
+    return session;
   }
 
   Finder tab(String label) => find.descendant(of: find.byType(AppTabBar), matching: find.text(label));
+
+  /// The bar's labels, left to right (badge counts left out).
+  List<String> barLabels(WidgetTester tester) => [
+    for (final t in tester.widgetList<Text>(find.descendant(of: find.byType(AppTabBar), matching: find.byType(Text))))
+      if (t.data case final d? when int.tryParse(d) == null) d,
+  ];
 
   testWidgets('three tabs, Terminal in the middle, and the app opens on it', variant: TargetPlatformVariant.mobile(), (
     tester,
   ) async {
     await open(tester);
-    final labels = [
-      for (final t in tester.widgetList<Text>(find.descendant(of: find.byType(AppTabBar), matching: find.byType(Text))))
-        if (t.data case final d? when int.tryParse(d) == null) d,
-    ];
-    expect(labels, ['Pocket', 'Terminal', 'Ask']);
+    expect(barLabels(tester), ['Pocket', 'Terminal', 'Ask']);
     expect(find.text('Reaching your Mac…'), findsOneWidget, reason: 'the Terminal tab is up');
     expect(tester.takeException(), isNull);
+  });
+
+  /// Account (the avatar) → Tabs, up and settled.
+  Future<void> openTabsSheet(WidgetTester tester) async {
+    for (final target in [find.byTooltip('Account'), find.byKey(const ValueKey('tabs'))]) {
+      await tester.tap(target);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+  }
+
+  testWidgets(
+    'Account → Tabs: switching Ask off takes it off the bar at once',
+    variant: TargetPlatformVariant.mobile(),
+    (tester) async {
+      final session = await open(tester);
+      await openTabsSheet(tester);
+      await tester.tap(find.byKey(const ValueKey('tab-ask')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(barLabels(tester), ['Pocket', 'Terminal']);
+      expect(session.tabs.hidden, {HomeTab.ask}, reason: 'kept for the next launch');
+
+      await tester.tap(find.byKey(const ValueKey('tab-terminal')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(AppTabBar), findsNothing, reason: 'one tab left: no bar');
+      expect(find.text('Reaching your Mac…'), findsNothing, reason: 'Terminal was on screen; Pocket took over');
+
+      await tester.tap(find.byKey(const ValueKey('tab-pocket')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(session.tabs.visible, [HomeTab.pocket], reason: 'the last tab showing stays');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('only Pocket showing: no bar, Pocket and its + on screen', variant: TargetPlatformVariant.mobile(), (
+    tester,
+  ) async {
+    await open(tester, hidden: ['terminal', 'ask']);
+    expect(find.byType(AppTabBar), findsNothing);
+    expect(find.text('Pocket'), findsOneWidget, reason: 'the title');
+    expect(find.textContaining('Renew the domain'), findsOneWidget);
+    expect(find.byTooltip('New'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'the bar follows the saved order; Terminal switched off, the app opens on the first tab',
+    variant: TargetPlatformVariant.mobile(),
+    (tester) async {
+      await open(tester, order: ['ask', 'terminal', 'pocket'], hidden: ['terminal']);
+      expect(barLabels(tester), ['Ask', 'Pocket']);
+      expect(find.byTooltip('New chat'), findsOneWidget, reason: 'Ask is up');
+      expect(find.text('Reaching your Mac…'), findsNothing);
+
+      await tester.tap(tab('Pocket'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byTooltip('New'), findsOneWidget, reason: 'the bar picks by position, not the enum');
+    },
+  );
+
+  testWidgets('dragging a row in Tabs reorders the bar', variant: TargetPlatformVariant.mobile(), (tester) async {
+    await open(tester);
+    await openTabsSheet(tester);
+    final handle = find.descendant(of: find.byKey(const ValueKey('tab-ask')), matching: find.byIcon(Icons.drag_handle));
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump(const Duration(milliseconds: 100));
+    final rowHeight = tester.getSize(find.byKey(const ValueKey('tab-ask'))).height;
+    for (var i = 0; i < 10; i++) {
+      await gesture.moveBy(Offset(0, -rowHeight * 0.25));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await gesture.up();
+    // The row settles into place, then the order changes.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(barLabels(tester), ['Ask', 'Pocket', 'Terminal']);
   });
 
   testWidgets(

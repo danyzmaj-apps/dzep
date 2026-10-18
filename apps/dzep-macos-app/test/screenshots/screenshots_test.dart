@@ -251,7 +251,7 @@ Future<FakeApp> pumpPopup(
 
 /// The popup's card and its shadow.
 Rect popupCard(WidgetTester tester) {
-  final card = tester.getRect(find.byType(AnimatedSize)).inflate(1);
+  final card = tester.getRect(find.byType(AnimatedSize).first).inflate(1);
   return Rect.fromLTRB(card.left - 44, card.top - 30, card.right + 44, card.bottom + 64);
 }
 
