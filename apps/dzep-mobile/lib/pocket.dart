@@ -48,9 +48,54 @@ class PocketViewState extends State<PocketView> {
     return _query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).every(hay.contains);
   }
 
-  void _toggleDone(Idea todo) {
-    store.update(todo, done: !todo.done);
+  /// Todos ticked (or un-ticked) a moment ago, keyed by id: they stay in
+  /// their section drawn flipped until the timer moves them, so the check
+  /// is seen filling first. A second tap in the meantime cancels.
+  final _pending = <Object, Timer>{};
+
+  /// Pending todos fading out, just before they move.
+  final _leaving = <Object>{};
+
+  /// Whether [t] reads as done, counting a pending flip.
+  bool _looksDone(Idea t) => t.done != _pending.containsKey(t.id);
+
+  @override
+  void dispose() {
+    for (final timer in _pending.values) {
+      timer.cancel();
+    }
+    super.dispose();
+  }
+
+  /// The check button: flips the row in place, moves it shortly after.
+  void _tapCheck(Idea todo) {
     unawaited(HapticFeedback.lightImpact());
+    if (_pending.remove(todo.id) case final timer?) {
+      timer.cancel();
+      setState(() => _leaving.remove(todo.id));
+      return;
+    }
+    // The check fills, then the row fades out, then it moves.
+    setState(() {
+      _pending[todo.id] = Timer(const Duration(milliseconds: 350), () {
+        if (!mounted) return;
+        setState(() => _leaving.add(todo.id));
+        _pending[todo.id] = Timer(_fadeOut, () {
+          _pending.remove(todo.id);
+          _leaving.remove(todo.id);
+          if (mounted) _toggleDone(todo, haptic: false);
+        });
+      });
+    });
+  }
+
+  static const Duration _fadeOut = Motion.fast;
+
+  void _toggleDone(Idea todo, {bool haptic = true}) {
+    _pending.remove(todo.id)?.cancel();
+    _leaving.remove(todo.id);
+    store.update(todo, done: !todo.done);
+    if (haptic) unawaited(HapticFeedback.lightImpact());
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(undoSnackBar(todo.done ? 'Done ✓' : 'Reopened', () => store.update(todo, done: !todo.done)));
@@ -95,8 +140,9 @@ class PocketViewState extends State<PocketView> {
           selected: show.index,
           onSelect: (i) => widget.onShow(PocketShow.values[i]),
         ),
-        if (show == PocketShow.ideas && projects.isNotEmpty)
-          SizedBox(
+        Reveal(
+          visible: show == PocketShow.ideas && projects.isNotEmpty,
+          child: SizedBox(
             height: 40,
             child: ListView(
               scrollDirection: Axis.horizontal,
@@ -117,6 +163,7 @@ class PocketViewState extends State<PocketView> {
               ],
             ),
           ),
+        ),
         Expanded(
           child: RefreshIndicator(onRefresh: store.syncNow, child: _list()),
         ),
@@ -164,7 +211,7 @@ class PocketViewState extends State<PocketView> {
       children: [
         if (show == PocketShow.todos && open.isEmpty)
           const Padding(
-            padding: EdgeInsets.all(24),
+            padding: EdgeInsets.all(40),
             child: Text(
               'All done 🎉',
               textAlign: TextAlign.center,
@@ -172,13 +219,17 @@ class PocketViewState extends State<PocketView> {
             ),
           ),
         if (open.isNotEmpty)
+          // Keyed by section, so a filter switch draws each list afresh
+          // instead of resizing one section's card into another's.
           Panel(
+            key: const ValueKey('panel-open'),
             title: show == PocketShow.all ? 'TO DO' : null,
             count: open.length,
             children: [for (final t in open) _todoRow(t)],
           ),
         if (others.isNotEmpty)
           Panel(
+            key: ValueKey('panel-${show.name}'),
             title: show == PocketShow.all ? 'RECENT' : null,
             children: [
               for (final i in others)
@@ -187,10 +238,16 @@ class PocketViewState extends State<PocketView> {
           ),
         if (done.isNotEmpty)
           Panel(
+            key: const ValueKey('panel-done'),
             title: 'DONE',
             count: done.length,
             onTitleTap: () => setState(() => _showDone = !_showDone),
-            titleTrailing: Icon(_showDone ? Icons.expand_less : Icons.expand_more, color: C.dim, size: 20),
+            titleTrailing: AnimatedRotation(
+              turns: _showDone ? .5 : 0,
+              duration: Motion.fast,
+              curve: Motion.fold,
+              child: const Icon(Icons.expand_more, color: C.dim, size: 20),
+            ),
             children: [
               if (_showDone)
                 for (final t in done) _todoRow(t),
@@ -217,7 +274,8 @@ class PocketViewState extends State<PocketView> {
     child: Icon(icon, color: Colors.white),
   );
 
-  /// A kind's mark, where a todo has its check.
+  /// A kind's mark, where a todo has its check: both 48 wide after the row's
+  /// 4pt inset, so marks share one centre and titles start at 52.
   static Widget _mark(IconData icon) => SizedBox(
     width: 48,
     child: Padding(
@@ -226,58 +284,77 @@ class PocketViewState extends State<PocketView> {
     ),
   );
 
+  /// Title type shared by todo, idea and note rows.
+  static const _titleStyle = TextStyle(fontSize: 15, color: C.text);
+
   Widget _stamp(DateTime t) => Padding(
     padding: const EdgeInsets.only(left: 8, top: 2),
     child: Text(stamp(t), style: const TextStyle(fontSize: 12, color: C.dim2)),
   );
 
-  Widget _todoRow(Idea t) => Dismissible(
-    key: ValueKey('todo-${t.id}-${t.done}'),
-    background: _swipeBg(Alignment.centerLeft, const Color(0xFF14532D), t.done ? Icons.undo : Icons.check),
-    secondaryBackground: _swipeBg(Alignment.centerRight, const Color(0xFF7F1D1D), Icons.delete_outline),
-    onDismissed: (dir) => dir == DismissDirection.startToEnd ? _toggleDone(t) : _delete(t),
-    child: InkWell(
-      onTap: () => _open(t),
-      onLongPress: t.done ? null : () => unawaited(pickReminder(context, store, t)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 2, 16, 2),
-        child: Row(
-          children: [
-            IconButton(
-              tooltip: t.done ? 'Reopen' : 'Done',
-              onPressed: () => _toggleDone(t),
-              icon: TodoCheck(done: t.done, size: 22),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text.rich(
-                    highlight(
-                      t.title,
-                      _query,
-                      TextStyle(
-                        fontSize: 16,
-                        color: t.done ? C.dim : C.text,
-                        decoration: t.done ? TextDecoration.lineThrough : null,
-                        decorationColor: C.dim,
+  Widget _todoRow(Idea t) {
+    final done = _looksDone(t);
+    return Dismissible(
+      key: ValueKey('todo-${t.id}-${t.done}'),
+      background: _swipeBg(Alignment.centerLeft, const Color(0xFF14532D), t.done ? Icons.undo : Icons.check),
+      secondaryBackground: _swipeBg(Alignment.centerRight, const Color(0xFF7F1D1D), Icons.delete_outline),
+      onDismissed: (dir) => dir == DismissDirection.startToEnd ? _toggleDone(t) : _delete(t),
+      // Leaving: it fades and folds shut together, so the rows under it
+      // slide up instead of jumping.
+      child: ClipRect(
+        child: AnimatedAlign(
+          alignment: Alignment.topCenter,
+          heightFactor: _leaving.contains(t.id) ? 0 : 1,
+          duration: _fadeOut,
+          curve: Motion.ease,
+          child: AnimatedOpacity(
+            opacity: _leaving.contains(t.id) ? 0 : 1,
+            duration: _fadeOut,
+            curve: Motion.ease,
+            child: InkWell(
+              onTap: () => _open(t),
+              onLongPress: t.done ? null : () => unawaited(pickReminder(context, store, t)),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(4, 2, 16, 2),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: done ? 'Reopen' : 'Done',
+                      onPressed: () => _tapCheck(t),
+                      icon: TodoCheck(done: done, size: 22),
+                    ),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text.rich(
+                            highlight(
+                              t.title,
+                              _query,
+                              _titleStyle.copyWith(
+                                color: done ? C.dim : C.text,
+                                decoration: done ? TextDecoration.lineThrough : null,
+                                decorationColor: C.dim,
+                              ),
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (t.remindAt case final at? when !done)
+                            Padding(padding: const EdgeInsets.only(top: 3), child: ReminderChip(at)),
+                        ],
                       ),
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (t.remindAt case final at? when !t.done)
-                    Padding(padding: const EdgeInsets.only(top: 3), child: ReminderChip(at)),
-                ],
+                    _stamp(t.createdAt),
+                  ],
+                ),
               ),
             ),
-            _stamp(t.createdAt),
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _ideaRow(Idea i) {
     final firstNote = i.notes.split('\n').first;
@@ -296,11 +373,7 @@ class PocketViewState extends State<PocketView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text.rich(
-                      highlight(
-                        i.title.isEmpty ? 'Untitled' : i.title,
-                        _query,
-                        const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: C.text),
-                      ),
+                      highlight(i.title.isEmpty ? 'Untitled' : i.title, _query, _titleStyle),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -344,11 +417,7 @@ class PocketViewState extends State<PocketView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text.rich(
-                      highlight(
-                        n.title.isEmpty ? 'Empty note' : n.title,
-                        _query,
-                        const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: C.text),
-                      ),
+                      highlight(n.title.isEmpty ? 'Empty note' : n.title, _query, _titleStyle),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

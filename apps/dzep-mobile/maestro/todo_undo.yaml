@@ -1,0 +1,56 @@
+# Pocket tab, Todos: ticking a todo shows it checked in place before it moves
+# to Done; Undo brings it back. Swiping it away deletes it with Undo too, and
+# a last swipe removes it for good, leaving nothing behind. Needs a
+# signed-in session.
+appId: com.danyzmaj.dzep
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
+    timeout: 15000
+- tapOn: "(\\d+\n)?Pocket(\nTab.*)?"
+- waitForAnimationToEnd
+- tapOn: "Todos.*"
+- tapOn: "New todo"
+- tapOn: "Add a todo.*"
+- inputText: "Undo todo ${TS}"
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Undo todo ${TS}.*"
+    timeout: 5000
+# Newest first: the top row's circle is the new todo's. It reads as done at
+# once (its tooltip flips to Reopen) and leaves the list a moment later.
+- tapOn:
+    text: "Done"
+    index: 0
+- assertVisible:
+    text: "Reopen"
+    index: 0
+- extendedWaitUntil:
+    notVisible: "Undo todo ${TS}.*"
+    timeout: 5000
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "Undo todo ${TS}.*"
+    timeout: 5000
+# Swipe left deletes; Undo restores.
+- swipe:
+    start: 90%, 30%
+    end: 5%, 30%
+    duration: 400
+- extendedWaitUntil:
+    visible: "Todo deleted"
+    timeout: 5000
+- assertNotVisible: "Undo todo ${TS}.*"
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: "Undo todo ${TS}.*"
+    timeout: 5000
+# Clean up.
+- swipe:
+    start: 90%, 30%
+    end: 5%, 30%
+    duration: 400
+- extendedWaitUntil:
+    notVisible: "Undo todo ${TS}.*"
+    timeout: 5000

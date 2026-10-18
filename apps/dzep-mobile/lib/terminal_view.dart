@@ -24,10 +24,17 @@ const _monoStrut = StrutStyle(
 );
 const double _lineHeight = 11 * 1.2;
 
-/// Shows what went wrong at the bottom of the screen.
-void termToast(BuildContext context, Object e) => ScaffoldMessenger.of(context)
+/// Shows what went wrong at the bottom of the screen, clear of [above] (a
+/// page's composer).
+void termToast(BuildContext context, Object e, {GlobalKey? above}) => ScaffoldMessenger.of(context)
   ..hideCurrentSnackBar()
-  ..showSnackBar(SnackBar(content: Text(e is TerminalException ? e.message : '$e')));
+  ..showSnackBar(
+    SnackBar(
+      content: Text(e is TerminalException ? e.message : '$e'),
+      behavior: SnackBarBehavior.floating,
+      margin: toastMargin(above),
+    ),
+  );
 
 /// `/Users/me/Dev/x` as `~/Dev/x`.
 String shortPath(TerminalRemote r, String path) =>
@@ -178,7 +185,7 @@ class CloseConfirm extends StatelessWidget {
 
 /// What's wrong with the link, if anything, as one line for the top of a
 /// screen (on [color]: a bar by default); with how old the shown state is when
-/// it isn't live.
+/// it isn't live. Keyed by its text, so a [Reveal] cross-fades a change.
 Widget? linkNote(TerminalRemote r, {Color color = C.bar}) {
   final at = r.stateAt;
   final (text, busy) = switch (r.link) {
@@ -198,6 +205,7 @@ Widget? linkNote(TerminalRemote r, {Color color = C.bar}) {
       ? 'Updated ${ago(at)} · $text'
       : '${text[0].toUpperCase()}${text.substring(1)}';
   return Container(
+    key: ValueKey('link-note-$line'),
     color: color,
     padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
     child: Row(
@@ -232,11 +240,9 @@ void openWindow(BuildContext context, TerminalRemote remote, String window) => N
 
 /// Asks where to start a session, starts it and opens it.
 Future<void> openNewSession(BuildContext context, TerminalRemote remote) async {
-  final launched = await showModalBottomSheet<({String window, bool agent})>(
-    context: context,
+  final launched = await showAppSheet<({String window, bool agent})>(
+    context,
     isScrollControlled: true,
-    backgroundColor: C.bar,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
     builder: (_) => NewSessionSheet(remote: remote),
   );
   if (launched == null || !context.mounted) return;
@@ -284,13 +290,23 @@ Color sessionColor(LiveSummary s) => s.ask != null ? C.warn : (s.busy ? C.accent
 /// The Terminal tab's body: the Mac's coding sessions by project, each with
 /// its + for a new one there, and its other terminal windows.
 class TerminalList extends StatefulWidget {
-  const TerminalList({required this.remote, required this.folded, required this.onFolded, super.key});
+  const TerminalList({
+    required this.remote,
+    required this.folded,
+    required this.onFolded,
+    this.active = true,
+    super.key,
+  });
   final TerminalRemote remote;
 
   /// Projects (folders) showing only their heading, as kept; [onFolded]
   /// keeps them when they change.
   final Set<String> folded;
   final ValueChanged<Set<String>> onFolded;
+
+  /// Its tab is the one showing: only then does the screen stay on (the
+  /// tabs stay mounted).
+  final bool active;
 
   @override
   State<TerminalList> createState() => _TerminalListState();
@@ -398,6 +414,7 @@ class _TerminalListState extends State<TerminalList> {
       w,
       ListTile(
         key: ValueKey('session-${s.key}'),
+        contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
         onTap: () => openSession(context, remote, s.key),
         leading: Icon(Icons.auto_awesome, size: 18, color: sessionColor(s)),
         title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15)),
@@ -455,7 +472,7 @@ class _TerminalListState extends State<TerminalList> {
               onTap: () {},
               child: SizedBox(
                 width: 44,
-                height: 32,
+                height: 44,
                 child: _launching == g.cwd
                     ? const Center(
                         child: SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)),
@@ -471,10 +488,16 @@ class _TerminalListState extends State<TerminalList> {
                       ),
               ),
             ),
-          // As Pocket's Done: down while folded.
-          Icon(folded ? Icons.expand_more : Icons.expand_less, color: C.dim, size: 20),
+          // As Pocket's Done: down while folded, turning up as it opens.
+          AnimatedRotation(
+            turns: folded ? 0 : .5,
+            duration: Motion.fast,
+            curve: Motion.fold,
+            child: const Icon(Icons.expand_more, color: C.dim, size: 20),
+          ),
         ],
       ),
+      tallTrailing: g.cwd.isNotEmpty,
       children: folded ? const [] : [for (final s in g.sessions) _session(s)],
     );
   }
@@ -484,6 +507,7 @@ class _TerminalListState extends State<TerminalList> {
     w,
     ListTile(
       key: ValueKey('term-${w.key}'),
+      contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
       onTap: () => openWindow(context, remote, w.key),
       leading: Icon(
         w.agent != null ? Icons.auto_awesome : Icons.terminal,
@@ -516,22 +540,23 @@ class _TerminalListState extends State<TerminalList> {
       for (final t in remote.terminals)
         if (t.state != TermState.ready && (t.state != TermState.missing || t.id == 'tmux')) t,
     ];
+    final hint = online && remote.error == null;
+    if (!hint && !(online && unready.isNotEmpty)) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.all(40),
       child: Column(
         children: [
-          Text(
-            online && remote.error == null
-                ? 'Nothing runs in ${remote.opensIn ?? 'your terminal'}. Tap + to start ${remote.agent.label}.'
-                : '',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: C.dim, height: 1.5),
-          ),
+          if (hint)
+            Text(
+              'Nothing runs in ${remote.opensIn ?? 'your terminal'}. Tap + to start ${remote.agent.label}.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: C.dim, height: 1.5),
+            ),
           if (online)
-            for (final t in unready)
+            for (final (i, t) in unready.indexed)
               Padding(
                 key: ValueKey('terminal-${t.id}'),
-                padding: const EdgeInsets.only(top: 12),
+                padding: EdgeInsets.only(top: hint || i > 0 ? 12 : 0),
                 child: Text(
                   '${t.label}: ${t.note.isNotEmpty ? t.note : _stateWord(t.state)}',
                   textAlign: TextAlign.center,
@@ -552,7 +577,7 @@ class _TerminalListState extends State<TerminalList> {
   };
 
   @override
-  Widget build(BuildContext context) => _KeepAwake(child: _list());
+  Widget build(BuildContext context) => _KeepAwake(active: widget.active, child: _list());
 
   Widget _list() => ListenableBuilder(
     listenable: remote,
@@ -565,7 +590,10 @@ class _TerminalListState extends State<TerminalList> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (note != null) Panel(children: [note]),
+          Reveal(
+            visible: note != null,
+            child: Panel(key: note?.key, children: [?note]),
+          ),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async {
@@ -578,13 +606,17 @@ class _TerminalListState extends State<TerminalList> {
                   if (groups.isEmpty && windows.isEmpty) _empty(),
                   for (final g in groups) _project(g),
                   if (windows.isNotEmpty) ...[
-                    Panel(title: groups.isEmpty ? 'WINDOWS' : 'OTHER WINDOWS', children: const []),
+                    Panel(
+                      key: const ValueKey('windows-heading'),
+                      title: groups.isEmpty ? 'WINDOWS' : 'OTHER WINDOWS',
+                      children: const [],
+                    ),
                     // An agent whose Džep integration doesn't report: out of date, or installed after it started.
                     for (final agent in Agent.values)
                       if (windows.any((w) => w.agent == agent))
                         Padding(
                           key: ValueKey('${agent.command}-screens-only'),
-                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                          padding: const EdgeInsets.fromLTRB(32, 0, 24, 8),
                           child: Text(switch (agent) {
                             Agent.omp =>
                               'These omp windows show only as screens: Džep’s omp extension isn’t reporting from '
@@ -598,7 +630,7 @@ class _TerminalListState extends State<TerminalList> {
                                   'again (claude -c picks the conversation back up) to see it above, as a conversation.',
                           }, style: const TextStyle(fontSize: 12, color: C.dim2, height: 1.4)),
                         ),
-                    Panel(children: [for (final w in windows) _window(w)]),
+                    Panel(key: const ValueKey('windows'), children: [for (final w in windows) _window(w)]),
                   ],
                 ],
               ),
@@ -613,7 +645,8 @@ class _TerminalListState extends State<TerminalList> {
 /// The screen stays on while the Terminal tab is up (and the session and
 /// screen pages pushed over it): a terminal is something you watch.
 class _KeepAwake extends StatefulWidget {
-  const _KeepAwake({required this.child});
+  const _KeepAwake({required this.active, required this.child});
+  final bool active;
   final Widget child;
 
   @override
@@ -624,12 +657,18 @@ class _KeepAwakeState extends State<_KeepAwake> {
   @override
   void initState() {
     super.initState();
-    unawaited(Native.setKeepAwake(on: true));
+    if (widget.active) unawaited(Native.setKeepAwake(on: true));
+  }
+
+  @override
+  void didUpdateWidget(_KeepAwake old) {
+    super.didUpdateWidget(old);
+    if (old.active != widget.active) unawaited(Native.setKeepAwake(on: widget.active));
   }
 
   @override
   void dispose() {
-    unawaited(Native.setKeepAwake(on: false));
+    if (widget.active) unawaited(Native.setKeepAwake(on: false));
     super.dispose();
   }
 
@@ -651,6 +690,9 @@ class TerminalPage extends StatefulWidget {
 
 class _TerminalPageState extends State<TerminalPage> {
   final _field = TextEditingController();
+
+  /// The composer, which toasts keep clear of.
+  final GlobalKey _barKey = GlobalKey();
   final _scroll = ScrollController();
   late final VoidCallback _unwatch;
 
@@ -704,7 +746,7 @@ class _TerminalPageState extends State<TerminalPage> {
       await remote.send(widget.window, text);
       _field.clear();
     } on Object catch (e) {
-      if (mounted) termToast(context, e);
+      if (mounted) termToast(context, e, above: _barKey);
     }
     if (mounted) setState(() => _sending = false);
   }
@@ -722,7 +764,7 @@ class _TerminalPageState extends State<TerminalPage> {
     try {
       await remote.press(widget.window, key);
     } on Object catch (e) {
-      if (mounted) termToast(context, e);
+      if (mounted) termToast(context, e, above: _barKey);
     }
   }
 
@@ -743,16 +785,20 @@ class _TerminalPageState extends State<TerminalPage> {
         key: ValueKey('key-$key'),
         onTap: () => unawaited(_press(key)),
         borderRadius: BorderRadius.circular(7),
+        // A 34pt cap in a 44pt tap target.
         child: Container(
-          height: 34,
+          height: 44,
           margin: const EdgeInsets.symmetric(horizontal: 3),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: const Color(0xFF262833),
-            borderRadius: BorderRadius.circular(7),
-            border: Border.all(color: C.line2),
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFF262833),
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(color: C.line2),
+            ),
+            child: Text(label, style: const TextStyle(fontSize: 13)),
           ),
-          child: Text(label, style: const TextStyle(fontSize: 13)),
         ),
       ),
     ),
@@ -871,11 +917,12 @@ class _TerminalPageState extends State<TerminalPage> {
   /// The keys a terminal program needs, if the window's terminal can press
   /// them, and the composer, if it can type.
   Widget _bar({required bool enabled, required bool keys, required bool compose, required bool canSend}) => Container(
+    key: _barKey,
     decoration: const BoxDecoration(
       color: C.bar,
       border: Border(top: BorderSide(color: C.line)),
     ),
-    padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+    padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
     child: SafeArea(
       top: false,
       child: Column(
@@ -883,7 +930,7 @@ class _TerminalPageState extends State<TerminalPage> {
         children: [
           if (keys && enabled)
             Padding(
-              padding: EdgeInsets.only(bottom: compose ? 8 : 0, right: 4),
+              padding: EdgeInsets.only(bottom: compose ? 3 : 0, right: 4),
               child: Row(
                 children: [
                   _key('Esc', 'esc'),
@@ -899,7 +946,7 @@ class _TerminalPageState extends State<TerminalPage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     key: const ValueKey('term-input'),
@@ -954,7 +1001,6 @@ class _TerminalPageState extends State<TerminalPage> {
       final canSend = online && !gone && !_sending && _field.text.trim().isNotEmpty;
       return Scaffold(
         appBar: AppBar(
-          backgroundColor: C.win,
           title: Text(
             w == null ? 'Terminal' : (w.title.isEmpty ? w.program : w.title),
             maxLines: 1,
@@ -979,7 +1025,7 @@ class _TerminalPageState extends State<TerminalPage> {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ?note,
+            Reveal(visible: note != null, child: note ?? const SizedBox.shrink()),
             Expanded(
               child: gone
                   ? const Center(
@@ -995,14 +1041,18 @@ class _TerminalPageState extends State<TerminalPage> {
                     )
                   : _screen(screen, palette),
             ),
-            if (_closing && w != null && online && !gone)
-              CloseConfirm(
-                remote: remote,
-                window: w,
-                onCancel: () => setState(() => _closing = false),
-                onClose: () => unawaited(_close(w)),
-                closing: _closeSent,
-              ),
+            Reveal(
+              visible: _closing && w != null && online && !gone,
+              child: w == null
+                  ? const SizedBox.shrink()
+                  : CloseConfirm(
+                      remote: remote,
+                      window: w,
+                      onCancel: () => setState(() => _closing = false),
+                      onClose: () => unawaited(_close(w)),
+                      closing: _closeSent,
+                    ),
+            ),
             if (keys || compose) _bar(enabled: online && !gone, keys: keys, compose: compose, canSend: canSend),
           ],
         ),
@@ -1105,7 +1155,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
     final ready = remote.online && _name.text.trim().isNotEmpty && !busy;
     return [
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
         child: TextField(
           key: const ValueKey('project-name'),
           onTapOutside: dismissKeyboard,
@@ -1116,11 +1166,11 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
           decoration: _field('Project name', Icons.create_new_folder_outlined),
         ),
       ),
-      ?note,
+      Reveal(visible: note != null, child: note ?? const SizedBox.shrink()),
       Expanded(
         child: ListView(
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
           children: [
             const Text('In', style: TextStyle(fontSize: 12, color: C.dim)),
             const SizedBox(height: 6),
@@ -1171,7 +1221,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
     final noRootsHint = remote.online && noRoots && places.isEmpty && typed == null;
     return [
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
         child: TextField(
           key: const ValueKey('session-folder'),
           onTapOutside: dismissKeyboard,
@@ -1181,11 +1231,11 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
           decoration: _field('Find a project, or type ~/path', Icons.folder_outlined),
         ),
       ),
-      ?note,
+      Reveal(visible: note != null, child: note ?? const SizedBox.shrink()),
       if (noRootsHint)
         const Padding(
           key: ValueKey('no-roots'),
-          padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+          padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
           child: Text(
             'No project folders yet. On your Mac, open Džep → Settings → Project folders and add '
             'the folders that hold your projects. You can still type a ~/path above.',
@@ -1200,6 +1250,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
               ListTile(
                 key: const ValueKey('new-project'),
                 dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                 enabled: remote.online && roots.isNotEmpty && _launching == null,
                 onTap: () => setState(() => _creating = true),
                 leading: const Icon(Icons.create_new_folder_outlined, size: 18, color: C.dim2),
@@ -1215,6 +1266,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
             for (final p in [?typed, ...places])
               ListTile(
                 dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                 enabled: remote.online,
                 onTap: () => unawaited(_launch(p)),
                 leading: Icon(open.contains(p) ? Icons.terminal : Icons.folder_outlined, size: 18, color: C.dim2),
@@ -1237,40 +1289,35 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
       return Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
         child: SafeArea(
-          child: SizedBox(
-            // 70% of the screen, less whatever the keyboard leaves no room for.
-            height: min(
-              MediaQuery.sizeOf(context).height * .7,
-              MediaQuery.sizeOf(context).height -
-                  MediaQuery.viewInsetsOf(context).bottom -
-                  MediaQuery.paddingOf(context).top -
-                  24,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(20, 18, 20, remote.opensIn == null ? 4 : 0),
-                  child: Text(
-                    _creating ? 'New project' : 'New session',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                if (remote.opensIn case final opensIn?)
+          child: LayoutBuilder(
+            builder: (context, box) => SizedBox(
+              // 70% of the screen, less whatever the keyboard leaves no
+              // room for (the sheet already starts below the notch).
+              height: min(MediaQuery.sizeOf(context).height * .7, box.maxHeight - 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   Padding(
-                    key: const ValueKey('opens-in'),
-                    padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
-                    child: Text('Opens in $opensIn', style: const TextStyle(fontSize: 13, color: C.dim)),
+                    padding: EdgeInsets.fromLTRB(20, 18, 20, remote.opensIn == null ? 4 : 0),
+                    child: Text(_creating ? 'New project' : 'New session', style: sheetTitleStyle),
                   ),
-                SwitchListTile(
-                  key: const ValueKey('start-agent'),
-                  value: _agent,
-                  onChanged: (v) => setState(() => _agent = v),
-                  title: Text('Start ${remote.agent.label}', style: const TextStyle(fontSize: 15)),
-                  subtitle: const Text('Off: just a shell', style: TextStyle(fontSize: 12, color: C.dim)),
-                ),
-                if (_creating) ..._createForm(note) else ..._pickList(note),
-              ],
+                  if (remote.opensIn case final opensIn?)
+                    Padding(
+                      key: const ValueKey('opens-in'),
+                      padding: const EdgeInsets.fromLTRB(20, 2, 20, 4),
+                      child: Text('Opens in $opensIn', style: const TextStyle(fontSize: 13, color: C.dim)),
+                    ),
+                  SwitchListTile(
+                    key: const ValueKey('start-agent'),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                    value: _agent,
+                    onChanged: (v) => setState(() => _agent = v),
+                    title: Text('Start ${remote.agent.label}', style: const TextStyle(fontSize: 15)),
+                    subtitle: const Text('Off: just a shell', style: TextStyle(fontSize: 12, color: C.dim)),
+                  ),
+                  if (_creating) ..._createForm(note) else ..._pickList(note),
+                ],
+              ),
             ),
           ),
         ),

@@ -53,6 +53,9 @@ class FakeChats extends ChangeNotifier implements ChatStore {
   void delete(Conversation c) {}
 
   @override
+  Future<void> restore(Conversation c) async {}
+
+  @override
   Future<void> send(String text, {Conversation? into, List<ChatImage> images = const []}) async => sent.add(text);
 
   @override

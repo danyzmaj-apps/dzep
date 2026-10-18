@@ -249,7 +249,26 @@ class ChatStore extends ChangeNotifier {
     if (_current == c) _current = null;
     notifyListeners();
     _scheduleSave();
-    unawaited(_pushDeletes());
+    unawaited(_deletesPushed = _pushDeletes());
+  }
+
+  /// The delete in flight, so [restore] lands after it.
+  Future<void> _deletesPushed = Future.value();
+
+  /// Undoes [delete]: [c] is back in the list, and on the server once the
+  /// delete has reached it.
+  Future<void> restore(Conversation c) async {
+    if (_closed) return;
+    _chats[c.id] = c;
+    _deletes.remove(c.id);
+    notifyListeners();
+    _scheduleSave();
+    await _deletesPushed;
+    try {
+      await _client.from('chats').update({'deleted_at': null}).eq('id', c.id);
+    } on Object catch (e) {
+      debugPrint('Džep: chat restore not pushed: $e');
+    }
   }
 
   /// Asks [text] (and [images]) in [into] (default: the current

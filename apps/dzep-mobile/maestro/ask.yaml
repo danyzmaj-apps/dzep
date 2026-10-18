@@ -1,6 +1,7 @@
 # Ask tab: start a chat, get a streamed answer through the `ask` edge
 # function, follow up in the same chat, copy the last answer, find the chat
-# in the list, delete it. Needs a signed-in session and the network.
+# in the list, delete it, undo that, delete it again. Needs a signed-in
+# session and the network.
 appId: com.danyzmaj.dzep
 ---
 - launchApp
@@ -41,6 +42,17 @@ appId: com.danyzmaj.dzep
     end: 5%, 18%
     duration: 400
 - assertVisible: "Chat deleted"
+- extendedWaitUntil:
+    notVisible: ".*PONG${TS}.*"
+    timeout: 5000
+- tapOn: "Undo"
+- extendedWaitUntil:
+    visible: ".*PONG${TS}.*"
+    timeout: 5000
+- swipe:
+    start: 85%, 18%
+    end: 5%, 18%
+    duration: 400
 - extendedWaitUntil:
     notVisible: ".*PONG${TS}.*"
     timeout: 5000

@@ -40,3 +40,9 @@ appId: com.danyzmaj.dzep
 - tapOn: "@maestro${TS}"
 - assertVisible: "Maestro idea ${TS}.*"
 - assertVisible: "\\d\\d:\\d\\d"
+# Clean up: delete it from its page (its project goes with its last idea).
+- tapOn: "Maestro idea ${TS}.*"
+- tapOn: "Delete"
+- extendedWaitUntil:
+    notVisible: "Maestro idea ${TS}.*"
+    timeout: 5000

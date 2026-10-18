@@ -33,3 +33,9 @@ appId: com.danyzmaj.dzep
 - scrollUntilVisible:
     element: "Maestro todo ${TS}.*"
     direction: DOWN
+# Clean up: delete it from its page.
+- tapOn: "Maestro todo ${TS}.*"
+- tapOn: "Delete"
+- extendedWaitUntil:
+    notVisible: "Maestro todo ${TS}.*"
+    timeout: 5000

@@ -238,7 +238,9 @@ void main() {
     await pumpList(tester);
 
     await tester.tap(find.text('A'));
+    // The card folds shut, then it's gone.
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(session('kitty-1/2'), findsNothing);
     expect(session('kitty-1/3'), findsOneWidget);
     expect(prefs.getStringList('dzep_terminal_folded'), [_a]);
@@ -353,7 +355,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     await tester.tap(find.byKey(const ValueKey('close-window')));
+    // The question grows in above the composer.
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.text('Close this window on the Mac?'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('close-confirm')));
@@ -382,14 +386,17 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('close-window')));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('zsh in ~ ends with it.'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('close-cancel')));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('zsh in ~ ends with it.'), findsNothing);
     expect(runs('close'), isEmpty);
 
     await tester.tap(find.byKey(const ValueKey('close-window')));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
     await tester.tap(find.byKey(const ValueKey('close-confirm')));
     await tester.pump(Duration.zero);
     final close = runs('close').single;
