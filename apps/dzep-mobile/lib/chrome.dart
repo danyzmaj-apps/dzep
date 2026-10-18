@@ -29,6 +29,66 @@ abstract final class M {
 /// What the screens sit on.
 Color get screenColor => isIos ? S.background : C.win;
 
+/// The app's motion: things appearing, going or changing size ease out
+/// over [fast]; a section folding open or shut eases in and out ([fold]).
+abstract final class Motion {
+  static const fast = Duration(milliseconds: 200);
+  static const Curve ease = Curves.easeOutCubic;
+  static const Curve fold = Curves.easeInOut;
+}
+
+/// [child] while [visible], else nothing; it grows in and fades in, and
+/// shrinks away and fades out, instead of shoving what's around it in one
+/// frame.
+class Reveal extends StatelessWidget {
+  const Reveal({required this.visible, required this.child, this.curve = Motion.ease, super.key});
+  final bool visible;
+  final Widget child;
+  final Curve curve;
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+    duration: Motion.fast,
+    switchInCurve: curve,
+    switchOutCurve: curve,
+    // Each one grows or shrinks from its top edge as it fades, so what's
+    // below slides along with it.
+    transitionBuilder: (child, animation) => FadeTransition(
+      opacity: animation,
+      child: SizeTransition(sizeFactor: animation, alignment: Alignment.topCenter, child: child),
+    ),
+    layoutBuilder: (current, previous) => Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+    // Keyed: the switcher tells the one going from the one coming by key,
+    // and unkeyed it drops the one going at once.
+    child: visible
+        ? KeyedSubtree(key: ValueKey((true, child.key)), child: child)
+        : const SizedBox(key: ValueKey(false), width: double.infinity),
+  );
+}
+
+/// A sheet in the app's one style: radius 28 on top, the raised surface,
+/// clear of the notch.
+Future<T?> showAppSheet<T>(BuildContext context, {required WidgetBuilder builder, bool isScrollControlled = false}) =>
+    showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: isScrollControlled,
+      useSafeArea: true,
+      backgroundColor: isIos ? S.cell : M.containerHigh,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: builder,
+    );
+
+/// A sheet's title.
+const sheetTitleStyle = TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: C.text);
+
+/// A floating toast's margin that keeps it clear of [above] (a page's
+/// composer, which is part of the body, so the toast would cover it).
+EdgeInsets toastMargin(GlobalKey? above) {
+  final box = above?.currentContext?.findRenderObject();
+  final height = box is RenderBox && box.hasSize ? box.size.height : 0.0;
+  return EdgeInsets.fromLTRB(15, 5, 15, 10 + height);
+}
+
 /// A screen's big title, with what goes on its right.
 class PageTitle extends StatelessWidget {
   const PageTitle(this.title, {this.trailing = const [], super.key});
@@ -61,7 +121,15 @@ class PageTitle extends StatelessWidget {
 /// Material 3 tonal surface) with thin separators, under an optional small
 /// heading.
 class Panel extends StatelessWidget {
-  const Panel({required this.children, this.title, this.count, this.onTitleTap, this.titleTrailing, super.key});
+  const Panel({
+    required this.children,
+    this.title,
+    this.count,
+    this.onTitleTap,
+    this.titleTrailing,
+    this.tallTrailing = false,
+    super.key,
+  });
   final List<Widget> children;
   final String? title;
 
@@ -70,6 +138,10 @@ class Panel extends StatelessWidget {
   final int? count;
   final VoidCallback? onTitleTap;
   final Widget? titleTrailing;
+
+  /// [titleTrailing] is a 44pt tap target: the heading's padding gives it
+  /// the room, so the title sits where every other panel's does.
+  final bool tallTrailing;
 
   @override
   Widget build(BuildContext context) {
@@ -84,19 +156,27 @@ class Panel extends StatelessWidget {
         : InkWell(
             onTap: onTitleTap,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(32, 18, 24, 7),
+              // A 13pt title is about 16pt tall: centred in 44, 4 on top
+              // leaves it 18 down, as without.
+              padding: EdgeInsets.fromLTRB(32, tallTrailing ? 4 : 18, 24, 7),
               child: Row(
                 children: [
                   // A long title (a project folder's name) gives way to what
                   // trails it.
                   Expanded(
-                    child: Row(
-                      children: [
-                        Flexible(
-                          child: Text(title!, maxLines: 1, overflow: TextOverflow.ellipsis, style: style),
-                        ),
-                        if (count != null) Text(' · $count', style: style),
-                      ],
+                    // Read out as one line ("DONE · 3"), not title and
+                    // count apart.
+                    child: Semantics(
+                      label: count == null ? title : '$title · $count',
+                      excludeSemantics: true,
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(title!, maxLines: 1, overflow: TextOverflow.ellipsis, style: style),
+                          ),
+                          if (count != null) Text(' · $count', style: style),
+                        ],
+                      ),
                     ),
                   ),
                   ?titleTrailing,
@@ -108,25 +188,34 @@ class Panel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ?heading,
-        if (children.isNotEmpty)
-          Padding(
+        // Folding opens and shuts the card instead of popping it.
+        Reveal(
+          visible: children.isNotEmpty,
+          curve: Motion.fold,
+          child: Padding(
             padding: EdgeInsets.fromLTRB(16, title == null ? 8 : 0, 16, 0),
             // A Material, so the rows' ink and list tiles paint on it.
             child: Material(
               color: isIos ? S.cell : M.container,
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isIos ? 22 : 24)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final (i, row) in children.indexed) ...[
-                    if (i > 0) Divider(height: 1, thickness: 0.5, indent: 52, color: isIos ? S.separator : C.line),
-                    row,
+              child: AnimatedSize(
+                duration: Motion.fast,
+                curve: Motion.ease,
+                alignment: Alignment.topCenter,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final (i, row) in children.indexed) ...[
+                      if (i > 0) Divider(height: 1, thickness: 0.5, indent: 52, color: isIos ? S.separator : C.line),
+                      row,
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
+        ),
       ],
     );
   }
@@ -161,21 +250,30 @@ class Pill extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
+      // The whole 44pt row height answers, not just the capsule in it.
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          decoration: BoxDecoration(
-            color: selected ? tint.withValues(alpha: .24) : S.fill,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              color: selected ? tint : C.text,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Align(
+            widthFactor: 1,
+            child: AnimatedContainer(
+              duration: Motion.fast,
+              curve: Motion.ease,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: selected ? tint.withValues(alpha: .24) : S.fill,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  color: selected ? tint : C.text,
+                ),
+              ),
             ),
           ),
         ),
@@ -246,8 +344,9 @@ class Segments extends StatelessWidget {
 /// One tab of [AppTabBar].
 typedef TabSpec = ({IconData icon, IconData selectedIcon, String label, int badge});
 
-/// The three tabs: iOS's opaque tab bar on iPhone, Material 3's navigation
-/// bar on Android. The + is an [AddButton] above it.
+/// The tabs showing (two or more; one gets no bar): iOS's opaque tab bar
+/// on iPhone, Material 3's navigation bar on Android. The + is an
+/// [AddButton] above it.
 class AppTabBar extends StatelessWidget {
   const AppTabBar({required this.tabs, required this.index, required this.onSelect, super.key});
   final List<TabSpec> tabs;

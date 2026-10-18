@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dzep_core/chat.dart';
 import 'package:dzep_core/chat_images.dart';
 import 'package:dzep_core/ui.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -88,6 +89,12 @@ class _Answer extends StatelessWidget {
 
   static const _code = TextStyle(fontFamily: 'Menlo', fontSize: 12.5, color: Color(0xFFD7DAE3));
 
+  /// iOS and Android: session-sized text and finger-sized taps.
+  static bool get _phone => switch (defaultTargetPlatform) {
+    TargetPlatform.iOS || TargetPlatform.android => true,
+    _ => false,
+  };
+
   @override
   Widget build(BuildContext context) {
     if (m.error != null) {
@@ -106,8 +113,8 @@ class _Answer extends StatelessWidget {
             if (uri != null) unawaited(launchUrl(uri));
           },
           styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-            p: const TextStyle(fontSize: 14, height: 1.5, color: C.text),
-            listBullet: const TextStyle(fontSize: 14, height: 1.5, color: C.dim),
+            p: TextStyle(fontSize: _phone ? 15 : 14, height: 1.5, color: C.text),
+            listBullet: TextStyle(fontSize: _phone ? 15 : 14, height: 1.5, color: C.dim),
             a: const TextStyle(color: C.accent),
             code: _code.copyWith(backgroundColor: C.field),
             codeblockPadding: const EdgeInsets.all(10),
@@ -125,16 +132,20 @@ class _Answer extends StatelessWidget {
         if (!streaming)
           SelectionContainer.disabled(
             child: Padding(
-              padding: const EdgeInsets.only(top: 6),
+              // On a phone the padding inside is the finger's hit area (≥40pt).
+              padding: EdgeInsets.only(top: _phone ? 0 : 6),
               child: Hoverable(
                 onTap: () => copyAnswer(context, m.text),
-                builder: (hover) => Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.content_copy, size: 12, color: hover ? C.text : C.dim2),
-                    const SizedBox(width: 5),
-                    Text('Copy', style: TextStyle(fontSize: 11, color: hover ? C.text : C.dim2)),
-                  ],
+                builder: (hover) => Padding(
+                  padding: _phone ? const EdgeInsets.fromLTRB(0, 14, 16, 14) : EdgeInsets.zero,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.content_copy, size: 12, color: hover ? C.text : C.dim2),
+                      const SizedBox(width: 5),
+                      Text('Copy', style: TextStyle(fontSize: 11, color: hover ? C.text : C.dim2)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -146,13 +157,21 @@ class _Answer extends StatelessWidget {
 
 /// The main window's middle pane in Chats: every saved conversation.
 class ChatList extends StatelessWidget {
-  const ChatList({required this.chat, required this.selected, required this.onSelect, required this.hotKey, super.key});
+  const ChatList({
+    required this.chat,
+    required this.selected,
+    required this.onSelect,
+    required this.askWith,
+    super.key,
+  });
 
   final ChatStore chat;
   final Conversation? selected;
 
-  /// The popup's shortcut as shown (⇧⌘Space unless changed in Settings).
-  final String hotKey;
+  /// The keys that ask from anywhere ('⇧⌘Space then ⌘4', the popup's
+  /// shortcut then Ask's place in its strip), or null when the popup has no
+  /// Ask.
+  final String? askWith;
 
   /// Null starts a new chat.
   final ValueChanged<Conversation?> onSelect;
@@ -197,7 +216,10 @@ class ChatList extends StatelessWidget {
       Expanded(
         child: chat.conversations.isEmpty
             ? Center(
-                child: Text('Ask something with $hotKey then ⌘4.', style: const TextStyle(color: C.dim)),
+                child: Text(
+                  askWith != null ? 'Ask something with $askWith.' : 'No chats yet.',
+                  style: const TextStyle(color: C.dim),
+                ),
               )
             : ListView(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -290,8 +312,8 @@ class ChatThread extends StatefulWidget {
     required this.chat,
     required this.conversation,
     required this.onSent,
-    required this.onContinue,
     required this.onConnectAi,
+    this.onContinue,
     super.key,
   });
 
@@ -301,8 +323,9 @@ class ChatThread extends StatefulWidget {
   /// After a send; a new chat now exists.
   final ValueChanged<Conversation> onSent;
 
-  /// Opens [conversation] in the ⇧⌘Space popup.
-  final ValueChanged<Conversation> onContinue;
+  /// Opens [conversation] in the ⇧⌘Space popup; null when the popup has no
+  /// Ask.
+  final ValueChanged<Conversation>? onContinue;
 
   /// Opens the sheet that connects an AI, while there is none.
   final VoidCallback onConnectAi;
@@ -390,7 +413,7 @@ class _ChatThreadState extends State<ChatThread> {
               ),
               if (c != null) ...[
                 action(Icons.content_copy, 'Copy last answer  ⇧⌘C', () => copyAnswer(context, c.lastAnswer)),
-                action(Icons.open_in_new, 'Continue in popup', () => widget.onContinue(c)),
+                if (widget.onContinue case final go?) action(Icons.open_in_new, 'Continue in popup', () => go(c)),
                 action(Icons.delete_outline, 'Delete', () => chat.delete(c)),
               ],
             ],

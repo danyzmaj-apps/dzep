@@ -1,0 +1,39 @@
+# The + sheet: typing a time after "!" previews the reminder under the
+# title; switching to Idea drops the preview and offers the projects, Todo
+# brings it back. Saved, the todo carries its reminder; swiping it away
+# cleans up. Needs a signed-in session.
+appId: com.danyzmaj.dzep
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
+    timeout: 15000
+- tapOn: "(\\d+\n)?Pocket(\nTab.*)?"
+- waitForAnimationToEnd
+- tapOn: "Todos.*"
+- tapOn: "New todo"
+- tapOn: "Add a todo.*"
+- inputText: "Sheet todo ${TS} !23:59"
+# The preview: a bell chip with the time.
+- extendedWaitUntil:
+    visible: ".*23:59"
+    timeout: 3000
+- tapOn: "Idea"
+- waitForAnimationToEnd
+- assertNotVisible: "(Today|Tomorrow).*23:59"
+- tapOn: "Todo"
+- waitForAnimationToEnd
+- assertVisible: "(Today|Tomorrow).*23:59"
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "Sheet todo ${TS}.*"
+    timeout: 5000
+- assertVisible: "Sheet todo ${TS}.*(Today|Tomorrow).*23:59.*"
+# Clean up: the new todo is the top row.
+- swipe:
+    start: 90%, 30%
+    end: 5%, 30%
+    duration: 400
+- extendedWaitUntil:
+    notVisible: "Sheet todo ${TS}.*"
+    timeout: 5000

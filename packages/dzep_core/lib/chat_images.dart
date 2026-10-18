@@ -188,10 +188,13 @@ class AttachButton extends StatelessWidget {
 }
 
 /// The composer's pending images, each with a ✕; nothing when empty.
+/// It grows and shrinks smoothly, and [top] spaces it from what sits above
+/// only while it shows something.
 class AttachmentStrip extends StatelessWidget {
-  const AttachmentStrip({required this.attachments, this.size = 56, super.key});
+  const AttachmentStrip({required this.attachments, this.size = 56, this.top = 0, super.key});
   final ChatAttachments attachments;
   final double size;
+  final double top;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -199,57 +202,86 @@ class AttachmentStrip extends StatelessWidget {
     builder: (context, _) {
       final images = attachments.images;
       final problem = attachments.problem;
-      if (images.isEmpty && problem == null) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (images.isNotEmpty)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final (i, image) in images.indexed)
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _Thumb(bytes: image.bytes, size: size),
-                        Positioned(
-                          top: -6,
-                          right: -6,
-                          child: Semantics(
-                            button: true,
-                            label: 'Remove image',
-                            child: GestureDetector(
-                              onTap: () => attachments.removeAt(i),
-                              child: Container(
-                                width: 20,
-                                height: 20,
-                                decoration: BoxDecoration(
-                                  color: C.bar,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: C.line2),
-                                ),
-                                child: const Icon(Icons.close, size: 12, color: C.text),
-                              ),
+      return AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: images.isEmpty && problem == null
+            ? const SizedBox(width: double.infinity)
+            : Padding(
+                padding: EdgeInsets.only(top: top, bottom: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (images.isNotEmpty)
+                      // 2 plus each thumbnail's 6pt corner room: 8 between them.
+                      Wrap(
+                        spacing: 2,
+                        runSpacing: 2,
+                        children: [
+                          for (final (i, image) in images.indexed)
+                            _Removable(
+                              key: ObjectKey(image),
+                              onRemove: () => attachments.removeAt(i),
+                              child: _Thumb(bytes: image.bytes, size: size),
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
+                        ],
+                      ),
+                    if (problem != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(problem, style: const TextStyle(fontSize: 12, color: Color(0xFFFCA5A5))),
+                      ),
+                  ],
+                ),
               ),
-            if (problem != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(problem, style: const TextStyle(fontSize: 12, color: Color(0xFFFCA5A5))),
-              ),
-          ],
-        ),
       );
     },
+  );
+}
+
+/// A thumbnail with its ✕ dot on the corner. The dot is 20pt but a 40pt
+/// square catches the tap, and the corner room keeps both inside the Stack,
+/// which only hit-tests within its own size.
+class _Removable extends StatelessWidget {
+  const _Removable({required this.onRemove, required this.child, super.key});
+  final VoidCallback onRemove;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Padding(padding: const EdgeInsets.only(top: 6, right: 6), child: child),
+      Positioned(
+        top: 0,
+        right: 0,
+        child: Semantics(
+          button: true,
+          label: 'Remove image',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onRemove,
+            child: SizedBox.square(
+              dimension: 40,
+              child: Align(
+                alignment: Alignment.topRight,
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: C.bar,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: C.line2),
+                  ),
+                  child: const Icon(Icons.close, size: 12, color: C.text),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
   );
 }
 

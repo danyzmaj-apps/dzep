@@ -70,6 +70,7 @@ class _SetupPageState extends State<SetupPage> {
     final error = _invalid ?? session.authError;
     return Center(
       child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 460),
@@ -168,6 +169,7 @@ class _SetupPageState extends State<SetupPage> {
       controller: _pasted,
       enabled: !_busy,
       autocorrect: false,
+      onTapOutside: dismissKeyboard,
       enableSuggestions: false,
       keyboardType: TextInputType.url,
       textInputAction: TextInputAction.done,

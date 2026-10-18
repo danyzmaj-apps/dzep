@@ -1,0 +1,27 @@
+# Tabs keep their place: a Pocket search and filter survive a trip to the
+# Terminal and Ask tabs. Needs a signed-in session.
+appId: com.danyzmaj.dzep
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "(\\d+\n)?Pocket(\nTab.*)?"
+    timeout: 15000
+- tapOn: "(\\d+\n)?Pocket(\nTab.*)?"
+- waitForAnimationToEnd
+- tapOn: "Notes"
+- tapOn: "Search"
+- inputText: "zzq${TS}"
+- hideKeyboard
+- tapOn: "Terminal(\nTab.*)?"
+- waitForAnimationToEnd
+- tapOn: "Ask(\nTab.*)?"
+- waitForAnimationToEnd
+- tapOn: "(\\d+\n)?Pocket(\nTab.*)?"
+- assertVisible: "zzq${TS}"
+- assertVisible:
+    text: "Notes"
+    selected: true
+- tapOn: "zzq${TS}"
+- eraseText: 20
+- hideKeyboard
+- tapOn: "All"

@@ -36,3 +36,16 @@ appId: com.danyzmaj.dzep
     visible: "From the widget ${TS}.*"
     timeout: 5000
 - assertNotVisible: "Save"
+# Clean up: delete both from their pages.
+- tapOn: "From the widget ${TS}.*"
+- tapOn: "Delete"
+- extendedWaitUntil:
+    notVisible: "From the widget ${TS}.*"
+    timeout: 5000
+# The idea link left the list on Ideas.
+- tapOn: "Todos.*"
+- tapOn: "From the todo widget ${TS}.*"
+- tapOn: "Delete"
+- extendedWaitUntil:
+    notVisible: "From the todo widget ${TS}.*"
+    timeout: 5000

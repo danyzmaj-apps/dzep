@@ -7,13 +7,15 @@ import 'package:dzep_core/idea.dart';
 import 'package:dzep_core/native.dart';
 import 'package:dzep_core/session.dart';
 import 'package:dzep_core/store.dart';
+import 'package:dzep_core/tabs.dart';
 import 'package:dzep_core/terminals.dart';
 import 'package:dzep_macos/live_hub.dart';
 import 'package:dzep_macos/terminal_bridge.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// The popup's modes, switched with ⌘1–⌘4.
+/// The popup's modes, switched with ⌘1–⌘4 in the strip's order
+/// ([AppController.popupTabs]).
 enum PopupMode { idea, todo, note, ask }
 
 /// The Mac app: [Session] plus its windows (the ⇧⌘Space popup panel, the
@@ -76,10 +78,41 @@ class AppController extends Session {
   /// popup's Ask, which has no room for it).
   bool pendingConnectAi = false;
 
-  /// What the popup opens on: the mode it was last used in.
-  PopupMode get popupMode => PopupMode.values.asNameMap()[_prefs.getString('popup_mode')] ?? PopupMode.idea;
+  /// What the popup opens on: the mode it was last used in, or the first
+  /// showing one when that is hidden.
+  PopupMode get popupMode {
+    final saved = PopupMode.values.asNameMap()[_prefs.getString('popup_mode')];
+    final tabs = popupTabs;
+    return saved != null && tabs.shows(saved) ? saved : tabs.visible.first;
+  }
 
   void setPopupMode(PopupMode mode) => unawaited(_prefs.setString('popup_mode', mode.name));
+
+  static const _popupTabsKey = 'popup_tabs';
+
+  /// Which modes the popup's strip shows, and in what order (Settings →
+  /// Popup tabs). ⌘1 is the first showing one, and so on.
+  TabChoice<PopupMode> get popupTabs => TabChoice.parse(
+    PopupMode.values,
+    order: _prefs.getStringList('${_popupTabsKey}_order'),
+    hidden: _prefs.getStringList('${_popupTabsKey}_hidden'),
+  );
+
+  Future<void> setPopupTabs(TabChoice<PopupMode> tabs) async {
+    await _prefs.setStringList('${_popupTabsKey}_order', tabs.orderNames);
+    await _prefs.setStringList('${_popupTabsKey}_hidden', tabs.hiddenNames);
+    notifyListeners();
+  }
+
+  /// The keys that open the popup in [mode] from anywhere ('⇧⌘Space then
+  /// ⌘2'; just the shortcut when it is the only mode), or null when [mode]
+  /// is hidden.
+  String? popupKeys(PopupMode mode) {
+    final shown = popupTabs.visible;
+    final i = shown.indexOf(mode);
+    if (i < 0) return null;
+    return shown.length == 1 ? hotKey.label : '${hotKey.label} then ⌘${i + 1}';
+  }
 
   HotKey get hotKey => _hotKey;
   late HotKey _hotKey = _loadHotKey();

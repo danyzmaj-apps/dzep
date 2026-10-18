@@ -158,16 +158,26 @@ class TodoCheck extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) => AnimatedContainer(
+    duration: const Duration(milliseconds: 200),
+    curve: Curves.easeOutCubic,
     width: size,
     height: size,
     alignment: Alignment.center,
     decoration: BoxDecoration(
       shape: BoxShape.circle,
-      color: done ? C.ok : null,
+      color: done ? C.ok : C.ok.withAlpha(0),
       border: Border.all(color: done ? C.ok : const Color(0xFF5A606E), width: 1.5),
     ),
-    child: done ? Icon(Icons.check, size: size * .7, color: const Color(0xFF111111)) : null,
+    child: AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeOutCubic,
+      transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+      child: done
+          ? Icon(Icons.check, key: const ValueKey(true), size: size * .7, color: const Color(0xFF111111))
+          : const SizedBox.shrink(key: ValueKey(false)),
+    ),
   );
 }
 

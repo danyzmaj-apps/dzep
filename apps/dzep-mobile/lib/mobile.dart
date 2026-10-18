@@ -15,6 +15,7 @@ import 'package:dzep_core/native.dart';
 import 'package:dzep_core/remind.dart';
 import 'package:dzep_core/session.dart';
 import 'package:dzep_core/store.dart';
+import 'package:dzep_core/tabs.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:dzep_core/ui.dart';
 import 'package:dzep_mobile/chrome.dart';
@@ -52,6 +53,22 @@ class MobileSession extends Session {
   Set<String> get collapsedProjects => {...?_prefs.getStringList(_foldedKey)};
 
   Future<void> setCollapsedProjects(Set<String> cwds) => _prefs.setStringList(_foldedKey, [...cwds]);
+
+  static const _tabsKey = 'dzep_tabs';
+
+  /// Which tabs the bottom bar shows, in what order: this phone's own
+  /// choice, kept across sign-outs.
+  TabChoice<HomeTab> get tabs => TabChoice.parse(
+    HomeTab.values,
+    order: _prefs.getStringList('${_tabsKey}_order'),
+    hidden: _prefs.getStringList('${_tabsKey}_hidden'),
+  );
+
+  Future<void> setTabs(TabChoice<HomeTab> tabs) async {
+    await _prefs.setStringList('${_tabsKey}_order', tabs.orderNames);
+    await _prefs.setStringList('${_tabsKey}_hidden', tabs.hiddenNames);
+    notifyListeners();
+  }
 
   @override
   Future<void> onSignedIn(IdeaStore store) async {
@@ -205,15 +222,7 @@ class MobileApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Džep',
     debugShowCheckedModeBanner: false,
-    theme: appTheme().copyWith(
-      scaffoldBackgroundColor: screenColor,
-      snackBarTheme: const SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Color(0xFF1F2A22),
-        contentTextStyle: TextStyle(color: Color(0xFFBBF7D0)),
-        actionTextColor: Colors.white,
-      ),
-    ),
+    theme: _theme(appTheme()),
     // No session, no app: only the Mac's code gets a phone in.
     home: ListenableBuilder(
       listenable: session,
@@ -228,12 +237,57 @@ class MobileApp extends StatelessWidget {
       },
     ),
   );
+
+  static ThemeData _theme(ThemeData base) => base.copyWith(
+    scaffoldBackgroundColor: screenColor,
+    // Rows show they were pressed: the iOS cell highlight, Android's ink.
+    splashFactory: isIos ? NoSplash.splashFactory : InkSparkle.splashFactory,
+    highlightColor: const Color(0x14FFFFFF),
+    appBarTheme: AppBarTheme(
+      backgroundColor: C.win,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      // The theme's own font (a bare style would drop its family).
+      titleTextStyle: base.textTheme.titleMedium!.copyWith(fontSize: 17, fontWeight: FontWeight.w600, color: C.text),
+      actionsIconTheme: const IconThemeData(color: C.dim, size: 22),
+    ),
+    // A button turning on goes all at once: animated, its fill flips at
+    // once while its label takes 200ms to darken, unreadable meanwhile.
+    filledButtonTheme: const FilledButtonThemeData(style: ButtonStyle(animationDuration: Duration.zero)),
+    snackBarTheme: const SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: Color(0xFF1F2A22),
+      contentTextStyle: TextStyle(color: Color(0xFFBBF7D0)),
+      actionTextColor: Colors.white,
+    ),
+  );
 }
 
 // ==================================================================== home
 
-/// The home page's tabs, left to right: Terminal in the middle, and first.
-enum HomeTab { pocket, terminal, ask }
+/// The home page's tabs, in the bar's standard order: Terminal in the
+/// middle, and first. Each phone picks which show and their order
+/// ([MobileSession.tabs]).
+enum HomeTab {
+  pocket('Pocket'),
+  terminal('Terminal'),
+  ask('Ask');
+
+  const HomeTab(this.label);
+  final String label;
+
+  IconData get icon => switch (this) {
+    pocket => isIos ? Icons.inventory_2_outlined : Icons.inbox_outlined,
+    terminal => Icons.terminal_rounded,
+    ask => Icons.auto_awesome_outlined,
+  };
+
+  IconData get selectedIcon => switch (this) {
+    pocket => isIos ? Icons.inventory_2_rounded : Icons.inbox,
+    terminal => Icons.terminal_rounded,
+    ask => Icons.auto_awesome,
+  };
+}
 
 class HomePage extends StatefulWidget {
   const HomePage({required this.session, required this.store, @visibleForTesting this.terminal, super.key});
@@ -249,15 +303,36 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  /// The tab on screen: Terminal at first, or the first one showing when
+  /// Terminal doesn't (see [_visibleTabs]).
   HomeTab _tab = HomeTab.terminal;
   PocketShow _show = PocketShow.all;
   final _pocket = GlobalKey<PocketViewState>();
+
+  /// The tabs' scroll views while off screen, kept off the Scaffold's
+  /// primary controller: it takes one at a time, and a status-bar tap
+  /// scrolls the tab on screen.
+  final Map<HomeTab, ScrollController> _hiddenScroll = {for (final tab in HomeTab.values) tab: ScrollController()};
   StreamSubscription<Uri>? _links;
 
   IdeaStore get store => widget.store;
 
   /// Open whenever the idea store is (see Session).
   ChatStore get chats => widget.session.chats!;
+
+  /// The tabs showing, in their order. The tab on screen moves to the
+  /// first of them when its own isn't one (just switched off).
+  List<HomeTab> _visibleTabs() {
+    final visible = widget.session.tabs.visible;
+    if (!visible.contains(_tab)) _tab = visible.first;
+    return visible;
+  }
+
+  /// Puts [tab] on screen, unless it's switched off: then the tab stays,
+  /// and what asked for it (a session, a todo) still opens on top.
+  void _goTo(HomeTab tab) {
+    if (widget.session.tabs.shows(tab)) setState(() => _tab = tab);
+  }
 
   /// The Mac's coding sessions and terminal windows, through Džep on the Mac; live
   /// while the app is in front. Null until its cache folder is known.
@@ -300,10 +375,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     attach ? t.attach() : t.detach();
   }
 
-  /// The Terminal tab, on coding session [key] (from a tapped push or Live
-  /// Activity).
+  /// Coding session [key] (from a tapped push or Live Activity), over the
+  /// Terminal tab when that shows.
   void _openSession(String key) {
-    setState(() => _tab = HomeTab.terminal);
+    _goTo(HomeTab.terminal);
     final t = _terminal;
     if (t == null) {
       _sessionToOpen = key;
@@ -349,6 +424,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _terminal?.activities?.dispose();
       _terminal?.dispose();
     }
+    for (final c in _hiddenScroll.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -380,7 +458,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case 'openTodo':
         unawaited(_openTapped());
       case 'openTerminal':
-        setState(() => _tab = HomeTab.terminal);
+        _goTo(HomeTab.terminal);
         // The session comes through takeTappedSession, once, whichever of
         // this and the resume asks first.
         unawaited(_openTappedSession());
@@ -408,7 +486,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _showPocket(PocketShow show) => setState(() {
-    _tab = HomeTab.pocket;
+    if (widget.session.tabs.shows(HomeTab.pocket)) _tab = HomeTab.pocket;
     _show = show;
   });
 
@@ -437,11 +515,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _openAdd(Kind kind) async {
     if (_addOpen) return;
     _addOpen = true;
-    await showModalBottomSheet<void>(
-      context: context,
+    await showAppSheet<void>(
+      context,
       isScrollControlled: true,
-      backgroundColor: isIos ? S.cell : M.containerHigh,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      // Pocket's project, or none when Pocket isn't built (switched off).
       builder: (_) =>
           AddSheet(store: store, kind: kind, defaultProject: _pocket.currentState?.project ?? '', onNote: _openNote),
     );
@@ -468,35 +545,37 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([store, chats]),
     builder: (context, _) {
+      final visible = _visibleTabs();
       final add = _add;
+      // One tab needs no bar: the + and the lists sit at the home indicator.
+      final bar = visible.length > 1;
       return Scaffold(
         backgroundColor: screenColor,
         floatingActionButton: AddButton(tooltip: add.tooltip, icon: add.icon, onPressed: add.onPressed),
-        bottomNavigationBar: AppTabBar(
-          index: _tab.index,
-          onSelect: (i) => setState(() => _tab = HomeTab.values[i]),
-          tabs: [
-            (
-              icon: isIos ? Icons.inventory_2_outlined : Icons.inbox_outlined,
-              selectedIcon: isIos ? Icons.inventory_2_rounded : Icons.inbox,
-              label: 'Pocket',
-              badge: store.openTodos.length,
-            ),
-            (icon: Icons.terminal_rounded, selectedIcon: Icons.terminal_rounded, label: 'Terminal', badge: 0),
-            (icon: Icons.auto_awesome_outlined, selectedIcon: Icons.auto_awesome, label: 'Ask', badge: 0),
-          ],
-        ),
+        bottomNavigationBar: bar
+            ? AppTabBar(
+                index: visible.indexOf(_tab),
+                onSelect: (i) => setState(() => _tab = visible[i]),
+                tabs: [
+                  for (final tab in visible)
+                    (
+                      icon: tab.icon,
+                      selectedIcon: tab.selectedIcon,
+                      label: tab.label,
+                      badge: tab == HomeTab.pocket ? store.openTodos.length : 0,
+                    ),
+                ],
+              )
+            : null,
         body: SafeArea(
-          bottom: false,
+          // Without a bar, the lists end above the home indicator, so their
+          // AppTabBar.contentInset still clears the +.
+          bottom: !bar,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               PageTitle(
-                switch (_tab) {
-                  HomeTab.pocket => 'Pocket',
-                  HomeTab.terminal => 'Terminal',
-                  HomeTab.ask => 'Ask',
-                },
+                _tab.label,
                 trailing: [
                   SyncDot(store.syncState),
                   IconButton(
@@ -506,38 +585,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ),
                 ],
               ),
+              // Every tab showing stays built, so search, filters and scroll
+              // survive a trip to another tab (keyed: also a reorder). iOS
+              // swaps tabs at once, as its own tab bars do; Material 3 fades
+              // the one shown in.
               Expanded(
-                child: switch (_tab) {
-                  HomeTab.pocket => PocketView(
-                    key: _pocket,
-                    store: store,
-                    show: _show,
-                    onShow: (s) => setState(() => _show = s),
-                  ),
-                  HomeTab.terminal => switch (_terminal) {
-                    final t? => TerminalList(
-                      remote: t,
-                      folded: widget.session.collapsedProjects,
-                      onFolded: (f) => unawaited(widget.session.setCollapsedProjects(f)),
-                    ),
-                    null => const Center(
-                      child: Text('Reaching your Mac…', style: TextStyle(color: C.dim)),
-                    ),
+                child: Builder(
+                  builder: (context) {
+                    final primary = PrimaryScrollController.maybeOf(context);
+                    return IndexedStack(
+                      index: visible.indexOf(_tab),
+                      children: [
+                        for (final tab in visible)
+                          PrimaryScrollController(
+                            key: ValueKey(tab),
+                            controller: tab == _tab && primary != null ? primary : _hiddenScroll[tab]!,
+                            child: AnimatedOpacity(
+                              opacity: tab == _tab ? 1 : 0,
+                              duration: isIos ? Duration.zero : Motion.fast,
+                              curve: Motion.ease,
+                              child: _tabBody(tab),
+                            ),
+                          ),
+                      ],
+                    );
                   },
-                  HomeTab.ask => Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (chats.aiMissing)
-                        const Padding(padding: EdgeInsets.fromLTRB(20, 8, 20, 8), child: NoAiNotice()),
-                      Expanded(
-                        child: RefreshIndicator(
-                          onRefresh: () => Future.wait([chats.syncNow(), chats.checkAi()]),
-                          child: _chatsList(),
-                        ),
-                      ),
-                    ],
-                  ),
-                },
+                ),
               ),
             ],
           ),
@@ -546,20 +619,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     },
   );
 
+  Widget _tabBody(HomeTab tab) => switch (tab) {
+    HomeTab.pocket => PocketView(key: _pocket, store: store, show: _show, onShow: (s) => setState(() => _show = s)),
+    HomeTab.terminal => switch (_terminal) {
+      final t? => TerminalList(
+        remote: t,
+        // Only the tab on screen keeps the phone awake.
+        active: _tab == HomeTab.terminal,
+        folded: widget.session.collapsedProjects,
+        onFolded: (f) => unawaited(widget.session.setCollapsedProjects(f)),
+      ),
+      null => const Center(
+        child: Text('Reaching your Mac…', style: TextStyle(color: C.dim)),
+      ),
+    },
+    HomeTab.ask => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (chats.aiMissing) const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 8), child: NoAiNotice()),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => Future.wait([chats.syncNow(), chats.checkAi()]),
+            child: _chatsList(),
+          ),
+        ),
+      ],
+    ),
+  };
+
   Widget _chatsList() {
     final list = chats.conversations;
     if (list.isEmpty) {
-      return ListView(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(40),
-            child: Text(
-              chats.aiMissing ? 'No chats yet.' : 'No chats yet. Tap ✎ to ask a quick question.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: C.dim, height: 1.5),
+      // Centred, yet still a scroll view so pull-to-refresh works.
+      return LayoutBuilder(
+        builder: (context, box) => ListView(
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: box.maxHeight),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(40),
+                  child: Text(
+                    chats.aiMissing ? 'No chats yet.' : 'No chats yet. Tap ✎ to ask a quick question.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: C.dim, height: 1.5),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
     return ListView(
@@ -582,10 +691,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   chats.delete(c);
                   ScaffoldMessenger.of(context)
                     ..hideCurrentSnackBar()
-                    ..showSnackBar(const SnackBar(content: Text('Chat deleted')));
+                    ..showSnackBar(undoSnackBar('Chat deleted', () => unawaited(chats.restore(c))));
                 },
                 child: ListTile(
                   onTap: () => _openChat(c),
+                  contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                   leading: Icon(Icons.auto_awesome, size: 18, color: chats.streaming == c ? C.accent : C.dim2),
                   title: Text(
                     c.title,
@@ -593,13 +703,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 15),
                   ),
-                  subtitle: Text(
-                    (c.lastAnswer ?? '').replaceAll('\n', ' '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, color: C.dim),
-                  ),
-                  trailing: Text(stamp(c.updatedAt), style: const TextStyle(fontSize: 11, color: C.dim)),
+                  subtitle: switch ((c.lastAnswer ?? '').replaceAll('\n', ' ')) {
+                    '' => null,
+                    final answer => Text(
+                      answer,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, color: C.dim),
+                    ),
+                  },
+                  trailing: Text(stamp(c.updatedAt), style: const TextStyle(fontSize: 12, color: C.dim2)),
                 ),
               ),
           ],
@@ -608,9 +721,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _openAccount() => showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: isIos ? S.cell : M.containerHigh,
+  Future<void> _openAccount() => showAppSheet<void>(
+    context,
     builder: (sheet) => SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
@@ -643,6 +755,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               '• Widgets: “Todos” ticks todos off from the home screen; “New idea” opens the add field.',
               style: TextStyle(color: C.dim, height: 1.6),
             ),
+            const SizedBox(height: 8),
+            ListTile(
+              key: const ValueKey('tabs'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Tabs', style: TextStyle(fontWeight: FontWeight.w600)),
+              trailing: const Icon(Icons.chevron_right, color: C.dim),
+              onTap: () {
+                Navigator.of(sheet).pop();
+                unawaited(_openTabs());
+              },
+            ),
             const SizedBox(height: 18),
             OutlinedButton(
               onPressed: () {
@@ -673,6 +796,82 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ],
         ),
       ),
+    ),
+  );
+
+  /// Which tabs the bar shows and in what order: drag a row by its handle,
+  /// switch a tab off or on. The bar follows at once; the last tab showing
+  /// can't be switched off.
+  Future<void> _openTabs() => showAppSheet<void>(
+    context,
+    builder: (_) => ListenableBuilder(
+      listenable: widget.session,
+      builder: (context, _) {
+        final tabs = widget.session.tabs;
+        final last = tabs.visible.length == 1;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 18, 20, 2),
+                child: Text('Tabs', style: sheetTitleStyle),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 6),
+                child: Text(
+                  'Drag to reorder. With one tab left, the bar goes away.',
+                  style: TextStyle(fontSize: 13, color: C.dim),
+                ),
+              ),
+              ReorderableListView(
+                shrinkWrap: true,
+                buildDefaultDragHandles: false,
+                padding: const EdgeInsets.only(bottom: 12),
+                // [to] here already leaves the moved row out; moved() counts it.
+                onReorderItem: (from, to) =>
+                    unawaited(widget.session.setTabs(tabs.moved(from, to > from ? to + 1 : to))),
+                // The lifted row on the sheet's own surface, not Material's default.
+                proxyDecorator: (child, _, _) => Material(
+                  color: isIos ? S.fill : M.container,
+                  elevation: 6,
+                  borderRadius: BorderRadius.circular(12),
+                  child: child,
+                ),
+                children: [
+                  for (final (i, tab) in tabs.order.indexed)
+                    // iOS's own switch on iPhone; the last one showing stays
+                    // on but can't be switched off.
+                    SwitchListTile.adaptive(
+                      key: ValueKey('tab-${tab.name}'),
+                      contentPadding: const EdgeInsets.only(left: 8, right: 20),
+                      value: tabs.shows(tab),
+                      activeTrackColor: C.accent,
+                      onChanged: last && tabs.shows(tab)
+                          ? null
+                          : (_) => unawaited(widget.session.setTabs(tabs.toggled(tab))),
+                      secondary: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.drag_handle, color: C.dim2),
+                            ),
+                          ),
+                          Icon(tab.icon, color: C.dim),
+                        ],
+                      ),
+                      title: Text(tab.label, style: const TextStyle(fontSize: 15)),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     ),
   );
 }
@@ -736,7 +935,10 @@ class _AddSheetState extends State<AddSheet> {
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
     child: SafeArea(
-      child: Padding(
+      // Scrolls rather than overflows when a long description meets the
+      // keyboard on a small phone.
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -778,12 +980,17 @@ class _AddSheetState extends State<AddSheet> {
             if (_kind == Kind.todo)
               ListenableBuilder(
                 listenable: _title,
-                builder: (context, _) => switch (parseReminder(_title.text, DateTime.now()).at) {
-                  final at? => Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Align(alignment: Alignment.centerLeft, child: ReminderChip(at)),
-                  ),
-                  null => const SizedBox.shrink(),
+                builder: (context, _) {
+                  final at = parseReminder(_title.text, DateTime.now()).at;
+                  return Reveal(
+                    visible: at != null,
+                    child: at == null
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Align(alignment: Alignment.centerLeft, child: ReminderChip(at)),
+                          ),
+                  );
                 },
               ),
             const SizedBox(height: 12),
@@ -800,34 +1007,37 @@ class _AddSheetState extends State<AddSheet> {
                 hintStyle: const TextStyle(color: C.dim2),
               ),
             ),
-            if (_kind == Kind.idea && widget.store.projects.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 34,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final p in widget.store.projects)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: ChoiceChip(
-                          selected: _project == p,
-                          showCheckmark: false,
-                          onSelected: (on) => setState(() => _project = on ? p : ''),
-                          backgroundColor: C.field,
-                          selectedColor: C.projectBg,
-                          side: BorderSide(color: _project == p ? C.projectFg : C.line2),
-                          label: Text(
-                            '@$p',
-                            style: TextStyle(fontSize: 12, color: _project == p ? C.projectFg : C.dim),
+            Reveal(
+              visible: _kind == Kind.idea && widget.store.projects.isNotEmpty,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: SizedBox(
+                  height: 34,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      for (final p in widget.store.projects)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            selected: _project == p,
+                            showCheckmark: false,
+                            onSelected: (on) => setState(() => _project = on ? p : ''),
+                            backgroundColor: C.field,
+                            selectedColor: C.projectBg,
+                            side: BorderSide(color: _project == p ? C.projectFg : C.line2),
+                            label: Text(
+                              '@$p',
+                              style: TextStyle(fontSize: 12, color: _project == p ? C.projectFg : C.dim),
+                            ),
+                            visualDensity: VisualDensity.compact,
                           ),
-                          visualDensity: VisualDensity.compact,
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ],
+            ),
             const SizedBox(height: 14),
             ListenableBuilder(
               listenable: _title,
@@ -899,16 +1109,18 @@ class _DetailPageState extends State<DetailPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      backgroundColor: C.win,
-      surfaceTintColor: Colors.transparent,
       actions: [
         IconButton(
           tooltip: 'Delete',
-          icon: const Icon(Icons.delete_outline, color: C.dim),
+          icon: const Icon(Icons.delete_outline),
           onPressed: () {
             widget.store.delete(idea);
             Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(undoSnackBar('Idea deleted', () => widget.store.restore(idea)));
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                undoSnackBar(idea.isTodo ? 'Todo deleted' : 'Idea deleted', () => widget.store.restore(idea)),
+              );
           },
         ),
       ],
@@ -916,6 +1128,7 @@ class _DetailPageState extends State<DetailPage> {
     body: ListenableBuilder(
       listenable: widget.store,
       builder: (context, _) => ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
         children: [
           TextField(
@@ -995,12 +1208,7 @@ class _DetailPageState extends State<DetailPage> {
 
 /// Sets a todo's reminder on a date-and-time wheel, or clears it.
 Future<void> pickReminder(BuildContext context, IdeaStore store, Idea todo) async {
-  final picked = await showModalBottomSheet<({DateTime? at})>(
-    context: context,
-    backgroundColor: C.bar,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-    builder: (_) => _ReminderSheet(current: todo.remindAt),
-  );
+  final picked = await showAppSheet<({DateTime? at})>(context, builder: (_) => _ReminderSheet(current: todo.remindAt));
   if (picked != null) store.update(todo, remind: picked);
 }
 
@@ -1031,7 +1239,8 @@ class _ReminderSheetState extends State<_ReminderSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Remind me', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+          const Text('Remind me', style: sheetTitleStyle),
+          const SizedBox(height: 8),
           SizedBox(
             height: 200,
             child: CupertinoDatePicker(
@@ -1086,6 +1295,9 @@ class _ChatPageState extends State<ChatPage> {
   final _focus = FocusNode();
   final _attachments = ChatAttachments();
 
+  /// The bar at the bottom, which toasts keep clear of.
+  final GlobalKey _composer = GlobalKey();
+
   ChatStore get chats => widget.chats;
 
   @override
@@ -1118,7 +1330,13 @@ class _ChatPageState extends State<ChatPage> {
     if (!await _attachments.paste() && mounted) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('There is no image on the clipboard.')));
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('There is no image on the clipboard.'),
+            behavior: SnackBarBehavior.floating,
+            margin: toastMargin(_composer),
+          ),
+        );
     }
   }
 
@@ -1136,14 +1354,13 @@ class _ChatPageState extends State<ChatPage> {
       final canSend = (_field.text.trim().isNotEmpty || !_attachments.isEmpty) && !chats.busy;
       return Scaffold(
         appBar: AppBar(
-          backgroundColor: C.win,
           title: Text(c?.title ?? 'New chat', maxLines: 1, overflow: TextOverflow.ellipsis),
           actions: [
             if (c != null)
               IconButton(
                 tooltip: 'Copy last answer',
                 onPressed: () => copyAnswer(context, c.lastAnswer),
-                icon: const Icon(Icons.content_copy, size: 20),
+                icon: const Icon(Icons.content_copy),
               ),
           ],
         ),
@@ -1161,6 +1378,7 @@ class _ChatPageState extends State<ChatPage> {
             ),
             if (chats.aiMissing)
               Container(
+                key: _composer,
                 decoration: const BoxDecoration(
                   color: C.bar,
                   border: Border(top: BorderSide(color: C.line)),
@@ -1170,20 +1388,22 @@ class _ChatPageState extends State<ChatPage> {
               )
             else
               Container(
+                key: _composer,
                 decoration: const BoxDecoration(
                   color: C.bar,
                   border: Border(top: BorderSide(color: C.line)),
                 ),
-                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
                 child: SafeArea(
                   top: false,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Its own gap above it, only while it holds images.
                       Padding(
-                        padding: const EdgeInsets.only(top: 6, right: 8),
-                        child: AttachmentStrip(attachments: _attachments),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: AttachmentStrip(attachments: _attachments, top: 6),
                       ),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -1309,13 +1529,12 @@ class _NotePageState extends State<NotePage> {
     final note = _note;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: C.win,
-        title: Text(note == null ? 'New note' : stamp(note.updatedAt), style: const TextStyle(fontSize: 15)),
+        title: Text(note == null ? 'New note' : stamp(note.updatedAt)),
         actions: [
           if (note != null) ...[
             IconButton(
               tooltip: 'Copy',
-              icon: const Icon(Icons.content_copy, size: 20),
+              icon: const Icon(Icons.content_copy),
               onPressed: () => copyAnswer(context, note.notes.trim()),
             ),
             IconButton(

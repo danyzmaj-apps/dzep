@@ -18,6 +18,7 @@ import 'package:dzep_macos/integrations.dart';
 import 'package:dzep_macos/onboarding/connect_ai.dart';
 import 'package:dzep_macos/onboarding/pair.dart';
 import 'package:dzep_macos/onboarding/reviewer.dart';
+import 'package:dzep_macos/popup.dart' show PopupModeLook;
 import 'package:dzep_macos/setup_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -478,7 +479,7 @@ class _LibraryState extends State<Library> {
                           chat: chat,
                           selected: _chat,
                           onSelect: (c) => setState(() => _chat = c),
-                          hotKey: widget.app.hotKey.label,
+                          askWith: widget.app.popupKeys(PopupMode.ask),
                         )
                       : _listPane(visible),
                 ),
@@ -490,7 +491,9 @@ class _LibraryState extends State<Library> {
                           chat: chat,
                           conversation: _chat,
                           onSent: (c) => setState(() => _chat = c),
-                          onContinue: (c) => unawaited(widget.app.openAsk(c)),
+                          onContinue: widget.app.popupTabs.shows(PopupMode.ask)
+                              ? (c) => unawaited(widget.app.openAsk(c))
+                              : null,
                           onConnectAi: () => unawaited(showConnectAi(context, widget.app)),
                         )
                       : selected == null
@@ -653,6 +656,13 @@ class _LibraryState extends State<Library> {
     );
   }
 
+  /// An empty list's text: [head], then how the popup [does] it from
+  /// anywhere, while it shows [mode].
+  String _emptyHint(String head, PopupMode mode, String does) => switch (widget.app.popupKeys(mode)) {
+    final keys? => '$head\n$keys $does from anywhere.',
+    null => head,
+  };
+
   Widget _listPane(List<Idea> visible) {
     final rows = <Widget>[];
     String? group;
@@ -793,9 +803,9 @@ class _LibraryState extends State<Library> {
                     _query.isNotEmpty
                         ? 'No matches.'
                         : switch (_view) {
-                            _todos => 'All done 🎉\n${widget.app.hotKey.label} then ⌘2 adds a todo from anywhere.',
-                            _notes => 'No notes yet.\n${widget.app.hotKey.label} then ⌘3 writes one from anywhere.',
-                            _all => 'No ideas yet.\n${widget.app.hotKey.label} then ⌘1 adds one from anywhere.',
+                            _todos => _emptyHint('All done 🎉', PopupMode.todo, 'adds a todo'),
+                            _notes => _emptyHint('No notes yet.', PopupMode.note, 'writes one'),
+                            _all => _emptyHint('No ideas yet.', PopupMode.idea, 'adds one'),
                             _ => 'Nothing here yet.',
                           },
                     textAlign: TextAlign.center,
@@ -1620,6 +1630,63 @@ class _SettingsSheetState extends State<SettingsSheet> {
     );
   }
 
+  /// Which modes the popup's strip shows, and their order (drag the handle):
+  /// ⌘1 is the top one showing. The last one showing can't be turned off.
+  Widget _popupTabs() {
+    final tabs = app.popupTabs;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Popup tabs', style: TextStyle(fontSize: 13)),
+          const Text(
+            'Drag to reorder: ⌘1 is the top one showing. With one showing, the popup has no tabs',
+            style: TextStyle(fontSize: 11, color: C.dim),
+          ),
+          const SizedBox(height: 6),
+          ReorderableListView(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            buildDefaultDragHandles: false,
+            // onReorderItem gives the final place; moved() counts the dragged
+            // one still in place, as onReorder did.
+            onReorderItem: (from, to) => unawaited(app.setPopupTabs(tabs.moved(from, to > from ? to + 1 : to))),
+            children: [
+              for (final (i, mode) in tabs.order.indexed)
+                Row(
+                  key: ValueKey(mode),
+                  children: [
+                    ReorderableDragStartListener(
+                      index: i,
+                      child: const MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: Padding(
+                          padding: EdgeInsets.only(right: 8),
+                          child: Icon(Icons.drag_indicator, size: 16, color: C.dim),
+                        ),
+                      ),
+                    ),
+                    Icon(mode.icon, size: 14, color: tabs.shows(mode) ? C.accent : C.dim),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(mode.label, style: const TextStyle(fontSize: 12))),
+                    Switch(
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      value: tabs.shows(mode),
+                      onChanged: tabs.shows(mode) && tabs.visible.length == 1
+                          ? null
+                          : (_) => unawaited(app.setPopupTabs(tabs.toggled(mode))),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _checkIntegration() async {
     final agent = app.codingAgent;
     IntegrationState r;
@@ -1830,6 +1897,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                             _recorderFocus.requestFocus();
                           }, active: _recording),
                         ),
+                        _popupTabs(),
                         _row(
                           label: 'Launch at login',
                           sub: _launchError,

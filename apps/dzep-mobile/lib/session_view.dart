@@ -7,6 +7,7 @@ import 'package:dzep_core/live_activity.dart';
 import 'package:dzep_core/terminal.dart';
 import 'package:dzep_core/terminal_remote.dart';
 import 'package:dzep_core/ui.dart';
+import 'package:dzep_mobile/chrome.dart';
 import 'package:dzep_mobile/terminal_view.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
@@ -61,6 +62,9 @@ class _SessionPageState extends State<SessionPage> {
   /// A close was sent, and the Mac hasn't answered yet.
   bool _closeSent = false;
 
+  /// The composer, which toasts keep clear of.
+  final GlobalKey _composerKey = GlobalKey();
+
   /// Tool items showing their output.
   final _expanded = <String>{};
 
@@ -106,7 +110,9 @@ class _SessionPageState extends State<SessionPage> {
 
   Future<void> _attach(String from) async {
     if (from == 'photos') return await _attachments.pick();
-    if (!await _attachments.paste() && mounted) termToast(context, 'There is no image on the clipboard.');
+    if (!await _attachments.paste() && mounted) {
+      termToast(context, 'There is no image on the clipboard.', above: _composerKey);
+    }
   }
 
   Future<void> _send({required bool busy}) async {
@@ -117,9 +123,11 @@ class _SessionPageState extends State<SessionPage> {
     // A slash command is typed into the agent's window, where its editor
     // reads it; sent as a prompt, the agent would take it for chat.
     final command = text.startsWith('/');
-    if (command && images.isNotEmpty) return termToast(context, "Slash commands can't take images.");
+    if (command && images.isNotEmpty) {
+      return termToast(context, "Slash commands can't take images.", above: _composerKey);
+    }
     if (command && !_can(_windowKey(remote.session(key)), TermCap.line)) {
-      return termToast(context, _noCommands(_agent(remote.session(key))));
+      return termToast(context, _noCommands(_agent(remote.session(key))), above: _composerKey);
     }
     setState(() => _sending = true);
     try {
@@ -140,7 +148,7 @@ class _SessionPageState extends State<SessionPage> {
       }
       _atBottom = true;
     } on Object catch (e) {
-      if (mounted) termToast(context, e);
+      if (mounted) termToast(context, e, above: _composerKey);
     }
     if (mounted) setState(() => _sending = false);
   }
@@ -245,6 +253,7 @@ class _SessionPageState extends State<SessionPage> {
         defaultTargetPlatform == TargetPlatform.iOS
             ? 'Live Activities are off for Džep: turn them on in Settings → Džep.'
             : 'Notifications are off for Džep: turn them on in Settings → Apps → Džep.',
+        above: _composerKey,
       );
     }
   }
@@ -254,7 +263,7 @@ class _SessionPageState extends State<SessionPage> {
     try {
       await remote.abort(key);
     } on Object catch (e) {
-      if (mounted) termToast(context, e);
+      if (mounted) termToast(context, e, above: _composerKey);
     }
     if (mounted) setState(() => _stopping = false);
   }
@@ -264,7 +273,7 @@ class _SessionPageState extends State<SessionPage> {
     try {
       await remote.older(key);
     } on Object catch (e) {
-      if (mounted) termToast(context, e);
+      if (mounted) termToast(context, e, above: _composerKey);
     }
     if (mounted) setState(() => _loadingOlder = false);
   }
@@ -481,6 +490,7 @@ class _SessionPageState extends State<SessionPage> {
     final matches = commanding && !noWindow ? matchCommands(s.commands, _field.text) : const <LiveCommand>[];
     final commands = _commands(matches, noWindow: noWindow, agent: agent);
     return Container(
+      key: _composerKey,
       decoration: const BoxDecoration(
         color: C.bar,
         border: Border(top: BorderSide(color: C.line)),
@@ -493,8 +503,9 @@ class _SessionPageState extends State<SessionPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ?commands,
-            if (busy && online)
-              TextFieldTapRegion(
+            Reveal(
+              visible: busy && online,
+              child: TextFieldTapRegion(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(4, 0, 0, 2),
                   child: Row(
@@ -508,7 +519,6 @@ class _SessionPageState extends State<SessionPage> {
                           selected: _followUp,
                           showCheckmark: true,
                           visualDensity: VisualDensity.compact,
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           onSelected: (v) => setState(() => _followUp = v),
                         ),
                       const Spacer(),
@@ -522,9 +532,10 @@ class _SessionPageState extends State<SessionPage> {
                   ),
                 ),
               ),
+            ),
             Padding(
               padding: const EdgeInsets.only(left: 8, right: 8),
-              child: AttachmentStrip(attachments: _attachments),
+              child: AttachmentStrip(attachments: _attachments, top: 6),
             ),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -612,7 +623,7 @@ class _SessionPageState extends State<SessionPage> {
       void screen() => openWindow(context, remote, windowKey!);
       return Scaffold(
         appBar: AppBar(
-          backgroundColor: C.win,
+          // Tight: the title is two lines (the session and its state).
           titleSpacing: 0,
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -655,39 +666,49 @@ class _SessionPageState extends State<SessionPage> {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ?note,
+            Reveal(visible: note != null, child: note ?? const SizedBox.shrink()),
             Expanded(child: _transcript(v, s, ended: ended)),
-            if (_closing && window != null && online && !ended)
-              CloseConfirm(
-                remote: remote,
-                window: window,
-                onCancel: () => setState(() => _closing = false),
-                onClose: () => unawaited(_close(window)),
-                closing: _closeSent,
-              ),
+            Reveal(
+              visible: _closing && window != null && online && !ended,
+              child: window == null
+                  ? const SizedBox.shrink()
+                  : CloseConfirm(
+                      remote: remote,
+                      window: window,
+                      onCancel: () => setState(() => _closing = false),
+                      onClose: () => unawaited(_close(window)),
+                      closing: _closeSent,
+                    ),
+            ),
             if (ended)
               _banner(
                 'This session has ended.',
                 actions: [if (readable) TextButton(onPressed: screen, child: const Text('Screen'))],
               )
             else ...[
-              if (ask != null && ask.isMenu)
-                _MenuCard(
-                  key: ValueKey('ask-${ask.id}'),
-                  remote: remote,
-                  session: key,
-                  window: _can(windowKey, TermCap.keys) ? windowKey : null,
-                  ask: ask,
-                  onScreen: readable ? screen : null,
-                )
-              else if (ask != null)
-                _AskCard(
-                  key: ValueKey('ask-${ask.id}'),
-                  remote: remote,
-                  session: key,
-                  ask: ask,
-                  onScreen: readable ? screen : null,
-                ),
+              Reveal(
+                visible: ask != null,
+                child: ask == null
+                    ? const SizedBox.shrink()
+                    : ask.isMenu
+                    ? _MenuCard(
+                        key: ValueKey('ask-${ask.id}'),
+                        remote: remote,
+                        session: key,
+                        window: _can(windowKey, TermCap.keys) ? windowKey : null,
+                        ask: ask,
+                        onScreen: readable ? screen : null,
+                        toastAbove: _composerKey,
+                      )
+                    : _AskCard(
+                        key: ValueKey('ask-${ask.id}'),
+                        remote: remote,
+                        session: key,
+                        ask: ask,
+                        onScreen: readable ? screen : null,
+                        toastAbove: _composerKey,
+                      ),
+              ),
               _composer(s, online: online && (s != null || !widget.starting)),
             ],
           ],
@@ -785,7 +806,12 @@ class _Notice extends StatelessWidget {
         decoration: const BoxDecoration(
           border: Border(left: BorderSide(color: C.line2, width: 2)),
         ),
-        child: Text(text, maxLines: open ? null : 3, overflow: open ? null : TextOverflow.ellipsis, style: _style),
+        child: AnimatedSize(
+          duration: Motion.fast,
+          curve: Motion.fold,
+          alignment: Alignment.topCenter,
+          child: Text(text, maxLines: open ? null : 3, overflow: open ? null : TextOverflow.ellipsis, style: _style),
+        ),
       ),
     );
   }
@@ -812,56 +838,61 @@ class _ToolCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: i.status == ToolStatus.error ? const Color(0xFF5B2A2A) : C.line),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SelectionContainer.disabled(
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                child: Row(
-                  children: [
-                    SizedBox(width: 16, child: Center(child: status)),
-                    const SizedBox(width: 8),
-                    Text(
-                      i.tool,
-                      style: _mono.copyWith(fontWeight: FontWeight.w600, color: C.text),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        what,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _mono.copyWith(color: C.dim),
+      child: AnimatedSize(
+        duration: Motion.fast,
+        curve: Motion.fold,
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SelectionContainer.disabled(
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  child: Row(
+                    children: [
+                      SizedBox(width: 16, child: Center(child: status)),
+                      const SizedBox(width: 8),
+                      Text(
+                        i.tool,
+                        style: _mono.copyWith(fontWeight: FontWeight.w600, color: C.text),
                       ),
-                    ),
-                    Icon(open ? Icons.expand_less : Icons.expand_more, size: 16, color: C.dim2),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          what,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _mono.copyWith(color: C.dim),
+                        ),
+                      ),
+                      Icon(open ? Icons.expand_less : Icons.expand_more, size: 16, color: C.dim2),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          if (open) ...[
-            const Divider(height: 1, color: C.line),
-            if (i.title.isNotEmpty && i.args.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-                child: Text(i.args, style: _mono.copyWith(color: C.dim)),
+            if (open) ...[
+              const Divider(height: 1, color: C.line),
+              if (i.title.isNotEmpty && i.args.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+                  child: Text(i.args, style: _mono.copyWith(color: C.dim)),
+                ),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                child: Text(
+                  i.output.isEmpty ? (i.status == ToolStatus.running ? '…' : 'No output.') : i.output,
+                  softWrap: false,
+                  style: _mono.copyWith(color: const Color(0xFFD7DAE3)),
+                ),
               ),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Text(
-                i.output.isEmpty ? (i.status == ToolStatus.running ? '…' : 'No output.') : i.output,
-                softWrap: false,
-                style: _mono.copyWith(color: const Color(0xFFD7DAE3)),
-              ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -871,13 +902,23 @@ class _ToolCard extends StatelessWidget {
 /// an approval, or the plan review at the end of plan mode (its options as
 /// the Mac read them off the agent's screen; the plan itself is read there).
 class _AskCard extends StatefulWidget {
-  const _AskCard({required this.remote, required this.session, required this.ask, this.onScreen, super.key});
+  const _AskCard({
+    required this.remote,
+    required this.session,
+    required this.ask,
+    this.onScreen,
+    this.toastAbove,
+    super.key,
+  });
   final TerminalRemote remote;
   final String session;
   final LiveAsk ask;
 
   /// Opens the session's screen; null when it has none.
   final VoidCallback? onScreen;
+
+  /// The composer below, which toasts keep clear of.
+  final GlobalKey? toastAbove;
 
   @override
   State<_AskCard> createState() => _AskCardState();
@@ -937,7 +978,7 @@ class _AskCardState extends State<_AskCard> {
       );
       _sent = true;
     } on Object catch (e) {
-      if (mounted) termToast(context, e);
+      if (mounted) termToast(context, e, above: widget.toastAbove);
     }
     if (mounted) setState(() => _sending = false);
   }
@@ -1102,7 +1143,10 @@ class _AskCardState extends State<_AskCard> {
       ];
     }
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .45),
+      // Of what the keyboard leaves: the composer below stays on screen.
+      constraints: BoxConstraints(
+        maxHeight: (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom) * .45,
+      ),
       decoration: const BoxDecoration(
         color: Color(0xFF221F17),
         border: Border(top: BorderSide(color: Color(0xFF4A3F1F))),
@@ -1137,6 +1181,7 @@ class _MenuCard extends StatefulWidget {
     required this.window,
     required this.ask,
     this.onScreen,
+    this.toastAbove,
     super.key,
   });
   final TerminalRemote remote;
@@ -1147,6 +1192,9 @@ class _MenuCard extends StatefulWidget {
   final String? window;
   final LiveAsk ask;
   final VoidCallback? onScreen;
+
+  /// The composer below, which toasts keep clear of.
+  final GlobalKey? toastAbove;
 
   @override
   State<_MenuCard> createState() => _MenuCardState();
@@ -1171,7 +1219,7 @@ class _MenuCardState extends State<_MenuCard> {
     try {
       await action();
     } on Object catch (e) {
-      if (mounted) termToast(context, e);
+      if (mounted) termToast(context, e, above: widget.toastAbove);
     }
     if (mounted) setState(() => _busy = null);
   }
@@ -1196,7 +1244,7 @@ class _MenuCardState extends State<_MenuCard> {
       try {
         await widget.remote.answer(widget.session, widget.ask, answers: [LiveAnswer(custom: text)]);
       } on Object catch (e) {
-        if (mounted) termToast(context, e);
+        if (mounted) termToast(context, e, above: widget.toastAbove);
       }
     });
   }
@@ -1247,7 +1295,10 @@ class _MenuCardState extends State<_MenuCard> {
     final window = widget.window;
     final enabled = _busy == null && widget.remote.online;
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .55),
+      // Of what the keyboard leaves: the composer below stays on screen.
+      constraints: BoxConstraints(
+        maxHeight: (MediaQuery.sizeOf(context).height - MediaQuery.viewInsetsOf(context).bottom) * .55,
+      ),
       decoration: const BoxDecoration(
         color: C.win,
         border: Border(top: BorderSide(color: C.line)),

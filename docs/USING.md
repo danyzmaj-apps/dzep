@@ -1,102 +1,14 @@
 # Using Džep
 
-Everything the apps do, in detail. For installing and setting up, see the [README](../README.md).
+Everything the apps do, in detail, starting with what Džep is mostly for: your Mac's coding sessions on your phone. For installing and setting up, see the [README](../README.md).
 
+- [Terminal from the phone](#terminal-from-the-phone)
+- [Commands in your coding agent](#commands-in-your-coding-agent)
+- [The phone apps](#the-phone-apps)
 - [The popup (Mac)](#the-popup-mac)
 - [The main window and the note window (Mac)](#the-main-window-and-the-note-window-mac)
 - [Reminders](#reminders)
-- [The phone apps](#the-phone-apps)
 - [Ask](#ask)
-- [Terminal from the phone](#terminal-from-the-phone)
-- [Commands in your coding agent](#commands-in-your-coding-agent)
-
-## The popup (Mac)
-
-⇧⌘Space opens the popup, in the mode you used last, with its field focused. Change the shortcut in **Settings → Quick capture shortcut**. The menu-bar icon shows how many todos are open.
-
-<table>
-  <tr>
-    <td><img src="images/mac-popup-todo.png" alt="The popup in Todo mode: a todo with a reminder chip, the similar open todos below" width="400"></td>
-    <td><img src="images/mac-popup-ask.png" alt="The popup in Ask mode: a question, its answer and the recent chats" width="400"></td>
-  </tr>
-  <tr>
-    <td><img src="images/mac-popup-idea.png" alt="The popup in Idea mode, filing an idea under a project" width="400"></td>
-    <td><img src="images/mac-popup-note.png" alt="The popup in Note mode with recent notes" width="400"></td>
-  </tr>
-</table>
-
-| Key | What it does |
-| --- | --- |
-| ⌘1 ⌘2 ⌘3 ⌘4 | **Idea**, **Todo**, **Note**, **Ask** (or click the strip on top) |
-| ⌘5 | Open the main window |
-| ↵ | Save (Idea, Todo); send the question (Ask) |
-| ⌘↵ | Save and stay for the next one (Idea, Todo); save the note (Note) |
-| ⇥ | Add a description, or complete an `@project` (Idea, Todo) |
-| ↓ ↑ | Browse the list below the field: ideas, todos, **RECENT NOTES**, or your recent chats in Ask. In Note and Ask ↓ goes to the list from the field's last line; ↑ past the top or Esc goes back to the field |
-| ↵ on a selected row | Open the idea, todo or note in the main window; in Ask, continue that chat in the popup |
-| ⌘D | Tick off the selected todo |
-| ⌘O | Open the app on the selected item or chat (or on Notes, or on the current chat) |
-| ⌘P | Float the note in its own window: the selected one, else the one being written (Note) |
-| ⌘N | New chat (Ask) |
-| ⇧⌘C | Copy the last answer (Ask) |
-| Esc, ⌘W | Hide the popup |
-
-`@project` in an idea's title files it under that project.
-
-## The main window and the note window (Mac)
-
-The main window has **Todos** (finished ones fold away at the bottom), **Ideas** (grouped by project, with descriptions), **Notes** and **Ask**. ⌘N adds, ⌘F or / searches, ↑/↓ move, ⌫ deletes (with Undo), ⌘, opens Settings.
-
-<p align="center"><img src="images/mac-main.png" alt="The main window: sidebar with Todos, Ideas, Notes, Ask and projects; a list and the selected idea" width="820"></p>
-
-A note can float in a small window of its own over whatever you're doing: open it from the note's header in the main window, or with ⌘P in the popup.
-
-The Mac also has a **Todos** widget (desktop or Notification Center, macOS 14 or newer) that ticks todos off.
-
-## Reminders
-
-End a todo with `!` and a time. A chip under the field shows what it will set. When it's due, your devices notify you, and **Done** ticks the todo off.
-
-| Write | Reminds you |
-| --- | --- |
-| `!15:00`, `!9`, `!9.30`, `!3pm` | At that time today, or tomorrow if it's already past |
-| `!tomorrow`, `!tmr`, `!fri` | That day at 9:00 |
-| `!tomorrow 9`, `!mon 14:30` | That day at that time (a weekday is the next one ahead) |
-| `!today 18:00` | Today at that time |
-| `!30m`, `!2h`, `!1d`, `!1h30m` | That long from now |
-
-For example `call bank !15:00`. Phones get reminders by push, so one set on the Mac arrives with the phone app closed, and one ticked off elsewhere never goes off.
-
-## The phone apps
-
-The iPhone and Android apps do the same things, each in its platform's look: iOS's on the iPhone, Material 3 on Android.
-
-- **Tabs:** **Pocket**, **Terminal** (in the middle, where the app opens) and **Ask**.
-- **Pocket** holds your todos, ideas and notes in one list: open todos first, then ideas and notes, newest first, and ticked-off todos folded under **Done**. **Todos**, **Ideas** and **Notes** at the top narrow it to one kind, and with Ideas, the project pills to one project. One search finds all three. **+** adds what the list shows (a todo in **All**; the sheet switches to an idea or a note). Swipe a row right to tick a todo off, left to delete.
-- **Widgets:** **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
-- **Account:** the avatar at the top opens Sign out and Delete account.
-
-<table>
-  <tr>
-    <td><img src="images/phone-pocket.png" alt="iPhone: the Pocket tab, open todos first, with the tab bar and a round + button" width="250"></td>
-    <td><img src="images/phone-pocket-android.png" alt="Android: the same Pocket tab in Material 3, with a navigation bar and a + button" width="250"></td>
-    <td><img src="images/phone-ask.png" alt="Phone: an Ask chat" width="250"></td>
-  </tr>
-</table>
-
-### Adding a phone
-
-A phone signs in only with a code from your Mac, never with a password or GitHub. On the Mac, open **Settings → Set up phone…**: it shows a QR code. In the phone app, tap **Scan the code from your Mac** (or **Paste a code instead**). The phone connects to your server and signs in as you.
-
-A code works **once**, for **10 minutes**, and anyone who scans it gets into your account, so show it only to your own phone. For App Store or Play review, **Settings → Reviewer access** makes a code for a separate demo account ([details](SELF_HOSTING.md#app-store-and-play-review)).
-
-**Does the Mac have to be on?** Not for your data: ideas, todos, notes, reminders and Ask live on your server, so the phones work on their own with the Mac off. The Mac is needed only to add a phone (its code) and for [Terminal from the phone](#terminal-from-the-phone).
-
-## Ask
-
-A small streamed chat with the AI you connected: any OpenAI-compatible provider (OpenAI, OpenRouter, Groq, DeepSeek, a local Ollama, …). Paste or attach up to 4 images per question. Chats sync: start on one device, continue on another.
-
-No AI yet? Connect one from the Mac: **Settings → AI → Connect…** (or **Connect an AI…** in Ask); once one is connected, the same button reads **Change…**. The key stays on your server; the apps never see it. To switch providers from a terminal, see [AI provider](SELF_HOSTING.md#ai-provider).
 
 ## Terminal from the phone
 
@@ -154,3 +66,91 @@ The integration also adds three commands to omp and Claude Code, saved through t
 | `/note <text>` | A note |
 
 Other tools can use the same [local API](ARCHITECTURE.md#terminal-api-mac).
+
+## The phone apps
+
+The iPhone and Android apps do the same things, each in its platform's look: iOS's on the iPhone, Material 3 on Android.
+
+- **Tabs:** **Terminal** (in the middle, where the app opens), **Pocket** and **Ask**. **Account → Tabs** picks which show and their order (drag a row by its handle), on this phone only. With Terminal off, the app opens on the first tab; with one tab left, there's no tab bar. A widget or notification for a tab that's off still opens what it points to (the todo, the add field, the session).
+- **Pocket** holds your todos, ideas and notes in one list: open todos first, then ideas and notes, newest first, and ticked-off todos folded under **Done**. **Todos**, **Ideas** and **Notes** at the top narrow it to one kind, and with Ideas, the project pills to one project. One search finds all three. **+** adds what the list shows (a todo in **All**; the sheet switches to an idea or a note). Swipe a row right to tick a todo off, left to delete.
+- **Widgets:** **Todos** (tick todos off from the Home Screen) and **New idea** (opens the add field).
+- **Account:** the avatar at the top opens Tabs, Sign out and Delete account.
+
+<table>
+  <tr>
+    <td><img src="images/phone-pocket.png" alt="iPhone: the Pocket tab, open todos first, with the tab bar and a round + button" width="250"></td>
+    <td><img src="images/phone-pocket-android.png" alt="Android: the same Pocket tab in Material 3, with a navigation bar and a + button" width="250"></td>
+    <td><img src="images/phone-ask.png" alt="Phone: an Ask chat" width="250"></td>
+  </tr>
+</table>
+
+### Adding a phone
+
+A phone signs in only with a code from your Mac, never with a password or GitHub. On the Mac, open **Settings → Set up phone…**: it shows a QR code. In the phone app, tap **Scan the code from your Mac** (or **Paste a code instead**). The phone connects to your server and signs in as you.
+
+A code works **once**, for **10 minutes**, and anyone who scans it gets into your account, so show it only to your own phone. For App Store or Play review, **Settings → Reviewer access** makes a code for a separate demo account ([details](SELF_HOSTING.md#app-store-and-play-review)).
+
+**Does the Mac have to be on?** Not for your data: ideas, todos, notes, reminders and Ask live on your server, so the phones work on their own with the Mac off. The Mac is needed only to add a phone (its code) and for [Terminal from the phone](#terminal-from-the-phone).
+
+## The popup (Mac)
+
+⇧⌘Space opens the popup, in the mode you used last, with its field focused. Change the shortcut in **Settings → Quick capture shortcut**. **Settings → Popup tabs** picks which modes the strip shows and their order (drag the handle); ⌘1–⌘4 follow that order. With only one mode left, the strip shows no tabs. The menu-bar icon shows how many todos are open.
+
+<table>
+  <tr>
+    <td><img src="images/mac-popup-todo.png" alt="The popup in Todo mode: a todo with a reminder chip, the similar open todos below" width="400"></td>
+    <td><img src="images/mac-popup-ask.png" alt="The popup in Ask mode: a question, its answer and the recent chats" width="400"></td>
+  </tr>
+  <tr>
+    <td><img src="images/mac-popup-idea.png" alt="The popup in Idea mode, filing an idea under a project" width="400"></td>
+    <td><img src="images/mac-popup-note.png" alt="The popup in Note mode with recent notes" width="400"></td>
+  </tr>
+</table>
+
+| Key | What it does |
+| --- | --- |
+| ⌘1 ⌘2 ⌘3 ⌘4 | The strip's tabs, left to right: **Idea**, **Todo**, **Note**, **Ask** unless you changed them (or click the strip on top) |
+| ⌘5 | Open the main window (always ⌘5) |
+| ↵ | Save (Idea, Todo); send the question (Ask) |
+| ⌘↵ | Save and stay for the next one (Idea, Todo); save the note (Note) |
+| ⇥ | Add a description, or complete an `@project` (Idea, Todo) |
+| ↓ ↑ | Browse the list below the field: ideas, todos, **RECENT NOTES**, or your recent chats in Ask. In Note and Ask ↓ goes to the list from the field's last line; ↑ past the top or Esc goes back to the field |
+| ↵ on a selected row | Open the idea, todo or note in the main window; in Ask, continue that chat in the popup |
+| ⌘D | Tick off the selected todo |
+| ⌘O | Open the app on the selected item or chat (or on Notes, or on the current chat) |
+| ⌘P | Float the note in its own window: the selected one, else the one being written (Note) |
+| ⌘N | New chat (Ask) |
+| ⇧⌘C | Copy the last answer (Ask) |
+| Esc, ⌘W | Hide the popup |
+
+`@project` in an idea's title files it under that project.
+
+## The main window and the note window (Mac)
+
+The main window has **Todos** (finished ones fold away at the bottom), **Ideas** (grouped by project, with descriptions), **Notes** and **Ask**. ⌘N adds, ⌘F or / searches, ↑/↓ move, ⌫ deletes (with Undo), ⌘, opens Settings.
+
+<p align="center"><img src="images/mac-main.png" alt="The main window: sidebar with Todos, Ideas, Notes, Ask and projects; a list and the selected idea" width="820"></p>
+
+A note can float in a small window of its own over whatever you're doing: open it from the note's header in the main window, or with ⌘P in the popup.
+
+The Mac also has a **Todos** widget (desktop or Notification Center, macOS 14 or newer) that ticks todos off.
+
+## Reminders
+
+End a todo with `!` and a time. A chip under the field shows what it will set. When it's due, your devices notify you, and **Done** ticks the todo off.
+
+| Write | Reminds you |
+| --- | --- |
+| `!15:00`, `!9`, `!9.30`, `!3pm` | At that time today, or tomorrow if it's already past |
+| `!tomorrow`, `!tmr`, `!fri` | That day at 9:00 |
+| `!tomorrow 9`, `!mon 14:30` | That day at that time (a weekday is the next one ahead) |
+| `!today 18:00` | Today at that time |
+| `!30m`, `!2h`, `!1d`, `!1h30m` | That long from now |
+
+For example `call bank !15:00`. Phones get reminders by push, so one set on the Mac arrives with the phone app closed, and one ticked off elsewhere never goes off.
+
+## Ask
+
+A small streamed chat with the AI you connected: any OpenAI-compatible provider (OpenAI, OpenRouter, Groq, DeepSeek, a local Ollama, …). Paste or attach up to 4 images per question. Chats sync: start on one device, continue on another.
+
+No AI yet? Connect one from the Mac: **Settings → AI → Connect…** (or **Connect an AI…** in Ask); once one is connected, the same button reads **Change…**. The key stays on your server; the apps never see it. To switch providers from a terminal, see [AI provider](SELF_HOSTING.md#ai-provider).
