@@ -116,7 +116,7 @@ supabase functions serve --no-verify-jwt --env-file supabase/.env.local
 
 ## Checks
 
-The checks to run before a pull request, and which of them CI runs (`.github/workflows/ci.yml`), are listed in [CONTRIBUTING.md](../CONTRIBUTING.md#pull-requests).
+The checks to run before a pull request, and which of them CI runs (Baker on the maintainer's Mac, reported as GitHub checks), are listed in [CONTRIBUTING.md](../CONTRIBUTING.md#pull-requests).
 
 [Maestro](https://maestro.mobile.dev) flows drive the iOS simulator app. They need a simulator signed in to a test backend, and `ask.yaml` needs an AI key there. Set `appId` in each flow to your bundle id. Phones sign in only with a code from the Mac, so `sign_in.yaml` pastes one when the app isn't signed in: pass a reviewer code's link (**Settings → Reviewer access**, reusable) as `SETUP_LINK`, or a fresh **Set up phone…** code for a single run.
 

@@ -11,7 +11,7 @@ The repo is a pub workspace: `apps/dzep-macos-app` (Mac app and the backend), `a
 ## Pull requests
 
 - Keep each PR to one change, and describe what a user will notice.
-- Run the checks; CI runs them too:
+- Run the checks; CI (Baker, on the maintainer's Mac, reported as GitHub checks) runs them too:
   ```sh
   # in each of packages/dzep_core, apps/dzep-macos-app, apps/dzep-mobile
   fvm dart format --set-exit-if-changed lib test
@@ -21,7 +21,7 @@ The repo is a pub workspace: `apps/dzep-macos-app` (Mac app and the backend), `a
   deno check supabase/functions/*/index.ts
   deno test --allow-env supabase/functions/_tests/       # pair, push and relay in-process, fake network
   deno check --config integrations/omp-check.json integrations/omp/*.ts
-  # in apps/dzep-macos-app (Docker; CI pins Supabase CLI 2.116.0)
+  # in apps/dzep-macos-app (Docker; CI uses Supabase CLI 2.116.0)
   supabase db start && supabase db lint --level error
   supabase test db                                       # pgTAP in supabase/tests: pairing, sign-up hook, account deletion and the demo account, RLS
   # the Claude Code plugin, in apps/dzep-macos-app/integrations/claude, locally
