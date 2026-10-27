@@ -2,7 +2,6 @@
 
 **Your Mac's coding sessions on your phone: omp and Claude Code as a conversation you can prompt, steer and answer from anywhere. Plus a pocket for todos, ideas, notes and quick AI questions, on your own server.**
 
-[![CI](https://github.com/danyzmaj-apps/dzep/actions/workflows/ci.yml/badge.svg)](https://github.com/danyzmaj-apps/dzep/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/danyzmaj-apps/dzep?label=release)](https://github.com/danyzmaj-apps/dzep/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platforms: macOS, iOS, Android](https://img.shields.io/badge/platforms-macOS%20%7C%20iOS%20%7C%20Android-lightgrey.svg)](#install)
